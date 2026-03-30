@@ -1,0 +1,4 @@
+pylibrelinkup
+PyYAML
+requests
+pytest
