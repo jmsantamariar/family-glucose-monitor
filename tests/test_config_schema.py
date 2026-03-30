@@ -212,3 +212,72 @@ def test_outputs_not_a_list():
     cfg["outputs"] = "telegram"
     errors = validate_config(cfg)
     assert any("list" in e for e in errors)
+
+
+# ---------------------------------------------------------------------------
+# alerts.trend section (optional)
+# ---------------------------------------------------------------------------
+
+def test_trend_config_valid():
+    cfg = _valid_config()
+    cfg["alerts"]["trend"] = {
+        "enabled": True,
+        "low_approaching_threshold": 100,
+        "high_approaching_threshold": 150,
+        "messages": {
+            "falling_fast": "🔻 {patient_name}: {value} — BAJANDO RÁPIDO",
+            "falling": "📉 {patient_name}: {value} — bajando",
+        },
+    }
+    assert validate_config(cfg) == []
+
+
+def test_trend_not_a_dict():
+    cfg = _valid_config()
+    cfg["alerts"]["trend"] = "enabled"
+    errors = validate_config(cfg)
+    assert any("alerts.trend" in e for e in errors)
+
+
+def test_trend_enabled_not_bool():
+    cfg = _valid_config()
+    cfg["alerts"]["trend"] = {"enabled": "yes"}
+    errors = validate_config(cfg)
+    assert any("alerts.trend.enabled" in e for e in errors)
+
+
+def test_trend_low_approaching_threshold_not_number():
+    cfg = _valid_config()
+    cfg["alerts"]["trend"] = {"enabled": True, "low_approaching_threshold": "one hundred"}
+    errors = validate_config(cfg)
+    assert any("low_approaching_threshold" in e for e in errors)
+
+
+def test_trend_high_approaching_threshold_negative():
+    cfg = _valid_config()
+    cfg["alerts"]["trend"] = {"enabled": True, "high_approaching_threshold": -10}
+    errors = validate_config(cfg)
+    assert any("high_approaching_threshold" in e for e in errors)
+
+
+def test_trend_messages_not_a_dict():
+    cfg = _valid_config()
+    cfg["alerts"]["trend"] = {"enabled": True, "messages": "string_not_dict"}
+    errors = validate_config(cfg)
+    assert any("alerts.trend.messages" in e for e in errors)
+
+
+def test_trend_messages_value_not_string():
+    cfg = _valid_config()
+    cfg["alerts"]["trend"] = {
+        "enabled": True,
+        "messages": {"falling_fast": 42},
+    }
+    errors = validate_config(cfg)
+    assert any("alerts.trend.messages.falling_fast" in e for e in errors)
+
+
+def test_trend_section_omitted_is_valid():
+    # trend section is optional — omitting it should not produce errors
+    cfg = _valid_config()
+    assert validate_config(cfg) == []
