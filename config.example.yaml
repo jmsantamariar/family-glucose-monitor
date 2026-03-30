@@ -1,0 +1,46 @@
+# Family Glucose Monitor — Configuración
+# cp config.example.yaml config.yaml && chmod 600 config.yaml
+
+librelinkup:
+  email: "your-email@example.com"
+  password: "your-password"
+  region: "EU"
+
+alerts:
+  low_threshold: 70
+  high_threshold: 180
+  cooldown_minutes: 20
+  max_reading_age_minutes: 15
+  messages:
+    low: "⚠️ {patient_name}: glucosa en {value} mg/dL {trend} — BAJA"
+    high: "⚠️ {patient_name}: glucosa en {value} mg/dL {trend} — ALTA"
+
+outputs:
+  - type: telegram
+    enabled: true
+    bot_token: ""
+    chat_id: ""
+  - type: webhook
+    enabled: false
+    url: ""
+    token: ""
+    device: ""
+    language: "es-MX"
+  - type: whatsapp
+    enabled: false
+    phone_number_id: ""
+    access_token: ""
+    recipient: ""
+    template_name: "glucose_alert"
+    language_code: "es_MX"
+
+monitoring:
+  mode: "cron"
+  interval_seconds: 300
+
+logging:
+  level: "INFO"
+  file: ""
+
+state_file: "state.json"
+lock_file: "/tmp/family-glucose-monitor.lock"
