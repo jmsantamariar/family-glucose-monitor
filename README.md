@@ -199,6 +199,86 @@ docker run --rm \
 
 ---
 
+## 🌐 REST API
+
+The monitoring system can expose a lightweight HTTP API so that external clients (Android widgets, Apple Watch complications, web dashboards) can consume the latest glucose readings.
+
+### Enable the API server
+
+Start the API server alongside the monitor:
+
+```bash
+uvicorn src.api_server:app --host 0.0.0.0 --port 8080
+```
+
+Or with Docker (port 8080 is already exposed):
+
+```bash
+docker run --rm \
+  -v $(pwd)/config.yaml:/app/config.yaml:ro \
+  -v $(pwd)/readings_cache.json:/app/readings_cache.json \
+  -p 8080:8080 \
+  family-glucose-monitor \
+  uvicorn src.api_server:app --host 0.0.0.0 --port 8080
+```
+
+The monitor loop writes `readings_cache.json` after every cycle; the API server reads from this file.
+
+### Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/readings` | All cached patient readings |
+| `GET` | `/api/readings/{patient_id}` | Single patient reading by ID |
+| `GET` | `/api/health` | API health + data freshness |
+
+#### `GET /api/readings`
+
+```json
+{
+  "readings": [
+    {
+      "patient_id": "abc-123",
+      "patient_name": "Juan García",
+      "value": 120,
+      "timestamp": "2026-01-01T10:00:00+00:00",
+      "trend_name": "Flat",
+      "trend_arrow": "→",
+      "is_high": false,
+      "is_low": false
+    }
+  ],
+  "updated_at": "2026-01-01T10:05:00+00:00"
+}
+```
+
+#### `GET /api/readings/{patient_id}`
+
+Returns the reading object for the given patient ID, or `404` if not found.
+
+#### `GET /api/health`
+
+```json
+{
+  "status": "ok",
+  "patient_count": 3,
+  "updated_at": "2026-01-01T10:05:00+00:00",
+  "cache_age_seconds": 42.5
+}
+```
+
+### `config.yaml` API section
+
+```yaml
+api:
+  enabled: false          # reserved for future auto-start integration
+  host: "0.0.0.0"
+  port: 8080
+  cache_file: "readings_cache.json"
+```
+
+---
+
 ## 🧪 Tests
 
 ```bash
