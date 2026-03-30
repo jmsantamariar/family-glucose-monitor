@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Monitor de Glucosa Familiar</title>
+  <style>
+    /* ── Reset & Variables ─────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #f0f4f8;
+      --surface:   #ffffff;
+      --text:      #1a202c;
+      --subtext:   #4a5568;
+      --border:    #e2e8f0;
+      --header-bg: #1a365d;
+      --header-fg: #ffffff;
+
+      --green-bg:  #c6f6d5;
+      --green-fg:  #22543d;
+      --yellow-bg: #fefcbf;
+      --yellow-fg: #744210;
+      --red-bg:    #fed7d7;
+      --red-fg:    #742a2a;
+
+      --status-ok:  #48bb78;
+      --status-err: #fc8181;
+
+      --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      --radius: 10px;
+      --shadow: 0 2px 8px rgba(0,0,0,.08);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg:        #0d1117;
+        --surface:   #161b22;
+        --text:      #e2e8f0;
+        --subtext:   #a0aec0;
+        --border:    #2d3748;
+        --header-bg: #0d1b2e;
+
+        --green-bg:  #1c4532;
+        --green-fg:  #9ae6b4;
+        --yellow-bg: #2d2700;
+        --yellow-fg: #f6e05e;
+        --red-bg:    #3b1515;
+        --red-fg:    #feb2b2;
+      }
+    }
+
+    /* ── Layout ────────────────────────────────────────────────── */
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ────────────────────────────────────────────────── */
+    header {
+      background: var(--header-bg);
+      color: var(--header-fg);
+      padding: 1rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: .5rem;
+      box-shadow: 0 2px 10px rgba(0,0,0,.3);
+    }
+
+    header h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: .02em;
+    }
+
+    header h1 span { font-size: 1.5rem; margin-right: .4rem; }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      font-size: .85rem;
+      opacity: .9;
+    }
+
+    #clock { font-variant-numeric: tabular-nums; }
+
+    /* ── Status indicator ──────────────────────────────────────── */
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+      font-size: .8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+
+    .status-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--status-ok);
+      box-shadow: 0 0 6px var(--status-ok);
+      transition: background .3s, box-shadow .3s;
+    }
+
+    .status-dot.err {
+      background: var(--status-err);
+      box-shadow: 0 0 6px var(--status-err);
+    }
+
+    /* ── Main content ──────────────────────────────────────────── */
+    main {
+      flex: 1;
+      padding: 1.5rem;
+      max-width: 960px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    /* ── Table wrapper ─────────────────────────────────────────── */
+    .table-wrap {
+      background: var(--surface);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .95rem;
+    }
+
+    thead th {
+      background: var(--header-bg);
+      color: var(--header-fg);
+      padding: .75rem 1rem;
+      text-align: left;
+      font-size: .8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      white-space: nowrap;
+    }
+
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: filter .15s;
+    }
+
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { filter: brightness(.97); }
+
+    tbody td {
+      padding: .9rem 1rem;
+      vertical-align: middle;
+    }
+
+    /* ── Row colors ────────────────────────────────────────────── */
+    .row-normal  { background: var(--green-bg);  color: var(--green-fg);  }
+    .row-warning { background: var(--yellow-bg); color: var(--yellow-fg); }
+    .row-danger  { background: var(--red-bg);    color: var(--red-fg);    }
+
+    /* ── Glucose value ─────────────────────────────────────────── */
+    .glucose-value {
+      font-size: 1.8rem;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+
+    .glucose-unit {
+      font-size: .7rem;
+      font-weight: 400;
+      margin-left: .2rem;
+      opacity: .8;
+    }
+
+    /* ── Trend arrow ───────────────────────────────────────────── */
+    .trend-arrow {
+      font-size: 1.6rem;
+      line-height: 1;
+    }
+
+    /* ── Level badge ───────────────────────────────────────────── */
+    .level-badge {
+      display: inline-block;
+      padding: .2rem .55rem;
+      border-radius: 4px;
+      font-size: .78rem;
+      font-weight: 700;
+      letter-spacing: .04em;
+      background: rgba(0,0,0,.12);
+    }
+
+    /* ── Trend alert ───────────────────────────────────────────── */
+    .trend-alert-text {
+      font-size: .8rem;
+      font-weight: 600;
+    }
+
+    /* ── Time ──────────────────────────────────────────────────── */
+    .time-text {
+      font-size: .82rem;
+      opacity: .8;
+      white-space: nowrap;
+    }
+
+    /* ── Patient name ──────────────────────────────────────────── */
+    .patient-name {
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    /* ── No data placeholder ───────────────────────────────────── */
+    .no-data {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: var(--subtext);
+    }
+
+    .no-data .icon { font-size: 3rem; display: block; margin-bottom: .75rem; }
+    .no-data p { font-size: 1rem; }
+
+    /* ── Footer ────────────────────────────────────────────────── */
+    footer {
+      text-align: center;
+      padding: 1rem 1.5rem;
+      font-size: .78rem;
+      color: var(--subtext);
+      border-top: 1px solid var(--border);
+    }
+
+    footer strong { color: var(--text); }
+
+    /* ── Responsive ─────────────────────────────────────────────── */
+    @media (max-width: 640px) {
+      header h1 { font-size: 1rem; }
+      .glucose-value { font-size: 1.4rem; }
+      thead th:nth-child(5),
+      tbody td.col-trend-alert { display: none; }  /* hide trend alert col on small screens */
+      table { font-size: .88rem; }
+      tbody td { padding: .7rem .6rem; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1><span>💉</span>Monitor de Glucosa Familiar</h1>
+  <div class="header-right">
+    <span id="clock">--:--:--</span>
+    <div class="status-badge">
+      <div class="status-dot" id="status-dot"></div>
+      <span id="status-label">Conectando…</span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="table-wrap">
+    <table id="patients-table">
+      <thead>
+        <tr>
+          <th>Paciente</th>
+          <th>Glucosa</th>
+          <th>Tendencia</th>
+          <th>Nivel</th>
+          <th class="col-trend-alert">Alerta tendencia</th>
+          <th>Última lectura</th>
+        </tr>
+      </thead>
+      <tbody id="patients-body">
+        <tr>
+          <td colspan="6">
+            <div class="no-data">
+              <span class="icon">⏳</span>
+              <p>Cargando datos…</p>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+
+<footer>
+  <strong>⚠️ Este no es un dispositivo médico.</strong>
+  Esta herramienta es solo para referencia informativa y no reemplaza la atención médica profesional
+  ni los sistemas de alarma del medidor de glucosa.
+</footer>
+
+<script>
+  // ── Clock ───────────────────────────────────────────────────────
+  function updateClock() {
+    const now = new Date();
+    document.getElementById('clock').textContent =
+      now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  // ── Status indicator ────────────────────────────────────────────
+  function setStatus(state) {
+    const dot = document.getElementById('status-dot');
+    const label = document.getElementById('status-label');
+    if (state === 'connected') {
+      dot.classList.remove('err');
+      label.textContent = 'Conectado';
+    } else {
+      dot.classList.add('err');
+      label.textContent = 'Sin conexión';
+    }
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────
+  function getRowClass(patient) {
+    if (patient.color === 'red')    return 'row-danger';
+    if (patient.color === 'yellow') return 'row-warning';
+    return 'row-normal';
+  }
+
+  function formatTimeSince(isoTimestamp) {
+    if (!isoTimestamp) return '—';
+    const diff = (Date.now() - new Date(isoTimestamp)) / 1000 / 60;
+    if (diff < 1)  return 'ahora';
+    if (diff < 60) return `hace ${Math.floor(diff)} min`;
+    return `hace ${Math.floor(diff / 60)}h ${Math.floor(diff % 60)}m`;
+  }
+
+  function levelLabel(level) {
+    if (level === 'low')  return 'BAJA';
+    if (level === 'high') return 'ALTA';
+    return 'NORMAL';
+  }
+
+  function trendArrowDisplay(arrow, trendName) {
+    const map = {
+      'SingleUp': '↑', 'FortyFiveUp': '↗', 'Flat': '→',
+      'FortyFiveDown': '↘', 'SingleDown': '↓'
+    };
+    if (!arrow && trendName) return map[trendName] || trendName;
+    return arrow || '→';
+  }
+
+  function trendAlertLabel(trendAlert) {
+    if (!trendAlert || trendAlert === 'normal') return '—';
+    const labels = {
+      'falling_fast': '🔻 Bajando rápido',
+      'falling':      '📉 Bajando',
+      'rising_fast':  '🔺 Subiendo rápido',
+      'rising':       '📈 Subiendo',
+    };
+    return labels[trendAlert] || trendAlert;
+  }
+
+  function escapeHtml(text) {
+    const d = document.createElement('div');
+    d.appendChild(document.createTextNode(String(text)));
+    return d.innerHTML;
+  }
+
+  // ── Table update ────────────────────────────────────────────────
+  function updateTable(patients) {
+    const tbody = document.getElementById('patients-body');
+
+    if (!patients || patients.length === 0) {
+      tbody.innerHTML = `
+        <tr><td colspan="6">
+          <div class="no-data">
+            <span class="icon">📭</span>
+            <p>Sin datos — esperando lecturas…</p>
+          </div>
+        </td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = patients.map(p => {
+      const rowClass   = getRowClass(p);
+      const name       = escapeHtml(p.patient_name || p.patient_id);
+      const glucose    = p.glucose_value ?? p.value ?? '—';
+      const arrow      = trendArrowDisplay(p.trend_arrow, p.trend_name);
+      const level      = levelLabel(p.level);
+      const trendAlert = trendAlertLabel(p.trend_alert);
+      const timeSince  = formatTimeSince(p.fetched_at || p.timestamp);
+
+      return `
+        <tr class="${rowClass}">
+          <td class="patient-name">${name}</td>
+          <td>
+            <span class="glucose-value">${escapeHtml(glucose)}</span>
+            <span class="glucose-unit">mg/dL</span>
+          </td>
+          <td class="trend-arrow">${escapeHtml(arrow)}</td>
+          <td><span class="level-badge">${escapeHtml(level)}</span></td>
+          <td class="trend-alert-text col-trend-alert">${trendAlert}</td>
+          <td class="time-text">${escapeHtml(timeSince)}</td>
+        </tr>`;
+    }).join('');
+  }
+
+  // ── Fetch & poll ────────────────────────────────────────────────
+  async function fetchPatients() {
+    try {
+      const resp = await fetch('/api/patients');
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      updateTable(data.patients);
+      setStatus('connected');
+    } catch (e) {
+      setStatus('disconnected');
+      console.error('Error al obtener datos:', e);
+    }
+  }
+
+  setInterval(fetchPatients, 30000);
+  fetchPatients();
+</script>
+
+</body>
+</html>
