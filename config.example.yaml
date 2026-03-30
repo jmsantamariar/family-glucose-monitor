@@ -58,3 +58,9 @@ logging:
 
 state_file: "state.json"
 lock_file: "/tmp/family-glucose-monitor.lock"
+
+api:
+  enabled: false
+  host: "0.0.0.0"
+  port: 8080
+  cache_file: "readings_cache.json"

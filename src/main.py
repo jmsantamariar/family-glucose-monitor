@@ -1,4 +1,5 @@
 """Main entry point for family glucose monitoring."""
+import json
 import logging
 import os
 import sys
@@ -99,6 +100,25 @@ def release_lock(lock_fd) -> None:
         pass
 
 
+def _save_readings_cache(readings: list[dict], config: dict) -> None:
+    """Write the latest readings to readings_cache.json for API consumption."""
+    cache_path = config.get("api", {}).get("cache_file", "readings_cache.json")
+    if not os.path.isabs(cache_path):
+        cache_path = str(PROJECT_ROOT / cache_path)
+    payload = {
+        "readings": readings,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    tmp_path = cache_path + ".tmp"
+    try:
+        with open(tmp_path, "w") as f:
+            json.dump(payload, f, default=str)
+        os.replace(tmp_path, cache_path)
+        logger.debug("Readings cache saved to %s", cache_path)
+    except OSError as e:
+        logger.error("Failed to save readings cache: %s", e)
+
+
 def run_once(config: dict) -> None:
     state_path = config.get("state_file", "state.json")
     if not os.path.isabs(state_path):
@@ -108,6 +128,7 @@ def run_once(config: dict) -> None:
     if not readings:
         logger.error("No readings obtained from any patient")
         return
+    _save_readings_cache(readings, config)
     max_age = config["alerts"]["max_reading_age_minutes"]
     cooldown = config["alerts"]["cooldown_minutes"]
     outputs = build_outputs(config)

@@ -12,3 +12,4 @@ build/
 .coverage
 coverage.xml
 htmlcov/
+readings_cache.json
