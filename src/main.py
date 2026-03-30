@@ -11,6 +11,7 @@ import yaml
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 from src.alert_engine import build_message, evaluate, is_stale, should_alert
+from src.config_schema import validate_config as schema_validate_config
 from src.glucose_reader import read_all_patients
 from src.outputs.telegram import TelegramOutput
 from src.outputs.webhook import WebhookOutput
@@ -24,35 +25,6 @@ from src.state import (
 )
 
 logger = logging.getLogger("family-glucose-monitor")
-
-
-def validate_config(config: dict) -> str | None:
-    try:
-        alerts = config["alerts"]
-        low = alerts["low_threshold"]
-        high = alerts["high_threshold"]
-    except KeyError as e:
-        return f"Missing required config field: {e}"
-    if not isinstance(low, (int, float)) or not isinstance(high, (int, float)):
-        return "Thresholds must be numbers"
-    if low <= 0 or high <= 0:
-        return "Thresholds must be positive"
-    if low >= high:
-        return f"low_threshold ({low}) must be less than high_threshold ({high})"
-    cooldown = alerts.get("cooldown_minutes")
-    if cooldown is None or cooldown <= 0:
-        return "cooldown_minutes must be a positive number"
-    max_age = alerts.get("max_reading_age_minutes")
-    if max_age is None or max_age <= 0:
-        return "max_reading_age_minutes must be a positive number"
-    if "librelinkup" not in config:
-        return "Missing librelinkup config section"
-    ll = config["librelinkup"]
-    if not ll.get("email") and not os.environ.get("LIBRELINKUP_EMAIL"):
-        return "Missing librelinkup email (set in config or LIBRELINKUP_EMAIL env var)"
-    if not ll.get("password") and not os.environ.get("LIBRELINKUP_PASSWORD"):
-        return "Missing librelinkup password (set in config or LIBRELINKUP_PASSWORD env var)"
-    return None
 
 
 def configure_logging(config: dict) -> None:
@@ -204,10 +176,13 @@ def main() -> None:
         print("ERROR: config.yaml is empty", file=sys.stderr)
         sys.exit(1)
     configure_logging(config)
-    error = validate_config(config)
-    if error:
-        logger.error("Config validation failed: %s", error)
+    errors = schema_validate_config(config)
+    if errors:
+        for err in errors:
+            logger.error("Config validation error: %s", err)
+        logger.error("Config validation failed with %d error(s). Exiting.", len(errors))
         sys.exit(1)
+    logger.info("Config validation passed")
     lock_path = config.get("lock_file", "/tmp/family-glucose-monitor.lock")
     if not os.path.isabs(lock_path):
         lock_path = str(PROJECT_ROOT / lock_path)
