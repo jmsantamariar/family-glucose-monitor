@@ -102,6 +102,36 @@ def validate_config(config: Any) -> list[str]:
         elif max_age <= 0:
             errors.append(f"alerts.max_reading_age_minutes must be > 0, got {max_age}")
 
+        # --- alerts.trend (optional) ---
+        trend = alerts.get("trend")
+        if trend is not None:
+            if not isinstance(trend, dict):
+                errors.append("alerts.trend must be a mapping (dict)")
+            else:
+                if "enabled" in trend and not isinstance(trend["enabled"], bool):
+                    errors.append(
+                        f"alerts.trend.enabled must be a boolean, got {type(trend['enabled']).__name__}"
+                    )
+                for field in ("low_approaching_threshold", "high_approaching_threshold"):
+                    val = trend.get(field)
+                    if val is not None:
+                        if not isinstance(val, (int, float)):
+                            errors.append(
+                                f"alerts.trend.{field} must be a number, got {type(val).__name__}"
+                            )
+                        elif val <= 0:
+                            errors.append(f"alerts.trend.{field} must be positive, got {val}")
+                trend_messages = trend.get("messages")
+                if trend_messages is not None:
+                    if not isinstance(trend_messages, dict):
+                        errors.append("alerts.trend.messages must be a mapping (dict)")
+                    else:
+                        for key, tmpl in trend_messages.items():
+                            if not isinstance(tmpl, str):
+                                errors.append(
+                                    f"alerts.trend.messages.{key} must be a string, got {type(tmpl).__name__}"
+                                )
+
     # --- outputs section: at least one must be enabled ---
     outputs = config.get("outputs", [])
     if not isinstance(outputs, list):

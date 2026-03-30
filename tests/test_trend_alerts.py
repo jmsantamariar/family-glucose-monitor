@@ -230,10 +230,11 @@ class TestBuildMessageWithTrend:
         assert "subiendo" in msg.lower() or "hiper" in msg.lower()
 
     def test_custom_trend_template_in_config(self):
+        # Primary schema: alerts.trend.messages
         config = {
             "alerts": {
-                "messages": {
-                    "trend": {
+                "trend": {
+                    "messages": {
                         "falling_fast": "PELIGRO {patient_name} bajando: {value}",
                     }
                 }
@@ -246,8 +247,8 @@ class TestBuildMessageWithTrend:
         # Config has a trend section but not the specific alert type → use default template
         config = {
             "alerts": {
-                "messages": {
-                    "trend": {
+                "trend": {
+                    "messages": {
                         "rising_fast": "Subiendo rápido {patient_name}",
                         # "falling" is NOT defined here
                     }
@@ -258,6 +259,39 @@ class TestBuildMessageWithTrend:
         # Should fall back to built-in default and contain key info
         assert "Juan" in msg
         assert "85" in msg
+
+    def test_backward_compat_alerts_messages_trend_path(self):
+        # Backward compat: alerts.messages.trend still works as a fallback
+        config = {
+            "alerts": {
+                "messages": {
+                    "trend": {
+                        "falling_fast": "COMPAT {patient_name} bajando: {value}",
+                    }
+                }
+            }
+        }
+        msg = build_message(90, "normal", "↓", "Test", config=config, trend_alert="falling_fast")
+        assert msg == "COMPAT Test bajando: 90"
+
+    def test_primary_path_takes_precedence_over_fallback(self):
+        # When both paths are present, alerts.trend.messages takes precedence
+        config = {
+            "alerts": {
+                "trend": {
+                    "messages": {
+                        "falling_fast": "PRIMARY {patient_name}: {value}",
+                    }
+                },
+                "messages": {
+                    "trend": {
+                        "falling_fast": "FALLBACK {patient_name}: {value}",
+                    }
+                },
+            }
+        }
+        msg = build_message(90, "normal", "↓", "Test", config=config, trend_alert="falling_fast")
+        assert msg == "PRIMARY Test: 90"
 
     def test_backward_compat_no_trend_alert_arg(self):
         # Original signature without trend_alert should still work
