@@ -149,6 +149,46 @@ docker run --rm \
 
 ---
 
+## 🌐 REST API (for widgets)
+
+The project includes a lightweight FastAPI server that exposes the latest readings for consumption by Android widgets, Apple Watch complications, or web dashboards.
+
+### Start the API server
+
+```bash
+uvicorn src.api_server:app --host 0.0.0.0 --port 8080
+```
+
+### Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/readings` | All patient readings |
+| GET | `/api/readings/{patient_id}` | Single patient reading |
+| GET | `/api/health` | API health + data freshness |
+
+### Example response
+
+```json
+{
+  "last_updated": "2026-03-30T15:30:00+00:00",
+  "readings": [
+    {
+      "patient_id": "uuid-1",
+      "patient_name": "Mamá",
+      "value": 125,
+      "trend_arrow": "→",
+      "is_high": false,
+      "is_low": false
+    }
+  ]
+}
+```
+
+> **Note:** The monitor (`python -m src.main`) must run periodically to keep `readings_cache.json` updated. The API server only serves cached data.
+
+---
+
 ## 🧪 Tests
 
 ```bash

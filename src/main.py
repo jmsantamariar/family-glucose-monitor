@@ -1,4 +1,5 @@
 """Main entry point for family glucose monitoring."""
+import json
 import logging
 import os
 import sys
@@ -127,6 +128,32 @@ def release_lock(lock_fd) -> None:
         pass
 
 
+def _save_readings_cache(readings: list[dict]) -> None:
+    """Save readings to cache file for the REST API to serve."""
+    cache_path = str(PROJECT_ROOT / "readings_cache.json")
+    cache_data = {
+        "last_updated": datetime.now(timezone.utc).isoformat(),
+        "readings": [],
+    }
+    for r in readings:
+        cache_data["readings"].append({
+            "patient_id": r["patient_id"],
+            "patient_name": r["patient_name"],
+            "value": r["value"],
+            "timestamp": r["timestamp"].isoformat() if hasattr(r["timestamp"], "isoformat") else str(r["timestamp"]),
+            "trend_name": r["trend_name"],
+            "trend_arrow": r["trend_arrow"],
+            "is_high": r["is_high"],
+            "is_low": r["is_low"],
+        })
+    try:
+        with open(cache_path, "w") as f:
+            json.dump(cache_data, f, indent=2)
+        logger.info("Readings cache updated: %s", cache_path)
+    except Exception as e:
+        logger.error("Failed to save readings cache: %s", e)
+
+
 def run_once(config: dict) -> None:
     state_path = config.get("state_file", "state.json")
     if not os.path.isabs(state_path):
@@ -136,6 +163,7 @@ def run_once(config: dict) -> None:
     if not readings:
         logger.error("No readings obtained from any patient")
         return
+    _save_readings_cache(readings)
     max_age = config["alerts"]["max_reading_age_minutes"]
     cooldown = config["alerts"]["cooldown_minutes"]
     outputs = build_outputs(config)

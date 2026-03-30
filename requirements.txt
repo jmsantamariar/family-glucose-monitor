@@ -2,3 +2,6 @@ pylibrelinkup
 PyYAML
 requests
 pytest
+fastapi
+uvicorn[standard]
+httpx
