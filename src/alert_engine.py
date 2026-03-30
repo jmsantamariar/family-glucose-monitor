@@ -127,7 +127,11 @@ def build_message(glucose_value: int, level: str, trend_arrow: str,
             )
     else:
         # Trend-based alert
-        trend_messages = messages.get("trend", {})
+        # Primary schema: alerts.trend.messages (matches config.example.yaml)
+        trend_messages = config.get("alerts", {}).get("trend", {}).get("messages", {}) if config else {}
+        # Backward compatibility: fall back to alerts.messages.trend if defined
+        if not trend_messages:
+            trend_messages = messages.get("trend", {})
         template = trend_messages.get(trend_alert, "")
         if not template:
             trend_defaults = {
