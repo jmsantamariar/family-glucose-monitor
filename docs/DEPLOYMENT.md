@@ -20,20 +20,20 @@ Esta guía cubre las distintas formas de ejecutar Family Glucose Monitor, desde 
 
 ## Modos de ejecución
 
-El modo se configura en `config.yaml` bajo `monitoring.mode`:
+El modo se configura en config.yaml bajo monitoring.mode:
 
 | Modo | Qué hace | Polling a LibreLinkUp | Ciclo de alertas/salidas | Dashboard web | API externa |
-|------|----------|-----------------------|--------------------------|---------------|-------------|
-| `cron` | Una sola lectura y salida | ✅ durante la ejecución | ✅ durante la ejecución | ❌ | ❌ |
-| `daemon` | Bucle continuo en foreground | ✅ cada N segundos | ✅ continuo | ❌ | ❌ |
-| `dashboard` | Panel web; polling a LibreLinkUp en background, sin alertas/salidas | ✅ en segundo plano (vía `api.py`) | ❌ | ✅ | ❌ |
-| `full` | Dashboard + ciclo de alertas/salidas | ✅ en segundo plano | ✅ en segundo plano | ✅ | ❌ |
+|-------------|-----------------------------------------------------------|-----------------------|--------------------------|---------------|-------------|
+| cron | Una sola lectura y salida | ✅ durante la ejecución | ✅ durante la ejecución | ❌ | ❌ |
+| daemon | Bucle continuo en foreground | ✅ cada N segundos | ✅ continuo | ❌ | ❌ |
+| dashboard | Panel web; polling a LibreLinkUp en background, sin alertas/salidas | ✅ en segundo plano (vía api.py) | ❌ | ✅ | ❌ |
+| full | Dashboard + ciclo de alertas/salidas | ✅ en segundo plano | ✅ en segundo plano | ✅ | ❌ |
 
-La API externa (`src/api_server.py`) se ejecuta **siempre por separado**, independientemente del modo anterior. Ver [Componentes del sistema](#componentes-del-sistema).
+La API externa (src/api_server.py) se ejecuta siempre por separado, independientemente del modo anterior. Ver Componentes del sistema.
 
 ### Cron (recomendado para uso simple)
 
-Ejecuta `python -m src.main` una sola vez. El sistema operativo se encarga de la periodicidad.
+Ejecuta python -m src.main una sola vez. El sistema operativo se encarga de la periodicidad.
 
 ```yaml
 # config.yaml
@@ -47,8 +47,8 @@ monitoring:
 */5 * * * * cd /opt/family-glucose-monitor && .venv/bin/python -m src.main >> /var/log/glucose.log 2>&1
 ```
 
-**Ventajas:** sencillo, sin proceso persistente, reinicio automático ante fallos.  
-**Desventaja:** no disponible como servicio web (no hay dashboard en este modo).
+Ventajas: sencillo, sin proceso persistente, reinicio automático ante fallos.  
+Desventaja: no disponible como servicio web (no hay dashboard en este modo).
 
 ### Daemon (proceso continuo)
 
@@ -62,7 +62,7 @@ monitoring:
 python -m src.main
 ```
 
-Se queda en foreground. Usa `systemd` o `supervisor` para gestionarlo como servicio.
+Se queda en foreground. Usa systemd o supervisor para gestionarlo como servicio.
 
 ### Dashboard (panel web con polling, sin ciclo de alertas)
 
@@ -79,7 +79,7 @@ dashboard:
 python -m src.main
 ```
 
-Solo lanza el servidor FastAPI (`src/api.py`) en `host:port`. El dashboard hace polling a LibreLinkUp en segundo plano para mostrar lecturas en tiempo real, pero **no ejecuta el ciclo de alertas/salidas ni escribe `readings_cache.json`**. Útil como panel de solo visualización o cuando otro proceso externo ya corre el ciclo de alertas.
+Solo lanza el servidor FastAPI (src/api.py) en host:port. El dashboard hace polling a LibreLinkUp en segundo plano para mostrar lecturas en tiempo real, pero no ejecuta el ciclo de alertas/salidas.
 
 ### Full (monitoreo + dashboard)
 
@@ -103,24 +103,24 @@ Arranca el dashboard en un hilo de segundo plano y corre el bucle de monitoreo e
 
 ## Componentes del sistema
 
-El proyecto tiene **dos servidores FastAPI independientes** con propósitos distintos:
+El proyecto tiene dos servidores FastAPI independientes con propósitos distintos:
 
-### `src/api.py` — Dashboard interno
+### src/api.py — Dashboard interno
 
 - Sirve la UI web (HTML/JS) y sus APIs de soporte
 - Requiere autenticación con cookie de sesión
 - Hace polling activo a LibreLinkUp en un hilo interno
 - Expone endpoints para pacientes, alertas, estado de salud y configuración inicial
-- **No tiene CORS habilitado** — solo para consumo desde el mismo dominio
-- Se lanza con `monitoring.mode: dashboard` o `full` vía `python -m src.main`
+- No tiene CORS habilitado — solo para consumo desde el mismo dominio
+- Se lanza con monitoring.mode: dashboard o full vía python -m src.main
 
-### `src/api_server.py` — API externa (solo lectura)
+### src/api_server.py — API externa (solo lectura)
 
 - API REST ligera para consumo externo (widgets, watchfaces, apps móviles)
-- **No requiere autenticación** — expone datos de solo lectura
-- Lee del archivo `readings_cache.json` que `src/main.py` actualiza en cada ciclo
-- Tiene CORS configurado (actualmente `allow_origins=["*"]` — ver recomendaciones en [CORS en producción](#cors-en-producción))
-- Se lanza manualmente con `uvicorn`:
+- No requiere autenticación — expone datos de solo lectura
+- Lee del archivo readings_cache.json que src/main.py actualiza en cada ciclo
+- Tiene CORS configurado (actualmente allow_origins=["*"] — ver recomendaciones en CORS en producción)
+- Se lanza manualmente con uvicorn:
 
 ```bash
 uvicorn src.api_server:app --host 127.0.0.1 --port 8081
@@ -129,20 +129,20 @@ uvicorn src.api_server:app --host 127.0.0.1 --port 8081
 ### Endpoints de cada componente
 
 | Componente | Endpoint | Descripción |
-|------------|----------|-------------|
-| `src/api.py` | `GET /` | Dashboard HTML |
-| `src/api.py` | `GET /api/patients` | Lecturas en memoria (autenticado) |
-| `src/api.py` | `GET /api/patients/{id}` | Lectura de un paciente (autenticado) |
-| `src/api.py` | `GET /api/health` | Estado del dashboard |
-| `src/api.py` | `GET /api/alerts` | Historial de alertas (autenticado) |
-| `src/api.py` | `POST /api/login` | Autenticación |
-| `src/api.py` | `POST /api/setup` | Configuración inicial |
-| `src/api_server.py` | `GET /api/readings` | Lecturas cacheadas (sin auth) |
-| `src/api_server.py` | `GET /api/readings/{id}` | Lectura de un paciente (sin auth) |
-| `src/api_server.py` | `GET /api/health` | Estado de la API externa |
-| `src/api_server.py` | `GET /api/alerts` | Historial de alertas (sin auth) |
+|-----------------|--------------------------|---------------------------------------------|
+| src/api.py | GET / | Dashboard HTML |
+| src/api.py | GET /api/patients | Lecturas en memoria (autenticado) |
+| src/api.py | GET /api/patients/{id} | Lectura de un paciente (autenticado) |
+| src/api.py | GET /api/health | Estado del dashboard |
+| src/api.py | GET /api/alerts | Historial de alertas (autenticado) |
+| src/api.py | POST /api/login | Autenticación |
+| src/api.py | POST /api/setup | Configuración inicial |
+| src/api_server.py | GET /api/readings | Lecturas cacheadas (sin auth) |
+| src/api_server.py | GET /api/readings/{id} | Lectura de un paciente (sin auth) |
+| src/api_server.py | GET /api/health | Estado de la API externa |
+| src/api_server.py | GET /api/alerts | Historial de alertas (sin auth) |
 
-> **Nota:** `src/api.py` y `src/api_server.py` exponen rutas con el mismo prefijo `/api/` pero con contratos distintos. No se deben publicar en el mismo dominio/puerto sin un proxy que las diferencie.
+Nota: src/api.py y src/api_server.py exponen rutas con el mismo prefijo /api/ pero con contratos distintos. No se deben publicar en el mismo dominio/puerto sin un proxy que las diferencie por ruta o subdominio.
 
 ---
 
@@ -173,7 +173,7 @@ python -m src.main
 # → Dashboard en http://localhost:8080
 ```
 
-**En desarrollo, usar `host: "0.0.0.0"` es aceptable**, pero en producción usar `127.0.0.1` y dejar que el reverse proxy exponga el servicio.
+En desarrollo, usar host: "0.0.0.0" es aceptable, pero en producción usar 127.0.0.1 y dejar que el reverse proxy exponga el servicio.
 
 ---
 
@@ -181,7 +181,7 @@ python -m src.main
 
 ### Servicio del monitor (modo full)
 
-Crear `/etc/systemd/system/glucose-monitor.service`:
+Crear /etc/systemd/system/glucose-monitor.service:
 
 ```ini
 [Unit]
@@ -217,7 +217,7 @@ WantedBy=multi-user.target
 
 ### Servicio de la API externa (opcional)
 
-Crear `/etc/systemd/system/glucose-api.service`:
+Crear /etc/systemd/system/glucose-api.service:
 
 ```ini
 [Unit]
@@ -279,7 +279,7 @@ docker run -d \
   family-glucose-monitor
 ```
 
-> Usar `-p 127.0.0.1:8080:8080` (no `0.0.0.0:8080:8080`) para que el puerto solo sea accesible localmente. El reverse proxy se encarga de exponer al exterior.
+Usar -p 127.0.0.1:8080:8080 (no 0.0.0.0:8080:8080) para que el puerto solo sea accesible localmente. El reverse proxy se encarga de exponer al exterior.
 
 ### API externa
 
@@ -332,13 +332,16 @@ services:
       - monitor
 ```
 
-> **Nota:** cada servicio monta solo los archivos de datos que necesita directamente sobre `/app`, sin ocultar el código de la imagen. Crea previamente los archivos en el host: `touch /var/lib/glucose/state.json /var/lib/glucose/alert_history.db /var/lib/glucose/readings_cache.json`.
+Nota: cada servicio monta solo los archivos de datos que necesita directamente sobre /app, sin ocultar el código de la imagen. Crea previamente los archivos en el host:
+```
+touch /var/lib/glucose/state.json /var/lib/glucose/alert_history.db /var/lib/glucose/readings_cache.json
+```
 
 ---
 
 ## Reverse proxy y HTTPS
 
-**En producción, nunca exponer el dashboard o la API directamente a Internet sin HTTPS.**
+En producción, nunca exponer el dashboard o la API directamente a Internet sin HTTPS.
 
 ### Nginx
 
@@ -395,7 +398,7 @@ server {
 
 ### Certificados con Let's Encrypt
 
-> **Prerrequisito:** los registros DNS (A o AAAA) de cada dominio deben apuntar a la IP del servidor **antes** de ejecutar certbot. Si los dos dominios apuntan a servidores distintos, emite el certificado de cada uno por separado.
+Prerrequisito: los registros DNS (A o AAAA) de cada dominio deben apuntar a la IP del servidor antes de ejecutar certbot. Si los dos dominios apuntan a servidores distintos, emite el certificado en cada host por separado.
 
 ```bash
 sudo apt install certbot python3-certbot-nginx
@@ -404,7 +407,7 @@ sudo certbot --nginx -d glucose.tudominio.com -d glucose-api.tudominio.com
 
 ### CORS en producción
 
-`src/api_server.py` actualmente configura `allow_origins=["*"]`, lo que permite peticiones desde cualquier dominio. Para producción, edita el middleware en `src/api_server.py` para restringir el origen al dominio de tu aplicación cliente:
+src/api_server.py actualmente configura allow_origins=["*"], lo que permite peticiones desde cualquier dominio. Para producción, edita el middleware en src/api_server.py para restringir el origen:
 
 ```python
 # src/api_server.py — ajuste para producción
@@ -422,17 +425,17 @@ Si la API solo la consume tu propio dashboard (mismo dominio), puedes eliminar e
 
 ## Variables de entorno y secretos
 
-El sistema soporta sobrescribir valores de `config.yaml` con variables de entorno. Es la forma recomendada de manejar secretos en producción.
+El sistema soporta sobrescribir valores de config.yaml con variables de entorno. Es la forma recomendada de manejar secretos en producción.
 
 | Variable de entorno | Descripción | Archivo config equivalente |
-|---------------------|-------------|---------------------------|
-| `LIBRELINKUP_EMAIL` | Email de LibreLinkUp | `librelinkup.email` |
-| `LIBRELINKUP_PASSWORD` | Contraseña de LibreLinkUp | `librelinkup.password` |
-| `WHATSAPP_ACCESS_TOKEN` | Token de acceso WhatsApp Cloud API | `outputs[whatsapp].access_token` |
-| `ALERT_HISTORY_DB` | Ruta al archivo de historial SQLite | `alert_history_db` |
-| `AUTH_DISABLED` | Si es `1`, desactiva la autenticación del dashboard (solo para dev) | — |
+|--------------------------|-----------------------------------------------|-------------------------------------|
+| LIBRELINKUP_EMAIL | Email de LibreLinkUp | librelinkup.email |
+| LIBRELINKUP_PASSWORD | Contraseña de LibreLinkUp | librelinkup.password |
+| WHATSAPP_ACCESS_TOKEN | Token de acceso WhatsApp Cloud API | outputs[whatsapp].access_token |
+| ALERT_HISTORY_DB | Ruta al archivo de historial SQLite | alert_history_db |
+| AUTH_DISABLED | Si es 1, desactiva la autenticación del dashboard (solo para dev) | — |
 
-Ejemplo de archivo `/etc/glucose-monitor/env`:
+Ejemplo de archivo /etc/glucose-monitor/env:
 
 ```env
 LIBRELINKUP_EMAIL=tu@email.com
@@ -441,7 +444,7 @@ WHATSAPP_ACCESS_TOKEN=token_whatsapp
 ALERT_HISTORY_DB=/var/lib/glucose/alert_history.db
 ```
 
-> **Nunca** pongas estos valores directamente en `config.yaml` en producción si el archivo puede ser accedido por más personas o estar en un repositorio. Usa variables de entorno o un gestor de secretos.
+Nunca pongas estos valores directamente en config.yaml en producción si el archivo puede ser accedido por más personas o estar en un repositorio. Usa variables de entorno o un gestor de secretos.
 
 ---
 
@@ -459,8 +462,8 @@ chmod 750 /var/lib/glucose
 
 # Archivos de datos
 touch /var/lib/glucose/state.json
-touch /var/lib/glucose/alert_history.db
-touch /var/lib/glucose/readings_cache.json
+ touch /var/lib/glucose/alert_history.db
+ touch /var/lib/glucose/readings_cache.json
 chown glucose:glucose /var/lib/glucose/*
 chmod 640 /var/lib/glucose/*
 ```
@@ -468,40 +471,40 @@ chmod 640 /var/lib/glucose/*
 Resumen de archivos sensibles:
 
 | Archivo | Permisos recomendados | Contenido |
-|---------|-----------------------|-----------|
-| `config.yaml` | `600` | Credenciales, umbrales, configuración |
-| `state.json` | `640` | Estado de alertas por paciente |
-| `alert_history.db` | `640` | Historial de alertas en SQLite |
-| `readings_cache.json` | `640` | Últimas lecturas cacheadas |
+|----------------------|-----------------------|------------------------------------|
+| config.yaml | 600 | Credenciales, umbrales, configuración |
+| state.json | 640 | Estado de alertas por paciente |
+| alert_history.db | 640 | Historial de alertas en SQLite |
+| readings_cache.json | 640 | Últimas lecturas cacheadas |
 
 ---
 
 ## Caveats operativos
 
-### Lock de instancia única (modos con bucle de monitoreo: `cron`, `daemon`, `full`)
+### Lock de instancia única (modos con bucle de monitoreo: cron, daemon, full)
 
-En modos `cron`, `daemon` y `full`, el sistema adquiere un lock exclusivo en `/tmp/family-glucose-monitor.lock` (configurable con `lock_file` en `config.yaml`). Si una ejecución tarda más que el intervalo del cron, la siguiente intentará adquirir el lock y saldrá limpiamente para evitar duplicación de alertas y condiciones de carrera en `state.json`.
+En modos cron, daemon y full, el sistema adquiere un lock exclusivo en /tmp/family-glucose-monitor.lock (configurable con lock_file en config.yaml). Si una ejecución tarda más que el intervalo y deja el lock puesto, la siguiente no arrancará; revisa los logs.
 
-En Windows este lock no funciona (usa `fcntl` de Unix). Si tu entorno es Windows, podrías lanzar instancias duplicadas; considera usar `filelock` como dependencia cross-platform.
+En Windows este lock no funciona (usa fcntl de Unix). Si tu entorno es Windows, podrías lanzar instancias duplicadas; considera usar filelock como dependencia cross-platform.
 
-### Datos en memoria del Dashboard (`src/api.py`)
+### Datos en memoria del Dashboard (src/api.py)
 
 El dashboard mantiene las últimas lecturas en memoria. Al reiniciar el proceso, la caché se vacía y tardará un intervalo en repoblarse. Durante ese tiempo, el dashboard mostrará "sin datos".
 
 ### Cache compartida entre monitor y API externa
 
-El monitor escribe `readings_cache.json` de forma atómica (archivo temporal + `os.replace`). La API externa (`src/api_server.py`) lee siempre el archivo en `PROJECT_ROOT/readings_cache.json` (ruta fija). Si la API externa se inicia antes de que el monitor haya hecho su primera escritura, devolverá lecturas vacías hasta que el monitor complete su primer ciclo.
+El monitor escribe readings_cache.json de forma atómica (archivo temporal + os.replace). La API externa (src/api_server.py) lee siempre el archivo en PROJECT_ROOT/readings_cache.json (ruta fija).
 
-> **Limitación:** aunque `config.yaml` admite `api.cache_file` para personalizar la ruta del archivo cache que escribe `src/main.py`, `src/api_server.py` siempre lee desde su `PROJECT_ROOT/readings_cache.json` fijo. Para que ambos compartan el mismo archivo, mantén el nombre por defecto (`readings_cache.json`) o monta el archivo en esa ruta dentro del contenedor.
+Limitación: aunque config.yaml admite api.cache_file para personalizar la ruta del archivo cache que escribe src/main.py, src/api_server.py siempre lee desde su PROJECT_ROOT/readings_cache.json.
 
 ### Sesiones del Dashboard en memoria
 
-Las sesiones de autenticación del dashboard (`src/api.py`) se almacenan en memoria. Al reiniciar el proceso, todas las sesiones activas se invalidan y los usuarios necesitarán hacer login de nuevo. TTL de sesión: 24 horas.
+Las sesiones de autenticación del dashboard (src/api.py) se almacenan en memoria. Al reiniciar el proceso, todas las sesiones activas se invalidan y los usuarios necesitarán hacer login de nuevo.
 
 ### Dependencia de LibreLinkUp
 
-La API de LibreLinkUp no es pública ni está documentada oficialmente. Si Abbott cambia el protocolo, las lecturas dejarán de funcionar hasta que se actualice la librería `pylibrelinkup`. Configura alertas de monitoreo en `alert_history.db` o revisar logs regularmente en producción.
+La API de LibreLinkUp no es pública ni está documentada oficialmente. Si Abbott cambia el protocolo, las lecturas dejarán de funcionar hasta que se actualice la librería pylibrelinkup. Confía en los releases upstream.
 
 ### Lecturas obsoletas (stale)
 
-Si LibreLinkUp devuelve una lectura con más de `max_reading_age_minutes` minutos de antigüedad, la alerta es suprimida. El dato sí queda en cache. Revisar los logs si las alertas esperadas no llegan.
+Si LibreLinkUp devuelve una lectura con más de max_reading_age_minutes minutos de antigüedad, la alerta es suprimida. El dato sí queda en cache. Revisa los logs si las alertas esperadas no llegan.
