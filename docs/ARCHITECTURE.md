@@ -28,7 +28,7 @@ flowchart TD
 Punto de entrada del sistema. Responsabilidades:
 - Cargar y validar `config.yaml`
 - Configurar logging
-- Adquirir file lock (evita ejecuciones concurrentes en modo cron/daemon)
+- Adquirir file lock (evita ejecuciones concurrentes en modos con bucle de monitoreo: `daemon` y `full`)
 - Ejecutar en modo `cron` (una sola vez), `daemon` (bucle con intervalo), `dashboard` (solo panel web) o `full` (dashboard + bucle)
 - Orquestar el ciclo completo: lectura → evaluación → estado → envío → persistencia
 
@@ -130,7 +130,7 @@ class MiOutput(BaseOutput):
         ...
 ```
 
-2. Registra el nuevo tipo en `src/main.py` dentro de `build_outputs()`:
+2. Registra el nuevo tipo en `src/outputs/__init__.py` dentro de `build_outputs()`:
 
 ```python
 elif out_type == "mi_output":
