@@ -8,7 +8,15 @@ import yaml
 from fastapi.testclient import TestClient
 
 from src.api import app
-from src.auth import SESSION_TTL, SessionManager, is_configured, session_manager, verify_credentials
+from src.auth import (
+    SESSION_TTL,
+    SessionManager,
+    check_password,
+    hash_password,
+    is_configured,
+    session_manager,
+    verify_credentials,
+)
 
 
 # ── SessionManager ────────────────────────────────────────────────────────────
@@ -76,14 +84,57 @@ class TestIsConfigured:
             assert not is_configured()
 
 
+# ── hash_password / check_password ───────────────────────────────────────────
+
+
+class TestPasswordHashing:
+    def test_hash_returns_string(self):
+        h = hash_password("mysecret")
+        assert isinstance(h, str)
+
+    def test_hash_format(self):
+        h = hash_password("mysecret")
+        parts = h.split(":")
+        assert parts[0] == "pbkdf2"
+        assert parts[1] == "sha256"
+        assert len(parts) == 5
+
+    def test_check_password_correct(self):
+        h = hash_password("mysecret")
+        assert check_password("mysecret", h)
+
+    def test_check_password_wrong(self):
+        h = hash_password("mysecret")
+        assert not check_password("wrongpassword", h)
+
+    def test_two_hashes_differ(self):
+        """Each call produces a different hash (random salt)."""
+        h1 = hash_password("same")
+        h2 = hash_password("same")
+        assert h1 != h2
+
+    def test_check_password_invalid_hash(self):
+        assert not check_password("anything", "notahash")
+
+    def test_check_password_empty_hash(self):
+        assert not check_password("anything", "")
+
+
 # ── verify_credentials ────────────────────────────────────────────────────────
 
 
 class TestVerifyCredentials:
-    def _make_config(self, tmp_path, email: str, password: str) -> Path:
+    def _make_config(self, tmp_path, username: str, password: str) -> Path:
         cfg = tmp_path / "config.yaml"
         cfg.write_text(
-            yaml.dump({"librelinkup": {"email": email, "password": password}})
+            yaml.dump(
+                {
+                    "dashboard_auth": {
+                        "username": username,
+                        "password_hash": hash_password(password),
+                    }
+                }
+            )
         )
         return cfg
 
@@ -97,7 +148,7 @@ class TestVerifyCredentials:
         with patch("src.auth._CONFIG_PATH", cfg):
             assert not verify_credentials("user@example.com", "wrong")
 
-    def test_wrong_email(self, tmp_path):
+    def test_wrong_username(self, tmp_path):
         cfg = self._make_config(tmp_path, "user@example.com", "secret")
         with patch("src.auth._CONFIG_PATH", cfg):
             assert not verify_credentials("other@example.com", "secret")
@@ -111,6 +162,15 @@ class TestVerifyCredentials:
         cfg = self._make_config(tmp_path, "user@example.com", "secret")
         with patch("src.auth._CONFIG_PATH", cfg):
             assert not verify_credentials("", "")
+
+    def test_missing_dashboard_auth_section_returns_false(self, tmp_path):
+        """Config without dashboard_auth section must not authenticate anyone."""
+        cfg = tmp_path / "config.yaml"
+        cfg.write_text(
+            yaml.dump({"librelinkup": {"email": "a@b.com", "password": "pass"}})
+        )
+        with patch("src.auth._CONFIG_PATH", cfg):
+            assert not verify_credentials("a@b.com", "pass")
 
 
 # ── /api/setup/status ─────────────────────────────────────────────────────────
@@ -145,33 +205,67 @@ class TestLoginEndpoint:
         yield TestClient(app)
         session_manager.clear_all()
 
-    def test_valid_credentials_returns_200(self, client, tmp_path):
+    def _make_dashboard_config(self, tmp_path, username: str, password: str) -> Path:
         cfg = tmp_path / "config.yaml"
         cfg.write_text(
-            yaml.dump({"librelinkup": {"email": "a@b.com", "password": "pass"}})
+            yaml.dump(
+                {
+                    "dashboard_auth": {
+                        "username": username,
+                        "password_hash": hash_password(password),
+                    }
+                }
+            )
         )
+        return cfg
+
+    def test_valid_credentials_returns_200(self, client, tmp_path):
+        cfg = self._make_dashboard_config(tmp_path, "a@b.com", "pass")
         with patch("src.auth._CONFIG_PATH", cfg):
             resp = client.post("/api/login", json={"email": "a@b.com", "password": "pass"})
         assert resp.status_code == 200
         assert resp.json()["success"] is True
 
     def test_valid_credentials_sets_cookie(self, client, tmp_path):
-        cfg = tmp_path / "config.yaml"
-        cfg.write_text(
-            yaml.dump({"librelinkup": {"email": "a@b.com", "password": "pass"}})
-        )
+        cfg = self._make_dashboard_config(tmp_path, "a@b.com", "pass")
         with patch("src.auth._CONFIG_PATH", cfg):
             resp = client.post("/api/login", json={"email": "a@b.com", "password": "pass"})
         assert "session_token" in resp.cookies
 
+    def test_login_with_username_field(self, client, tmp_path):
+        """The 'username' field is accepted as an alias for 'email'."""
+        cfg = self._make_dashboard_config(tmp_path, "admin", "pass")
+        with patch("src.auth._CONFIG_PATH", cfg):
+            resp = client.post("/api/login", json={"username": "admin", "password": "pass"})
+        assert resp.status_code == 200
+
     def test_invalid_credentials_returns_401(self, client, tmp_path):
-        cfg = tmp_path / "config.yaml"
-        cfg.write_text(
-            yaml.dump({"librelinkup": {"email": "a@b.com", "password": "pass"}})
-        )
+        cfg = self._make_dashboard_config(tmp_path, "a@b.com", "pass")
         with patch("src.auth._CONFIG_PATH", cfg):
             resp = client.post("/api/login", json={"email": "a@b.com", "password": "wrong"})
         assert resp.status_code == 401
+
+    def test_librelinkup_password_not_accepted_as_dashboard_login(self, client, tmp_path):
+        """LibreLinkUp plaintext password must NOT work for dashboard login."""
+        from src.auth import verify_credentials as _verify
+
+        cfg = tmp_path / "config.yaml"
+        cfg.write_text(
+            yaml.dump(
+                {
+                    "librelinkup": {"email": "a@b.com", "password": "llup_pass"},
+                    "dashboard_auth": {
+                        "username": "a@b.com",
+                        "password_hash": hash_password("dashboard_pass"),
+                    },
+                }
+            )
+        )
+        with patch("src.auth._CONFIG_PATH", cfg):
+            # LibreLinkUp password should not work for dashboard login
+            assert not _verify("a@b.com", "llup_pass")
+            # Dashboard password should work
+            assert _verify("a@b.com", "dashboard_pass")
 
     def test_missing_config_returns_401(self, client, tmp_path):
         missing = tmp_path / "config.yaml"
@@ -226,6 +320,7 @@ class TestSetupEndpoint:
         return {
             "email": "user@example.com",
             "password": "secret",
+            "dashboard_password": "dashpass",
             "low_threshold": 70,
             "high_threshold": 180,
             "cooldown_minutes": 30,
@@ -250,6 +345,31 @@ class TestSetupEndpoint:
         assert config["librelinkup"]["email"] == "user@example.com"
         assert config["alerts"]["low_threshold"] == 70
         assert config["alerts"]["high_threshold"] == 180
+
+    def test_setup_stores_dashboard_auth_separately(self, client, tmp_path):
+        """dashboard_auth section must be present and password stored as hash."""
+        client.post("/api/setup", json=self._minimal_payload())
+        config = yaml.safe_load((tmp_path / "config.yaml").read_text())
+        dash_auth = config.get("dashboard_auth", {})
+        assert dash_auth.get("username") == "user@example.com"
+        # Password must be stored as a hash, never plain text
+        stored_hash = dash_auth.get("password_hash", "")
+        assert stored_hash.startswith("pbkdf2:sha256:")
+        assert stored_hash != "dashpass"
+        # Verify the hash validates correctly
+        assert check_password("dashpass", stored_hash)
+
+    def test_setup_librelinkup_password_not_used_as_dashboard_password(self, client, tmp_path):
+        """LibreLinkUp password must not be used verbatim as the dashboard password."""
+        client.post("/api/setup", json=self._minimal_payload())
+        config = yaml.safe_load((tmp_path / "config.yaml").read_text())
+        # LibreLinkUp section still has the original password (needed for API calls)
+        assert config["librelinkup"]["password"] == "secret"
+        # Dashboard hash must NOT validate with the LibreLinkUp password
+        stored_hash = config["dashboard_auth"]["password_hash"]
+        assert not check_password("secret", stored_hash)
+        # Only the dedicated dashboard_password validates
+        assert check_password("dashpass", stored_hash)
 
     def test_setup_with_telegram(self, client, tmp_path):
         payload = self._minimal_payload()
@@ -293,6 +413,12 @@ class TestSetupEndpoint:
         resp = client.post("/api/setup", json=payload)
         assert resp.status_code == 422
 
+    def test_setup_missing_dashboard_password_returns_422(self, client):
+        payload = self._minimal_payload()
+        payload["dashboard_password"] = ""
+        resp = client.post("/api/setup", json=payload)
+        assert resp.status_code == 422
+
     def test_setup_invalid_thresholds_returns_422(self, client):
         payload = self._minimal_payload()
         payload["low_threshold"] = 200
@@ -308,11 +434,28 @@ class TestSetupEndpoint:
         )
         assert resp.status_code == 400
 
+    def test_setup_no_notification_sets_mode_dashboard(self, client, tmp_path):
+        """When no notification output is selected, mode should be 'dashboard'."""
+        client.post("/api/setup", json=self._minimal_payload())
+        config = yaml.safe_load((tmp_path / "config.yaml").read_text())
+        assert config["monitoring"]["mode"] == "dashboard"
+        # No outputs at all (no disabled placeholder)
+        assert config["outputs"] == []
+
+    def test_setup_with_notification_sets_mode_cron(self, client, tmp_path):
+        """When a notification output is selected, mode should be 'cron'."""
+        payload = self._minimal_payload()
+        payload["notification_type"] = "telegram"
+        payload["telegram_bot_token"] = "TOK"
+        payload["telegram_chat_id"] = "-1"
+        client.post("/api/setup", json=payload)
+        config = yaml.safe_load((tmp_path / "config.yaml").read_text())
+        assert config["monitoring"]["mode"] == "cron"
+
     def test_setup_config_has_required_defaults(self, client, tmp_path):
         client.post("/api/setup", json=self._minimal_payload())
         config = yaml.safe_load((tmp_path / "config.yaml").read_text())
         assert "monitoring" in config
-        assert config["monitoring"]["mode"] == "cron"
         assert "dashboard" in config
         assert config["dashboard"]["enabled"] is True
         assert "logging" in config
@@ -395,7 +538,7 @@ class TestPageRoutes:
             resp = client.get("/login")
         assert resp.status_code == 200
         assert "text/html" in resp.headers["content-type"]
-        assert "LibreLinkUp" in resp.text
+        assert "panel de control" in resp.text
 
     def test_setup_page_returns_html(self, client):
         resp = client.get("/setup")

@@ -148,3 +148,47 @@ class TestGetColor:
     def test_normal_level_rising_trend_returns_green(self):
         # "rising" alone (not "rising_fast") → green (approaching but not urgent)
         assert _get_color("normal", "rising") == "green"
+
+
+# ── Polling cache atomicity ───────────────────────────────────────────────────
+
+class TestPollLoopCacheAtomicity:
+    """Verify that _poll_loop replaces the cache atomically each cycle."""
+
+    def test_removed_patient_not_in_cache_after_poll(self):
+        """A patient absent from the new poll result must be evicted from cache."""
+        from unittest.mock import MagicMock, patch
+        from src.api import _poll_loop, _readings_cache, _cache_lock
+
+        # Seed the cache with two patients
+        with _cache_lock:
+            _readings_cache.clear()
+            _readings_cache["p1"] = {"patient_id": "p1", "value": 100}
+            _readings_cache["p2"] = {"patient_id": "p2", "value": 120}
+
+        first_call = True
+
+        def fake_read_all(config):
+            # Only return p1 — p2 has "disappeared"
+            return [{"patient_id": "p1", "value": 100, "trend_arrow": "→"}]
+
+        with patch("src.api.read_all_patients", side_effect=fake_read_all):
+            with patch("src.api.alert_engine.evaluate", return_value="normal"):
+                with patch("src.api.alert_engine.evaluate_trend", return_value="normal"):
+                    with patch("src.api.time") as mock_time:
+                        # Make sleep raise StopIteration to exit after one cycle
+                        mock_time.time.return_value = 0
+                        mock_time.sleep.side_effect = StopIteration
+                        try:
+                            _poll_loop(300)
+                        except StopIteration:
+                            pass
+
+        with _cache_lock:
+            assert "p1" in _readings_cache
+            assert "p2" not in _readings_cache, "Ghost patient must be evicted after poll"
+
+    def teardown_method(self):
+        from src.api import _readings_cache, _cache_lock
+        with _cache_lock:
+            _readings_cache.clear()
