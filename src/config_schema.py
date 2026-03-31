@@ -132,16 +132,35 @@ def validate_config(config: Any) -> list[str]:
                                     f"alerts.trend.messages.{key} must be a string, got {type(tmpl).__name__}"
                                 )
 
-    # --- outputs section: at least one must be enabled ---
+    # --- monitoring section (optional) ---
+    _VALID_MODES = {"cron", "daemon", "full", "dashboard"}
+    monitoring = config.get("monitoring")
+    if monitoring is not None and isinstance(monitoring, dict):
+        mode = monitoring.get("mode")
+        if mode is not None and mode not in _VALID_MODES:
+            errors.append(
+                f"monitoring.mode {mode!r} is not valid; "
+                f"allowed values are: {', '.join(sorted(_VALID_MODES))}"
+            )
+
+    # --- outputs section ---
+    # At least one enabled output is required in alerting modes (cron / daemon
+    # / full).  Dashboard-only mode does not send alerts so no output is needed.
     outputs = config.get("outputs", [])
+    monitoring_mode = (
+        monitoring.get("mode", "cron")
+        if isinstance(monitoring, dict)
+        else "cron"
+    )
+    alerting_modes = {"cron", "daemon", "full"}
     if not isinstance(outputs, list):
         errors.append("outputs must be a list")
     else:
         enabled_outputs = [o for o in outputs if isinstance(o, dict) and o.get("enabled")]
-        if not enabled_outputs:
+        if monitoring_mode in alerting_modes and not enabled_outputs:
             errors.append(
-                "At least one output must be enabled in the outputs list "
-                "(telegram, webhook, or whatsapp)"
+                f"At least one output must be enabled in the outputs list "
+                f"(telegram, webhook, or whatsapp) when monitoring.mode is '{monitoring_mode}'"
             )
         for i, out in enumerate(outputs):
             if not isinstance(out, dict):
@@ -152,6 +171,74 @@ def validate_config(config: Any) -> list[str]:
                 errors.append(
                     f"outputs[{i}].type {out_type!r} is not a recognised output type"
                 )
+
+    # --- dashboard_auth section ---
+    # Required when the dashboard is used (i.e. always, since the setup wizard
+    # creates this section).  Validates presence and basic PBKDF2 hash format.
+    dash_auth = config.get("dashboard_auth")
+    if not isinstance(dash_auth, dict):
+        errors.append(
+            "Missing required section: dashboard_auth "
+            "(username and password_hash for the web dashboard)"
+        )
+    else:
+        da_username = dash_auth.get("username")
+        if not da_username or not isinstance(da_username, str) or not da_username.strip():
+            errors.append("dashboard_auth.username is required and must be a non-empty string")
+
+        da_hash = dash_auth.get("password_hash")
+        if not da_hash or not isinstance(da_hash, str) or not da_hash.strip():
+            errors.append(
+                "dashboard_auth.password_hash is required and must be a non-empty string"
+            )
+        else:
+            # Validate the PBKDF2 hash format: pbkdf2:sha256:<iter>:<salt_hex>:<key_hex>
+            parts = da_hash.split(":")
+            if len(parts) != 5 or parts[0] != "pbkdf2" or parts[1] != "sha256":
+                errors.append(
+                    "dashboard_auth.password_hash has an invalid format; "
+                    "expected 'pbkdf2:sha256:<iterations>:<salt_hex>:<key_hex>'"
+                )
+            else:
+                iter_part = parts[2]
+                salt_hex = parts[3]
+                key_hex = parts[4]
+
+                try:
+                    iterations = int(iter_part)
+                    if iterations <= 0 or iterations > 1_000_000_000:
+                        errors.append(
+                            "dashboard_auth.password_hash iterations must be a positive integer "
+                            "within a reasonable range"
+                        )
+                except (TypeError, ValueError):
+                    errors.append(
+                        "dashboard_auth.password_hash iterations must be a valid integer"
+                    )
+
+                if not salt_hex:
+                    errors.append(
+                        "dashboard_auth.password_hash salt_hex must be a non-empty hex string"
+                    )
+                else:
+                    try:
+                        bytes.fromhex(salt_hex)
+                    except ValueError:
+                        errors.append(
+                            "dashboard_auth.password_hash salt_hex must be a valid hex string"
+                        )
+
+                if not key_hex:
+                    errors.append(
+                        "dashboard_auth.password_hash key_hex must be a non-empty hex string"
+                    )
+                else:
+                    try:
+                        bytes.fromhex(key_hex)
+                    except ValueError:
+                        errors.append(
+                            "dashboard_auth.password_hash key_hex must be a valid hex string"
+                        )
 
     # --- alert_history_db (optional) ---
     alert_history_db = config.get("alert_history_db")
