@@ -20,7 +20,7 @@ Para **familias** donde uno o varios miembros usan un sensor FreeStyle Libre y t
 - 📡 Lectura multi-paciente desde LibreLinkUp (todos los pacientes de la cuenta)
 - ⚠️ Alertas configurables por umbral bajo/alto con cooldown anti-spam
 - 💬 Salidas: **Telegram**, **Webhook** (Pushover-compatible), **WhatsApp Cloud API**
-- 🔄 Modos: **cron** (una lectura) o **daemon** (bucle continuo)
+- 🔄 Modos: **cron** (una lectura), **daemon** (bucle continuo), **dashboard** (panel web), **full** (monitoreo + dashboard)
 - 🗂️ Estado persistente por paciente con escritura atómica
 - ✅ Validación de configuración al inicio con mensajes claros
 - 🐳 Docker-ready
@@ -109,11 +109,15 @@ Para el diagrama completo y decisiones de diseño, consulta [docs/ARCHITECTURE.m
 ```
 config.yaml              ← credenciales y umbrales (nunca en git)
 src/
-  main.py                ← orquestador principal
+  main.py                ← orquestador principal (modos: cron, daemon, dashboard, full)
   config_schema.py       ← validación de configuración
   glucose_reader.py      ← lee TODOS los pacientes vía pylibrelinkup
   alert_engine.py        ← evalúa umbrales, cooldown, construye mensajes
   state.py               ← persistencia JSON por patient_id
+  api.py                 ← dashboard web + API interna autenticada (modo dashboard/full)
+  api_server.py          ← API REST externa de solo lectura (sin auth, para widgets/apps)
+  auth.py                ← gestión de sesiones y credenciales del dashboard
+  alert_history.py       ← historial de alertas en SQLite
   outputs/
     base.py              ← clase abstracta BaseOutput
     telegram.py          ← Bot API de Telegram
@@ -123,8 +127,12 @@ tests/
   test_alert_engine.py
   test_state.py
   test_telegram_output.py
+  test_api.py
+  test_api_server.py
+  test_auth.py
 docs/
   ARCHITECTURE.md        ← diseño del sistema
+  DEPLOYMENT.md          ← guía de despliegue y operación
   PRIVACY.md             ← privacidad de datos de salud
 validate_connection.py   ← prueba la conexión a LibreLinkUp
 validate_telegram.py     ← prueba el bot de Telegram
@@ -176,15 +184,74 @@ monitoring:
 
 ## ▶️ Ejecución
 
+El modo de ejecución se configura con `monitoring.mode` en `config.yaml`. Hay cuatro modos disponibles:
+
+| Modo | Descripción | Polling LibreLinkUp | Ciclo de alertas | Dashboard |
+|------|-------------|---------------------|------------------|-----------|
+| `cron` | Una sola lectura y salida (default) | ✅ una vez | ✅ una vez | ❌ |
+| `daemon` | Bucle continuo en foreground | ✅ continuo | ✅ continuo | ❌ |
+| `dashboard` | Panel web; hace polling sin ciclo de alertas/salidas | ✅ background | ❌ | ✅ |
+| `full` | Polling + ciclo de alertas + panel web | ✅ background | ✅ background | ✅ |
+
 ### Modo cron (una sola lectura)
+
+```yaml
+monitoring:
+  mode: "cron"
+```
 
 ```bash
 python -m src.main
 ```
 
-Agrega al crontab:
+Agrega al crontab para ejecución periódica:
 ```
 */5 * * * * cd /ruta/proyecto && .venv/bin/python -m src.main >> /var/log/glucose.log 2>&1
+```
+
+### Modo daemon (bucle continuo)
+
+```yaml
+monitoring:
+  mode: "daemon"
+  interval_seconds: 300
+```
+
+```bash
+python -m src.main
+```
+
+### Modo dashboard (panel web)
+
+```yaml
+monitoring:
+  mode: "dashboard"
+
+dashboard:
+  host: "0.0.0.0"
+  port: 8080
+```
+
+```bash
+python -m src.main
+# Panel disponible en http://localhost:8080
+```
+
+### Modo full (monitoreo + dashboard)
+
+```yaml
+monitoring:
+  mode: "full"
+  interval_seconds: 300
+
+dashboard:
+  host: "0.0.0.0"
+  port: 8080
+```
+
+```bash
+python -m src.main
+# Dashboard en http://localhost:8080 + ciclos de monitoreo cada 5 minutos
 ```
 
 ### Docker
@@ -199,32 +266,41 @@ docker run --rm \
 
 ---
 
-## 🌐 REST API
+## 🌐 API REST externa
 
-The monitoring system can expose a lightweight HTTP API so that external clients (Android widgets, Apple Watch complications, web dashboards) can consume the latest glucose readings.
+El sistema incluye un servidor de API ligero (`src/api_server.py`) para que clientes externos (widgets Android, complicaciones de Apple Watch, dashboards remotos) consuman las últimas lecturas de glucosa **sin autenticación**.
 
-### Enable the API server
+> **Distinción importante:** `src/api.py` es el backend del dashboard web (requiere login). `src/api_server.py` es la API externa de solo lectura (sin auth, CORS habilitado). Son dos servidores independientes con propósitos distintos.
 
-Start the API server alongside the monitor:
+### Cómo funciona
 
-```bash
-uvicorn src.api_server:app --host 0.0.0.0 --port 8080
+El proceso de monitoreo principal (`src/main.py`) escribe `readings_cache.json` al final de cada ciclo. La API externa lee ese archivo en cada petición, sin hacer llamadas directas a LibreLinkUp.
+
+```
+python -m src.main         ←→  escribe readings_cache.json
+                                           ↓
+uvicorn src.api_server:app ←→  lee readings_cache.json → responde clientes
 ```
 
-Or with Docker (port 8080 is already exposed):
+### Habilitar la API externa
+
+```bash
+# Junto al monitor (terminal separada o proceso independiente):
+uvicorn src.api_server:app --host 0.0.0.0 --port 8081
+```
+
+Con Docker:
 
 ```bash
 docker run --rm \
   -v $(pwd)/config.yaml:/app/config.yaml:ro \
   -v $(pwd)/readings_cache.json:/app/readings_cache.json \
-  -p 8080:8080 \
+  -p 8081:8081 \
   family-glucose-monitor \
-  uvicorn src.api_server:app --host 0.0.0.0 --port 8080
+  uvicorn src.api_server:app --host 0.0.0.0 --port 8081
 ```
 
-The monitor loop writes `readings_cache.json` after every cycle; the API server reads from this file.
-
-### Endpoints
+### Endpoints de la API externa
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -273,9 +349,13 @@ Returns the reading object for the given patient ID, or `404` if not found.
 api:
   enabled: false          # reserved for future auto-start integration
   host: "0.0.0.0"
-  port: 8080
+  port: 8081
   cache_file: "readings_cache.json"
 ```
+
+> **Nota:** `api.cache_file` configura la ruta donde `src/main.py` escribe el cache. Sin embargo, `src/api_server.py` lee siempre desde `readings_cache.json` en el directorio raíz del proyecto (ruta fija). Para evitar desincronización, mantén el valor por defecto o asegúrate de montar ambas rutas al mismo archivo.
+
+Para una guía completa de despliegue incluyendo HTTPS, reverse proxy, permisos y configuración de producción, consulta [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ---
 
@@ -303,16 +383,18 @@ El sistema incluye un dashboard web en tiempo real que muestra el estado de todo
 ### Ejecutar el Dashboard
 
 ```bash
-# Modo solo dashboard
-# En config.yaml, establece monitoring.mode: "dashboard"
+# Modo solo dashboard (polling a LibreLinkUp en background, sin envío de alertas)
+# En config.yaml: monitoring.mode: "dashboard"
 python -m src.main
 
-# Modo completo (monitoreo + dashboard)
-# En config.yaml, establece monitoring.mode: "full"
+# Modo completo (polling + ciclo de alertas + dashboard en paralelo)
+# En config.yaml: monitoring.mode: "full"
 python -m src.main
 ```
 
 El dashboard estará disponible en `http://localhost:8080` por defecto.
+
+> **Nota de seguridad:** El dashboard requiere autenticación. El proceso de setup inicial (`/setup`) te pedirá crear credenciales. Para producción, consulta [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) para recomendaciones de HTTPS y reverse proxy.
 
 ---
 
@@ -340,7 +422,8 @@ pytest tests/ -v --cov=src
 
 - `config.yaml` está en `.gitignore` — **nunca** lo subas al repositorio.
 - Usa `chmod 600 config.yaml` para restringir el acceso.
-- Para producción, usa variables de entorno en lugar de `config.yaml`.
+- Para producción, usa variables de entorno en lugar de secretos en `config.yaml`.
+- **No expongas el dashboard ni la API sin HTTPS** en producción — consulta [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 - Consulta [SECURITY.md](SECURITY.md) para la política de seguridad completa.
 - Consulta [docs/PRIVACY.md](docs/PRIVACY.md) para información sobre privacidad de datos.
 
