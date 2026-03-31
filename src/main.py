@@ -11,7 +11,8 @@ import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-from src.alert_engine import build_message, evaluate, is_stale, should_alert
+from src.alert_engine import build_message, evaluate, evaluate_trend, is_stale, should_alert
+from src.config_schema import validate_config as schema_validate_config
 from src.glucose_reader import read_all_patients
 from src.outputs.telegram import TelegramOutput
 from src.outputs.webhook import WebhookOutput
@@ -25,35 +26,6 @@ from src.state import (
 )
 
 logger = logging.getLogger("family-glucose-monitor")
-
-
-def validate_config(config: dict) -> str | None:
-    try:
-        alerts = config["alerts"]
-        low = alerts["low_threshold"]
-        high = alerts["high_threshold"]
-    except KeyError as e:
-        return f"Missing required config field: {e}"
-    if not isinstance(low, (int, float)) or not isinstance(high, (int, float)):
-        return "Thresholds must be numbers"
-    if low <= 0 or high <= 0:
-        return "Thresholds must be positive"
-    if low >= high:
-        return f"low_threshold ({low}) must be less than high_threshold ({high})"
-    cooldown = alerts.get("cooldown_minutes")
-    if cooldown is None or cooldown <= 0:
-        return "cooldown_minutes must be a positive number"
-    max_age = alerts.get("max_reading_age_minutes")
-    if max_age is None or max_age <= 0:
-        return "max_reading_age_minutes must be a positive number"
-    if "librelinkup" not in config:
-        return "Missing librelinkup config section"
-    ll = config["librelinkup"]
-    if not ll.get("email") and not os.environ.get("LIBRELINKUP_EMAIL"):
-        return "Missing librelinkup email (set in config or LIBRELINKUP_EMAIL env var)"
-    if not ll.get("password") and not os.environ.get("LIBRELINKUP_PASSWORD"):
-        return "Missing librelinkup password (set in config or LIBRELINKUP_PASSWORD env var)"
-    return None
 
 
 def configure_logging(config: dict) -> None:
@@ -174,8 +146,9 @@ def run_once(config: dict) -> None:
             logger.warning("  Stale reading for %s from %s, skipping", patient_name, timestamp)
             continue
         level = evaluate(glucose_value, config)
+        trend_alert = evaluate_trend(glucose_value, trend_arrow, config)
         patient_state = get_patient_state(state, patient_id)
-        if level == "normal":
+        if level == "normal" and trend_alert == "normal":
             if patient_state:
                 state = clear_patient_state(state, patient_id)
                 state_changed = True
@@ -185,10 +158,10 @@ def run_once(config: dict) -> None:
             continue
         if not outputs:
             continue
-        if not should_alert(level, patient_state, cooldown):
+        if not should_alert(level, patient_state, cooldown, trend_alert):
             logger.info("  %s alert suppressed by cooldown", patient_name)
             continue
-        message = build_message(glucose_value, level, trend_arrow, patient_name, config)
+        message = build_message(glucose_value, level, trend_arrow, patient_name, config, trend_alert)
         any_success = False
         for output in outputs:
             try:
@@ -196,10 +169,11 @@ def run_once(config: dict) -> None:
                     any_success = True
             except Exception as e:
                 logger.error("Output %s failed: %s", type(output).__name__, e)
+        effective_level = level if level != "normal" else f"trend_{trend_alert}"
         if any_success:
             new_patient_state = {
                 "last_alert_time": datetime.now(timezone.utc).isoformat(),
-                "last_alert_level": level,
+                "last_alert_level": effective_level,
             }
             state = set_patient_state(state, patient_id, new_patient_state)
             state_changed = True
@@ -208,6 +182,24 @@ def run_once(config: dict) -> None:
             logger.error("  All outputs failed for %s, state not updated", patient_name)
     if state_changed:
         save_state(state_path, state)
+
+
+def _start_dashboard(config: dict) -> None:
+    """Start the FastAPI dashboard server."""
+    try:
+        import uvicorn
+    except ImportError:
+        logger.error(
+            "fastapi and uvicorn are required for dashboard mode. "
+            "Run: pip install fastapi 'uvicorn[standard]'"
+        )
+        sys.exit(1)
+
+    dash_cfg = config.get("dashboard", {})
+    host = dash_cfg.get("host", "0.0.0.0")
+    port = int(dash_cfg.get("port", 8080))
+    logger.info("Starting dashboard on http://%s:%d", host, port)
+    uvicorn.run("src.api:app", host=host, port=port, log_level="info")
 
 
 def main() -> None:
@@ -225,16 +217,31 @@ def main() -> None:
         print("ERROR: config.yaml is empty", file=sys.stderr)
         sys.exit(1)
     configure_logging(config)
-    error = validate_config(config)
-    if error:
-        logger.error("Config validation failed: %s", error)
+    errors = schema_validate_config(config)
+    if errors:
+        for err in errors:
+            logger.error("Config validation error: %s", err)
+        logger.error("Config validation failed with %d error(s). Exiting.", len(errors))
         sys.exit(1)
+    logger.info("Config validation passed")
     lock_path = config.get("lock_file", "/tmp/family-glucose-monitor.lock")
     if not os.path.isabs(lock_path):
         lock_path = str(PROJECT_ROOT / lock_path)
+    mode = config.get("monitoring", {}).get("mode", "cron")
+
+    if mode == "dashboard":
+        _start_dashboard(config)
+        return
+
+    if mode == "full":
+        # Run dashboard in background thread, monitoring loop in foreground
+        import threading as _threading
+        dash_thread = _threading.Thread(target=_start_dashboard, args=(config,), daemon=True)
+        dash_thread.start()
+        mode = "daemon"  # fall through to daemon loop below
+
     lock_fd = acquire_lock(lock_path)
     try:
-        mode = config.get("monitoring", {}).get("mode", "cron")
         if mode == "daemon":
             interval = config.get("monitoring", {}).get("interval_seconds", 300)
             logger.info("Starting in daemon mode (interval: %ds)", interval)

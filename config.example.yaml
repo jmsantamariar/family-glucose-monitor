@@ -14,6 +14,15 @@ alerts:
   messages:
     low: "⚠️ {patient_name}: glucosa en {value} mg/dL {trend} — BAJA"
     high: "⚠️ {patient_name}: glucosa en {value} mg/dL {trend} — ALTA"
+  trend:
+    enabled: true
+    low_approaching_threshold: 100   # Alert if below this AND falling
+    high_approaching_threshold: 150  # Alert if above this AND rising
+    messages:
+      falling_fast: "🔻 {patient_name}: glucosa en {value} mg/dL {trend} — BAJANDO RÁPIDO"
+      falling: "📉 {patient_name}: glucosa en {value} mg/dL {trend} — bajando, posible hipo"
+      rising_fast: "🔺 {patient_name}: glucosa en {value} mg/dL {trend} — SUBIENDO RÁPIDO"
+      rising: "📈 {patient_name}: glucosa en {value} mg/dL {trend} — subiendo, posible hiper"
 
 outputs:
   - type: telegram
@@ -37,6 +46,11 @@ outputs:
 monitoring:
   mode: "cron"
   interval_seconds: 300
+
+dashboard:
+  enabled: true
+  host: "0.0.0.0"
+  port: 8080
 
 logging:
   level: "INFO"
