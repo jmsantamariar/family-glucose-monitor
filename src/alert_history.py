@@ -23,12 +23,19 @@ CREATE TABLE IF NOT EXISTS alerts (
 );
 """
 
+_CREATE_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alerts(timestamp);",
+    "CREATE INDEX IF NOT EXISTS idx_alerts_patient_timestamp ON alerts(patient_id, timestamp);",
+]
+
 
 def init_db(db_path: str) -> None:
-    """Create the alerts table if it does not already exist."""
+    """Create the alerts table and supporting indexes if they do not already exist."""
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(db_path) as conn:
         conn.execute(_CREATE_TABLE)
+        for idx_sql in _CREATE_INDEXES:
+            conn.execute(idx_sql)
         conn.commit()
     logger.debug("Alert history DB initialised at %s", db_path)
 

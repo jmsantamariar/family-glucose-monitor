@@ -327,6 +327,40 @@ def test_full_mode_requires_enabled_output():
     assert any("output" in e.lower() for e in errors)
 
 
+def test_dashboard_mode_allows_empty_outputs():
+    """dashboard mode does not need enabled outputs (no alerting)."""
+    cfg = _valid_config()
+    cfg["outputs"] = []
+    cfg["monitoring"] = {"mode": "dashboard", "interval_seconds": 300}
+    errors = validate_config(cfg)
+    assert not any("output" in e.lower() for e in errors)
+
+
+def test_dashboard_mode_allows_all_disabled_outputs():
+    """dashboard mode accepts an all-disabled outputs list."""
+    cfg = _valid_config()
+    cfg["outputs"] = [{"type": "telegram", "enabled": False, "bot_token": "", "chat_id": ""}]
+    cfg["monitoring"] = {"mode": "dashboard", "interval_seconds": 300}
+    errors = validate_config(cfg)
+    assert not any("output" in e.lower() for e in errors)
+
+
+def test_daemon_mode_requires_enabled_output():
+    cfg = _valid_config()
+    cfg["outputs"] = []
+    cfg["monitoring"] = {"mode": "daemon", "interval_seconds": 300}
+    errors = validate_config(cfg)
+    assert any("output" in e.lower() for e in errors)
+
+
+def test_full_mode_requires_enabled_output():
+    cfg = _valid_config()
+    cfg["outputs"] = []
+    cfg["monitoring"] = {"mode": "full", "interval_seconds": 300}
+    errors = validate_config(cfg)
+    assert any("output" in e.lower() for e in errors)
+
+
 def test_unknown_output_type():
     cfg = _valid_config()
     cfg["outputs"].append({"type": "sms", "enabled": True})
@@ -418,52 +452,177 @@ def test_trend_section_omitted_is_valid():
 
 
 # ---------------------------------------------------------------------------
-# monitoring.mode section
+# monitoring.mode validation
 # ---------------------------------------------------------------------------
 
-def test_monitoring_mode_cron_is_valid():
+def test_monitoring_mode_unknown():
     cfg = _valid_config()
-    cfg["monitoring"] = {"mode": "cron", "interval_seconds": 300}
-    assert validate_config(cfg) == []
-
-
-def test_monitoring_mode_daemon_is_valid():
-    cfg = _valid_config()
-    cfg["monitoring"] = {"mode": "daemon", "interval_seconds": 300}
-    assert validate_config(cfg) == []
-
-
-def test_monitoring_mode_full_is_valid():
-    cfg = _valid_config()
-    cfg["monitoring"] = {"mode": "full", "interval_seconds": 300}
-    assert validate_config(cfg) == []
-
-
-def test_monitoring_mode_dashboard_is_valid():
-    cfg = _valid_config()
-    cfg["outputs"] = []
-    cfg["monitoring"] = {"mode": "dashboard", "interval_seconds": 300}
-    assert validate_config(cfg) == []
-
-
-def test_monitoring_mode_invalid_rejected():
-    cfg = _valid_config()
-    cfg["monitoring"] = {"mode": "batch", "interval_seconds": 300}
+    cfg["monitoring"] = {"mode": "typo_mode"}
     errors = validate_config(cfg)
     assert any("monitoring.mode" in e for e in errors)
 
 
-def test_monitoring_mode_typo_rejected():
+def test_monitoring_mode_not_a_string():
     cfg = _valid_config()
-    cfg["monitoring"] = {"mode": "cronnn", "interval_seconds": 300}
+    cfg["monitoring"] = {"mode": 42}
     errors = validate_config(cfg)
     assert any("monitoring.mode" in e for e in errors)
 
 
-def test_monitoring_mode_none_defaults_to_cron_behavior():
-    """If monitoring section is absent, cron mode applies and outputs are required."""
+def test_monitoring_mode_cron_valid():
     cfg = _valid_config()
-    cfg.pop("monitoring", None)
+    cfg["monitoring"] = {"mode": "cron"}
+    assert validate_config(cfg) == []
+
+
+def test_monitoring_mode_daemon_valid():
+    cfg = _valid_config()
+    cfg["monitoring"] = {"mode": "daemon"}
+    assert validate_config(cfg) == []
+
+
+def test_monitoring_mode_dashboard_no_outputs_valid():
+    cfg = _valid_config()
+    cfg["monitoring"] = {"mode": "dashboard"}
     cfg["outputs"] = []
+    assert validate_config(cfg) == []
+
+
+def test_monitoring_mode_full_valid():
+    cfg = _valid_config()
+    cfg["monitoring"] = {"mode": "full"}
+    assert validate_config(cfg) == []
+
+
+def test_monitoring_not_a_dict():
+    cfg = _valid_config()
+    cfg["monitoring"] = "cron"
     errors = validate_config(cfg)
-    assert any("output" in e.lower() for e in errors)
+    assert any("monitoring" in e for e in errors)
+
+
+# ---------------------------------------------------------------------------
+# Per-channel required field validation
+# ---------------------------------------------------------------------------
+
+# -- telegram --
+
+def test_telegram_enabled_missing_bot_token():
+    cfg = _valid_config()
+    cfg["outputs"] = [{"type": "telegram", "enabled": True, "bot_token": "", "chat_id": "123"}]
+    errors = validate_config(cfg)
+    assert any("bot_token" in e for e in errors)
+
+
+def test_telegram_enabled_missing_chat_id():
+    cfg = _valid_config()
+    cfg["outputs"] = [{"type": "telegram", "enabled": True, "bot_token": "tok", "chat_id": ""}]
+    errors = validate_config(cfg)
+    assert any("chat_id" in e for e in errors)
+
+
+def test_telegram_enabled_both_fields_present():
+    cfg = _valid_config()
+    cfg["outputs"] = [{"type": "telegram", "enabled": True, "bot_token": "tok", "chat_id": "123"}]
+    assert validate_config(cfg) == []
+
+
+def test_telegram_disabled_missing_fields_is_valid():
+    cfg = _valid_config()
+    cfg["outputs"] = [
+        {"type": "telegram", "enabled": True, "bot_token": "tok", "chat_id": "123"},
+        {"type": "telegram", "enabled": False, "bot_token": "", "chat_id": ""},
+    ]
+    assert validate_config(cfg) == []
+
+
+# -- webhook --
+
+def test_webhook_enabled_missing_url():
+    cfg = _valid_config()
+    cfg["outputs"] = [
+        {"type": "telegram", "enabled": True, "bot_token": "tok", "chat_id": "123"},
+        {"type": "webhook", "enabled": True, "url": ""},
+    ]
+    errors = validate_config(cfg)
+    assert any("url" in e for e in errors)
+
+
+def test_webhook_enabled_url_present():
+    cfg = _valid_config()
+    cfg["outputs"] = [{"type": "webhook", "enabled": True, "url": "https://example.com/hook"}]
+    assert validate_config(cfg) == []
+
+
+def test_webhook_disabled_missing_url_is_valid():
+    cfg = _valid_config()
+    cfg["outputs"] = [
+        {"type": "telegram", "enabled": True, "bot_token": "tok", "chat_id": "123"},
+        {"type": "webhook", "enabled": False, "url": ""},
+    ]
+    assert validate_config(cfg) == []
+
+
+# -- whatsapp --
+
+def test_whatsapp_enabled_missing_phone_number_id(monkeypatch):
+    monkeypatch.delenv("WHATSAPP_ACCESS_TOKEN", raising=False)
+    cfg = _valid_config()
+    cfg["outputs"] = [
+        {
+            "type": "whatsapp", "enabled": True,
+            "phone_number_id": "", "access_token": "token", "recipient": "+1234",
+        }
+    ]
+    errors = validate_config(cfg)
+    assert any("phone_number_id" in e for e in errors)
+
+
+def test_whatsapp_enabled_missing_recipient(monkeypatch):
+    monkeypatch.delenv("WHATSAPP_ACCESS_TOKEN", raising=False)
+    cfg = _valid_config()
+    cfg["outputs"] = [
+        {
+            "type": "whatsapp", "enabled": True,
+            "phone_number_id": "123", "access_token": "token", "recipient": "",
+        }
+    ]
+    errors = validate_config(cfg)
+    assert any("recipient" in e for e in errors)
+
+
+def test_whatsapp_enabled_missing_access_token_no_env(monkeypatch):
+    monkeypatch.delenv("WHATSAPP_ACCESS_TOKEN", raising=False)
+    cfg = _valid_config()
+    cfg["outputs"] = [
+        {
+            "type": "whatsapp", "enabled": True,
+            "phone_number_id": "123", "access_token": "", "recipient": "+1234",
+        }
+    ]
+    errors = validate_config(cfg)
+    assert any("access_token" in e for e in errors)
+
+
+def test_whatsapp_enabled_access_token_via_env(monkeypatch):
+    monkeypatch.setenv("WHATSAPP_ACCESS_TOKEN", "env_token")
+    cfg = _valid_config()
+    cfg["outputs"] = [
+        {
+            "type": "whatsapp", "enabled": True,
+            "phone_number_id": "123", "access_token": "", "recipient": "+1234",
+        }
+    ]
+    assert validate_config(cfg) == []
+
+
+def test_whatsapp_enabled_all_fields_present(monkeypatch):
+    monkeypatch.delenv("WHATSAPP_ACCESS_TOKEN", raising=False)
+    cfg = _valid_config()
+    cfg["outputs"] = [
+        {
+            "type": "whatsapp", "enabled": True,
+            "phone_number_id": "123", "access_token": "tok", "recipient": "+1234",
+        }
+    ]
+    assert validate_config(cfg) == []

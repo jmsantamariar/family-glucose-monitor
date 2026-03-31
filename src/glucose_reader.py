@@ -30,8 +30,8 @@ def _build_client(email: str, password: str, region: str) -> PyLibreLinkUp:
     try:
         client.authenticate()
     except RedirectError as e:
-        logger.info("Redirect to region %s, re-authenticating", e.api_url)
-        client = PyLibreLinkUp(email=email, password=password, api_url=e.api_url)
+        logger.info("Redirect to region %s, re-authenticating", e.region)
+        client = PyLibreLinkUp(email=email, password=password, api_url=e.region)
         client.authenticate()
     return client
 
