@@ -153,4 +153,23 @@ def validate_config(config: Any) -> list[str]:
                     f"outputs[{i}].type {out_type!r} is not a recognised output type"
                 )
 
+    # --- alert_history_db (optional) ---
+    alert_history_db = config.get("alert_history_db")
+    if alert_history_db is not None and not isinstance(alert_history_db, str):
+        errors.append(
+            f"alert_history_db must be a string, got {type(alert_history_db).__name__}"
+        )
+
+    # --- alert_history_max_days (optional) ---
+    alert_history_max_days = config.get("alert_history_max_days")
+    if alert_history_max_days is not None:
+        if not isinstance(alert_history_max_days, int):
+            errors.append(
+                f"alert_history_max_days must be an integer, got {type(alert_history_max_days).__name__}"
+            )
+        elif alert_history_max_days <= 0:
+            errors.append(
+                f"alert_history_max_days must be > 0, got {alert_history_max_days}"
+            )
+
     return errors

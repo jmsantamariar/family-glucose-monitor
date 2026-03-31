@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Monitor de Glucosa Familiar</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     /* ── Reset & Variables ─────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -124,6 +125,16 @@
       margin: 0 auto;
     }
 
+    /* ── Section titles ─────────────────────────────────────────── */
+    .section-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--subtext);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin: 1.5rem 0 .75rem;
+    }
+
     /* ── Table wrapper ─────────────────────────────────────────── */
     .table-wrap {
       background: var(--surface);
@@ -230,6 +241,64 @@
     .no-data .icon { font-size: 3rem; display: block; margin-bottom: .75rem; }
     .no-data p { font-size: 1rem; }
 
+    /* ── History controls ──────────────────────────────────────── */
+    .history-controls {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: .75rem;
+      flex-wrap: wrap;
+    }
+
+    .history-controls label {
+      font-size: .88rem;
+      font-weight: 600;
+      color: var(--subtext);
+    }
+
+    .history-controls select {
+      font-size: .88rem;
+      padding: .3rem .6rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    /* ── Charts grid ───────────────────────────────────────────── */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    @media (max-width: 640px) {
+      .charts-grid { grid-template-columns: 1fr; }
+    }
+
+    .chart-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      padding: 1rem;
+    }
+
+    .chart-card h3 {
+      font-size: .85rem;
+      font-weight: 700;
+      color: var(--subtext);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      margin-bottom: .75rem;
+    }
+
+    /* ── Alert history table row colors ────────────────────────── */
+    .alert-low    { background: var(--red-bg);    color: var(--red-fg);    }
+    .alert-high   { background: var(--yellow-bg); color: var(--yellow-fg); }
+    .alert-trend  { background: var(--green-bg);  color: var(--green-fg);  }
+
     /* ── Footer ────────────────────────────────────────────────── */
     footer {
       text-align: center;
@@ -266,6 +335,7 @@
 </header>
 
 <main>
+  <!-- ── Current readings ─────────────────────────────────────── -->
   <div class="table-wrap">
     <table id="patients-table">
       <thead>
@@ -284,6 +354,60 @@
             <div class="no-data">
               <span class="icon">⏳</span>
               <p>Cargando datos…</p>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ── Alert history ────────────────────────────────────────── -->
+  <p class="section-title">Historial de alertas</p>
+
+  <div class="history-controls">
+    <label for="patient-filter">Paciente:</label>
+    <select id="patient-filter">
+      <option value="">Todos</option>
+    </select>
+    <label for="hours-filter">Últimas:</label>
+    <select id="hours-filter">
+      <option value="6">6 horas</option>
+      <option value="24" selected>24 horas</option>
+      <option value="48">48 horas</option>
+      <option value="168">7 días</option>
+    </select>
+  </div>
+
+  <!-- charts -->
+  <div class="charts-grid">
+    <div class="chart-card">
+      <h3>Alertas por hora</h3>
+      <canvas id="chart-by-hour"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>Distribución por nivel</h3>
+      <canvas id="chart-by-level"></canvas>
+    </div>
+  </div>
+
+  <!-- history table -->
+  <div class="table-wrap">
+    <table id="history-table">
+      <thead>
+        <tr>
+          <th>Hora</th>
+          <th>Paciente</th>
+          <th>Glucosa</th>
+          <th>Nivel</th>
+          <th>Mensaje</th>
+        </tr>
+      </thead>
+      <tbody id="history-body">
+        <tr>
+          <td colspan="5">
+            <div class="no-data">
+              <span class="icon">⏳</span>
+              <p>Cargando historial…</p>
             </div>
           </td>
         </tr>
@@ -336,10 +460,33 @@
     return `hace ${Math.floor(diff / 60)}h ${Math.floor(diff % 60)}m`;
   }
 
+  function formatDateTime(isoTimestamp) {
+    if (!isoTimestamp) return '—';
+    const d = new Date(isoTimestamp);
+    return d.toLocaleString('es-ES', {
+      month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit'
+    });
+  }
+
   function levelLabel(level) {
     if (level === 'low')  return 'BAJA';
     if (level === 'high') return 'ALTA';
     return 'NORMAL';
+  }
+
+  function alertLevelLabel(level) {
+    if (!level) return '—';
+    if (level === 'low')  return 'BAJA';
+    if (level === 'high') return 'ALTA';
+    if (level.startsWith('trend_')) return 'TENDENCIA';
+    return level.toUpperCase();
+  }
+
+  function alertRowClass(level) {
+    if (level === 'low')  return 'alert-low';
+    if (level === 'high') return 'alert-high';
+    return 'alert-trend';
   }
 
   function trendArrowDisplay(arrow, trendName) {
@@ -368,7 +515,7 @@
     return d.innerHTML;
   }
 
-  // ── Table update ────────────────────────────────────────────────
+  // ── Table update (current readings) ─────────────────────────────
   function updateTable(patients) {
     const tbody = document.getElementById('patients-body');
 
@@ -407,7 +554,174 @@
     }).join('');
   }
 
-  // ── Fetch & poll ────────────────────────────────────────────────
+  // ── Chart instances ──────────────────────────────────────────────
+  let chartByHour = null;
+  let chartByLevel = null;
+
+  function renderCharts(alerts) {
+    const HOUR_IN_MS = 3600000;
+
+    // Chart 1: alerts per hour (last 24h, bucketized by calendar hour)
+    // Use ISO date+hour string as bucket key to avoid collisions across days.
+    const now = Date.now();
+    const hourBuckets = {}; // key: ISO hour string, value: { label, count }
+    for (let h = 23; h >= 0; h--) {
+      const d = new Date(now - h * HOUR_IN_MS);
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}T${String(d.getHours()).padStart(2,'0')}`;
+      const label = d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+      hourBuckets[key] = { label, count: 0 };
+    }
+    alerts.forEach(a => {
+      const ts = new Date(a.timestamp);
+      const key = `${ts.getFullYear()}-${String(ts.getMonth()+1).padStart(2,'0')}-${String(ts.getDate()).padStart(2,'0')}T${String(ts.getHours()).padStart(2,'0')}`;
+      if (key in hourBuckets) hourBuckets[key].count++;
+    });
+
+    const hourLabels = Object.values(hourBuckets).map(b => b.label);
+    const hourData   = Object.values(hourBuckets).map(b => b.count);
+
+    const ctxHour = document.getElementById('chart-by-hour').getContext('2d');
+    if (chartByHour) chartByHour.destroy();
+    chartByHour = new Chart(ctxHour, {
+      type: 'bar',
+      data: {
+        labels: hourLabels,
+        datasets: [{
+          label: 'Alertas',
+          data: hourData,
+          backgroundColor: 'rgba(26, 54, 93, 0.7)',
+          borderColor: 'rgba(26, 54, 93, 1)',
+          borderWidth: 1,
+        }],
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { maxTicksLimit: 6 } },
+          y: { beginAtZero: true, ticks: { stepSize: 1 } },
+        },
+      },
+    });
+
+    // Chart 2: distribution by level
+    const levelCounts = { low: 0, high: 0, trend: 0 };
+    alerts.forEach(a => {
+      const l = a.level;
+      if (l === 'low') levelCounts.low++;
+      else if (l === 'high') levelCounts.high++;
+      else levelCounts.trend++;
+    });
+
+    const ctxLevel = document.getElementById('chart-by-level').getContext('2d');
+    if (chartByLevel) chartByLevel.destroy();
+    chartByLevel = new Chart(ctxLevel, {
+      type: 'doughnut',
+      data: {
+        labels: ['Baja', 'Alta', 'Tendencia'],
+        datasets: [{
+          data: [levelCounts.low, levelCounts.high, levelCounts.trend],
+          backgroundColor: [
+            'rgba(252, 129, 129, 0.8)',
+            'rgba(246, 224, 94, 0.8)',
+            'rgba(154, 230, 180, 0.8)',
+          ],
+          borderColor: [
+            'rgba(252, 129, 129, 1)',
+            'rgba(246, 224, 94, 1)',
+            'rgba(154, 230, 180, 1)',
+          ],
+          borderWidth: 1,
+        }],
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { position: 'bottom' },
+        },
+      },
+    });
+  }
+
+  // ── History table update ─────────────────────────────────────────
+  function updateHistory(alerts) {
+    const tbody = document.getElementById('history-body');
+
+    if (!alerts || alerts.length === 0) {
+      tbody.innerHTML = `
+        <tr><td colspan="5">
+          <div class="no-data">
+            <span class="icon">📭</span>
+            <p>Sin alertas en el período seleccionado.</p>
+          </div>
+        </td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = alerts.map(a => {
+      const rowClass = alertRowClass(a.level);
+      const dt       = escapeHtml(formatDateTime(a.timestamp));
+      const name     = escapeHtml(a.patient_name || a.patient_id);
+      const glucose  = escapeHtml(a.glucose_value);
+      const level    = escapeHtml(alertLevelLabel(a.level));
+      const msg      = escapeHtml(a.message || '—');
+      return `
+        <tr class="${rowClass}">
+          <td class="time-text">${dt}</td>
+          <td class="patient-name">${name}</td>
+          <td><span class="glucose-value" style="font-size:1.1rem">${glucose}</span><span class="glucose-unit">mg/dL</span></td>
+          <td><span class="level-badge">${level}</span></td>
+          <td style="font-size:.82rem">${msg}</td>
+        </tr>`;
+    }).join('');
+
+    renderCharts(alerts);
+  }
+
+  // ── Patient filter selector ──────────────────────────────────────
+  const _knownPatients = {};
+
+  function updatePatientFilter(alerts) {
+    alerts.forEach(a => {
+      if (a.patient_id && !_knownPatients[a.patient_id]) {
+        _knownPatients[a.patient_id] = a.patient_name || a.patient_id;
+      }
+    });
+    const select = document.getElementById('patient-filter');
+    const current = select.value;
+    // Remove all options except "Todos"
+    while (select.options.length > 1) select.remove(1);
+    Object.entries(_knownPatients).forEach(([id, name]) => {
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = name;
+      select.appendChild(opt);
+    });
+    select.value = current;
+  }
+
+  // ── Fetch history ────────────────────────────────────────────────
+  async function fetchHistory() {
+    const patientId = document.getElementById('patient-filter').value;
+    const hours     = document.getElementById('hours-filter').value;
+    let url = `/api/alerts?hours=${hours}`;
+    if (patientId) url += `&patient_id=${encodeURIComponent(patientId)}`;
+
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const alerts = await resp.json();
+      updatePatientFilter(alerts);
+      updateHistory(alerts);
+    } catch (e) {
+      console.error('Error al obtener historial:', e);
+    }
+  }
+
+  document.getElementById('patient-filter').addEventListener('change', fetchHistory);
+  document.getElementById('hours-filter').addEventListener('change', fetchHistory);
+
+  // ── Fetch & poll (current readings) ─────────────────────────────
   async function fetchPatients() {
     try {
       const resp = await fetch('/api/patients');
@@ -422,7 +736,9 @@
   }
 
   setInterval(fetchPatients, 30000);
+  setInterval(fetchHistory, 60000);
   fetchPatients();
+  fetchHistory();
 </script>
 
 </body>
