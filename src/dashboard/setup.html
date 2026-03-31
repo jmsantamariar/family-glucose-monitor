@@ -309,8 +309,20 @@
         </div>
 
         <div class="form-group">
-          <label for="password">🔒 Contraseña</label>
+          <label for="password">🔒 Contraseña de LibreLinkUp</label>
           <input type="password" id="password" placeholder="••••••••" autocomplete="new-password" required />
+        </div>
+
+        <hr style="margin:1.2rem 0;border:none;border-top:1px solid var(--border,#e2e8f0);" />
+        <p class="hint">
+          Elige también una contraseña <strong>para el panel de control</strong>.
+          Puede ser diferente a tu contraseña de LibreLinkUp y se almacenará
+          derivada con hash (PBKDF2) en <code>config.yaml</code>.
+        </p>
+
+        <div class="form-group">
+          <label for="dashboardPassword">🛡️ Contraseña del panel de control</label>
+          <input type="password" id="dashboardPassword" placeholder="••••••••" autocomplete="new-password" required />
         </div>
 
         <div class="btn-row">
@@ -444,12 +456,14 @@
       if (step === 1) {
         const email = document.getElementById('email').value.trim();
         const password = document.getElementById('password').value;
+        const dashboardPassword = document.getElementById('dashboardPassword').value;
         if (!email) { showAlert('Por favor ingresa tu email.', 'error'); return false; }
         const emailInput = document.getElementById('email');
         if (!emailInput.checkValidity()) {
           showAlert('El email no tiene un formato válido.', 'error'); return false;
         }
-        if (!password) { showAlert('Por favor ingresa tu contraseña.', 'error'); return false; }
+        if (!password) { showAlert('Por favor ingresa tu contraseña de LibreLinkUp.', 'error'); return false; }
+        if (!dashboardPassword) { showAlert('Por favor ingresa la contraseña del panel de control.', 'error'); return false; }
       }
       if (step === 2) {
         const low = parseInt(document.getElementById('lowThreshold').value, 10);
@@ -500,6 +514,7 @@
       const payload = {
         email: document.getElementById('email').value.trim(),
         password: document.getElementById('password').value,
+        dashboard_password: document.getElementById('dashboardPassword').value,
         low_threshold: parseInt(document.getElementById('lowThreshold').value, 10),
         high_threshold: parseInt(document.getElementById('highThreshold').value, 10),
         cooldown_minutes: parseInt(document.getElementById('cooldown').value, 10),
