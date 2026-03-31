@@ -465,3 +465,130 @@ def test_monitoring_not_a_dict():
     cfg["monitoring"] = "cron"
     errors = validate_config(cfg)
     assert any("monitoring" in e for e in errors)
+
+
+# ---------------------------------------------------------------------------
+# Per-channel required field validation
+# ---------------------------------------------------------------------------
+
+# -- telegram --
+
+def test_telegram_enabled_missing_bot_token():
+    cfg = _valid_config()
+    cfg["outputs"] = [{"type": "telegram", "enabled": True, "bot_token": "", "chat_id": "123"}]
+    errors = validate_config(cfg)
+    assert any("bot_token" in e for e in errors)
+
+
+def test_telegram_enabled_missing_chat_id():
+    cfg = _valid_config()
+    cfg["outputs"] = [{"type": "telegram", "enabled": True, "bot_token": "tok", "chat_id": ""}]
+    errors = validate_config(cfg)
+    assert any("chat_id" in e for e in errors)
+
+
+def test_telegram_enabled_both_fields_present():
+    cfg = _valid_config()
+    cfg["outputs"] = [{"type": "telegram", "enabled": True, "bot_token": "tok", "chat_id": "123"}]
+    assert validate_config(cfg) == []
+
+
+def test_telegram_disabled_missing_fields_is_valid():
+    cfg = _valid_config()
+    cfg["outputs"] = [
+        {"type": "telegram", "enabled": True, "bot_token": "tok", "chat_id": "123"},
+        {"type": "telegram", "enabled": False, "bot_token": "", "chat_id": ""},
+    ]
+    assert validate_config(cfg) == []
+
+
+# -- webhook --
+
+def test_webhook_enabled_missing_url():
+    cfg = _valid_config()
+    cfg["outputs"] = [
+        {"type": "telegram", "enabled": True, "bot_token": "tok", "chat_id": "123"},
+        {"type": "webhook", "enabled": True, "url": ""},
+    ]
+    errors = validate_config(cfg)
+    assert any("url" in e for e in errors)
+
+
+def test_webhook_enabled_url_present():
+    cfg = _valid_config()
+    cfg["outputs"] = [{"type": "webhook", "enabled": True, "url": "https://example.com/hook"}]
+    assert validate_config(cfg) == []
+
+
+def test_webhook_disabled_missing_url_is_valid():
+    cfg = _valid_config()
+    cfg["outputs"] = [
+        {"type": "telegram", "enabled": True, "bot_token": "tok", "chat_id": "123"},
+        {"type": "webhook", "enabled": False, "url": ""},
+    ]
+    assert validate_config(cfg) == []
+
+
+# -- whatsapp --
+
+def test_whatsapp_enabled_missing_phone_number_id(monkeypatch):
+    monkeypatch.delenv("WHATSAPP_ACCESS_TOKEN", raising=False)
+    cfg = _valid_config()
+    cfg["outputs"] = [
+        {
+            "type": "whatsapp", "enabled": True,
+            "phone_number_id": "", "access_token": "token", "recipient": "+1234",
+        }
+    ]
+    errors = validate_config(cfg)
+    assert any("phone_number_id" in e for e in errors)
+
+
+def test_whatsapp_enabled_missing_recipient(monkeypatch):
+    monkeypatch.delenv("WHATSAPP_ACCESS_TOKEN", raising=False)
+    cfg = _valid_config()
+    cfg["outputs"] = [
+        {
+            "type": "whatsapp", "enabled": True,
+            "phone_number_id": "123", "access_token": "token", "recipient": "",
+        }
+    ]
+    errors = validate_config(cfg)
+    assert any("recipient" in e for e in errors)
+
+
+def test_whatsapp_enabled_missing_access_token_no_env(monkeypatch):
+    monkeypatch.delenv("WHATSAPP_ACCESS_TOKEN", raising=False)
+    cfg = _valid_config()
+    cfg["outputs"] = [
+        {
+            "type": "whatsapp", "enabled": True,
+            "phone_number_id": "123", "access_token": "", "recipient": "+1234",
+        }
+    ]
+    errors = validate_config(cfg)
+    assert any("access_token" in e for e in errors)
+
+
+def test_whatsapp_enabled_access_token_via_env(monkeypatch):
+    monkeypatch.setenv("WHATSAPP_ACCESS_TOKEN", "env_token")
+    cfg = _valid_config()
+    cfg["outputs"] = [
+        {
+            "type": "whatsapp", "enabled": True,
+            "phone_number_id": "123", "access_token": "", "recipient": "+1234",
+        }
+    ]
+    assert validate_config(cfg) == []
+
+
+def test_whatsapp_enabled_all_fields_present(monkeypatch):
+    monkeypatch.delenv("WHATSAPP_ACCESS_TOKEN", raising=False)
+    cfg = _valid_config()
+    cfg["outputs"] = [
+        {
+            "type": "whatsapp", "enabled": True,
+            "phone_number_id": "123", "access_token": "tok", "recipient": "+1234",
+        }
+    ]
+    assert validate_config(cfg) == []
