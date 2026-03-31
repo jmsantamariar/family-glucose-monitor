@@ -9,11 +9,12 @@ from pathlib import Path
 from typing import Optional
 
 import yaml
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from src import alert_engine
 from src.alert_history import get_alerts
+from src.auth import is_configured, session_manager, verify_credentials
 from src.glucose_reader import read_all_patients
 
 logger = logging.getLogger(__name__)
@@ -47,6 +48,35 @@ async def lifespan(application: "FastAPI"):
 
 
 app = FastAPI(title="Family Glucose Monitor", version="1.0.0", lifespan=lifespan)
+
+# ── Authentication middleware ─────────────────────────────────────────────────
+
+_AUTH_EXEMPT_PATHS = {
+    "/api/setup",
+    "/api/login",
+    "/api/setup/status",
+    "/api/logout",
+    "/login",
+    "/setup",
+}
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """Enforce session authentication on all protected routes."""
+    if os.environ.get("AUTH_DISABLED") == "1":
+        return await call_next(request)
+
+    if request.url.path in _AUTH_EXEMPT_PATHS:
+        return await call_next(request)
+
+    token = request.cookies.get("session_token")
+    if session_manager.is_valid(token):
+        return await call_next(request)
+
+    if is_configured():
+        return RedirectResponse(url="/login", status_code=302)
+    return RedirectResponse(url="/setup", status_code=302)
 
 
 def _poll_loop(interval: int):
@@ -133,3 +163,208 @@ def dashboard():
     if not html_path.exists():
         raise HTTPException(status_code=500, detail="Dashboard HTML not found")
     return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+
+
+# ── Auth / Setup routes ───────────────────────────────────────────────────────
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page():
+    """Serve the login page. Redirects to /setup if not yet configured."""
+    if not is_configured():
+        return RedirectResponse(url="/setup", status_code=302)
+    html_path = Path(__file__).parent / "dashboard" / "login.html"
+    if not html_path.exists():
+        raise HTTPException(status_code=500, detail="Login HTML not found")
+    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+
+
+@app.get("/setup", response_class=HTMLResponse)
+def setup_page():
+    """Serve the setup wizard page."""
+    html_path = Path(__file__).parent / "dashboard" / "setup.html"
+    if not html_path.exists():
+        raise HTTPException(status_code=500, detail="Setup HTML not found")
+    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+
+
+@app.get("/api/setup/status", response_class=JSONResponse)
+def setup_status():
+    """Return whether the system has already been configured."""
+    return {"configured": is_configured()}
+
+
+@app.post("/api/login", response_class=JSONResponse)
+async def api_login(request: Request, response: Response):
+    """Validate credentials against config.yaml and issue a session cookie."""
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON inválido")
+
+    email = str(data.get("email", ""))
+    password = str(data.get("password", ""))
+
+    if not verify_credentials(email, password):
+        raise HTTPException(status_code=401, detail="Credenciales incorrectas")
+
+    token = session_manager.create_session()
+    response.set_cookie(
+        key="session_token",
+        value=token,
+        httponly=True,
+        max_age=86400,
+        samesite="lax",
+    )
+    return {"success": True}
+
+
+@app.post("/api/logout", response_class=JSONResponse)
+async def api_logout(request: Request, response: Response):
+    """Invalidate the current session."""
+    token = request.cookies.get("session_token")
+    if token:
+        session_manager.invalidate(token)
+    response.delete_cookie("session_token")
+    return {"success": True}
+
+
+@app.post("/api/setup", response_class=JSONResponse)
+async def api_setup(request: Request, response: Response):
+    """Receive wizard data, write config.yaml, and issue a session cookie."""
+    global _config
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON inválido")
+
+    email = str(data.get("email", "")).strip()
+    password = str(data.get("password", "")).strip()
+    if not email or not password:
+        raise HTTPException(
+            status_code=422, detail="Email y contraseña son obligatorios"
+        )
+
+    try:
+        low_threshold = int(data.get("low_threshold", 70))
+        high_threshold = int(data.get("high_threshold", 180))
+        cooldown_minutes = int(data.get("cooldown_minutes", 30))
+        max_reading_age_minutes = int(data.get("max_reading_age_minutes", 15))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="Umbrales deben ser números")
+
+    if low_threshold >= high_threshold:
+        raise HTTPException(
+            status_code=422,
+            detail="El umbral bajo debe ser menor que el umbral alto",
+        )
+
+    # Build outputs list
+    notification_type = data.get("notification_type", "none")
+    outputs: list[dict] = []
+
+    if notification_type == "telegram":
+        outputs.append(
+            {
+                "type": "telegram",
+                "enabled": True,
+                "bot_token": str(data.get("telegram_bot_token", "")),
+                "chat_id": str(data.get("telegram_chat_id", "")),
+            }
+        )
+    elif notification_type == "webhook":
+        outputs.append(
+            {
+                "type": "webhook",
+                "enabled": True,
+                "url": str(data.get("webhook_url", "")),
+                "token": "",
+                "device": "",
+                "language": "es-MX",
+            }
+        )
+    elif notification_type == "whatsapp":
+        outputs.append(
+            {
+                "type": "whatsapp",
+                "enabled": True,
+                "phone_number_id": str(data.get("whatsapp_phone_number_id", "")),
+                "access_token": str(data.get("whatsapp_access_token", "")),
+                "recipient": str(data.get("whatsapp_recipient", "")),
+                "template_name": "glucose_alert",
+                "language_code": "es_MX",
+            }
+        )
+    else:
+        # No notifications selected — add a disabled telegram placeholder
+        outputs.append(
+            {
+                "type": "telegram",
+                "enabled": False,
+                "bot_token": "",
+                "chat_id": "",
+            }
+        )
+
+    config_dict = {
+        "librelinkup": {
+            "email": email,
+            "password": password,
+            "region": "EU",
+        },
+        "alerts": {
+            "low_threshold": low_threshold,
+            "high_threshold": high_threshold,
+            "cooldown_minutes": cooldown_minutes,
+            "max_reading_age_minutes": max_reading_age_minutes,
+            "messages": {
+                "low": "⚠️ {patient_name}: glucosa en {value} mg/dL {trend} — BAJA",
+                "high": "⚠️ {patient_name}: glucosa en {value} mg/dL {trend} — ALTA",
+            },
+            "trend": {
+                "enabled": True,
+                "low_approaching_threshold": 100,
+                "high_approaching_threshold": 150,
+                "messages": {
+                    "falling_fast": "🔻 {patient_name}: glucosa en {value} mg/dL {trend} — BAJANDO RÁPIDO",
+                    "falling": "📉 {patient_name}: glucosa en {value} mg/dL {trend} — bajando, posible hipo",
+                    "rising_fast": "🔺 {patient_name}: glucosa en {value} mg/dL {trend} — SUBIENDO RÁPIDO",
+                    "rising": "📈 {patient_name}: glucosa en {value} mg/dL {trend} — subiendo, posible hiper",
+                },
+            },
+        },
+        "outputs": outputs,
+        "monitoring": {
+            "mode": "cron",
+            "interval_seconds": 300,
+        },
+        "dashboard": {
+            "enabled": True,
+            "host": "0.0.0.0",
+            "port": 8080,
+        },
+        "logging": {
+            "level": "INFO",
+            "file": "",
+        },
+        "state_file": "state.json",
+        "lock_file": "/tmp/family-glucose-monitor.lock",
+        "alert_history_db": "alert_history.db",
+        "alert_history_max_days": 7,
+    }
+
+    config_path = PROJECT_ROOT / "config.yaml"
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.dump(config_dict, f, allow_unicode=True, default_flow_style=False)
+
+    # Reload internal config
+    _config = config_dict
+
+    token = session_manager.create_session()
+    response.set_cookie(
+        key="session_token",
+        value=token,
+        httponly=True,
+        max_age=86400,
+        samesite="lax",
+    )
+    return {"success": True}

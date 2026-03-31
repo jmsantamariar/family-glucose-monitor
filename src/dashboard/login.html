@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Iniciar sesión — Monitor de Glucosa Familiar</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #f0f4f8;
+      --surface:   #ffffff;
+      --text:      #1a202c;
+      --subtext:   #4a5568;
+      --border:    #e2e8f0;
+      --header-bg: #1a365d;
+      --header-fg: #ffffff;
+      --accent:    #2b6cb0;
+      --accent-hover: #2c5282;
+      --error-bg:  #fed7d7;
+      --error-fg:  #742a2a;
+      --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      --radius: 10px;
+      --shadow: 0 2px 8px rgba(0,0,0,.08);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg:        #0d1117;
+        --surface:   #161b22;
+        --text:      #e2e8f0;
+        --subtext:   #a0aec0;
+        --border:    #2d3748;
+        --header-bg: #0d1b2e;
+        --accent:    #4299e1;
+        --accent-hover: #63b3ed;
+        --error-bg:  #3b1515;
+        --error-fg:  #feb2b2;
+      }
+    }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: var(--header-bg);
+      color: var(--header-fg);
+      padding: 1rem 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      box-shadow: 0 2px 10px rgba(0,0,0,.3);
+    }
+
+    header h1 {
+      font-size: 1.2rem;
+      font-weight: 700;
+    }
+
+    .main {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 2rem;
+      width: 100%;
+      max-width: 420px;
+    }
+
+    .card h2 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: .4rem;
+    }
+
+    .card p.subtitle {
+      color: var(--subtext);
+      font-size: .9rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .form-group {
+      margin-bottom: 1.2rem;
+    }
+
+    label {
+      display: block;
+      font-size: .9rem;
+      font-weight: 600;
+      margin-bottom: .4rem;
+    }
+
+    input[type="email"],
+    input[type="password"] {
+      width: 100%;
+      padding: .6rem .85rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 1rem;
+      font-family: var(--font);
+      outline: none;
+      transition: border-color .15s;
+    }
+
+    input:focus {
+      border-color: var(--accent);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      padding: .65rem 1.4rem;
+      border: none;
+      border-radius: 6px;
+      font-size: 1rem;
+      font-family: var(--font);
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s, opacity .15s;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      width: 100%;
+      justify-content: center;
+    }
+
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-primary:disabled { opacity: .6; cursor: default; }
+
+    .error-box {
+      display: none;
+      background: var(--error-bg);
+      color: var(--error-fg);
+      border-radius: 6px;
+      padding: .65rem 1rem;
+      font-size: .9rem;
+      margin-bottom: 1rem;
+    }
+
+    .footer-link {
+      text-align: center;
+      margin-top: 1.25rem;
+      font-size: .85rem;
+      color: var(--subtext);
+    }
+
+    .footer-link a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .footer-link a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <header>
+    <span style="font-size:1.6rem">👨‍👩‍👦</span>
+    <h1>Monitor de Glucosa Familiar</h1>
+  </header>
+
+  <main class="main">
+    <div class="card">
+      <h2>🔑 Iniciar sesión</h2>
+      <p class="subtitle">Ingresa tus credenciales de LibreLinkUp para acceder al monitor.</p>
+
+      <div id="errorBox" class="error-box" role="alert"></div>
+
+      <form id="loginForm" novalidate>
+        <div class="form-group">
+          <label for="email">📧 Email de LibreLinkUp</label>
+          <input
+            type="email"
+            id="email"
+            name="email"
+            placeholder="tu@email.com"
+            autocomplete="email"
+            required
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="password">🔒 Contraseña</label>
+          <input
+            type="password"
+            id="password"
+            name="password"
+            placeholder="••••••••"
+            autocomplete="current-password"
+            required
+          />
+        </div>
+
+        <button type="submit" class="btn btn-primary" id="submitBtn">
+          Entrar →
+        </button>
+      </form>
+
+      <div class="footer-link">
+        ¿Primera vez? <a href="/setup">Configurar el monitor</a>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const form = document.getElementById('loginForm');
+    const errorBox = document.getElementById('errorBox');
+    const submitBtn = document.getElementById('submitBtn');
+
+    function showError(msg) {
+      errorBox.textContent = msg;
+      errorBox.style.display = 'block';
+    }
+
+    function hideError() {
+      errorBox.style.display = 'none';
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideError();
+
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+
+      if (!email || !password) {
+        showError('Por favor completa todos los campos.');
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Verificando…';
+
+      try {
+        const res = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+
+        if (res.ok) {
+          window.location.href = '/';
+        } else {
+          const data = await res.json().catch(() => ({}));
+          showError(data.detail || 'Credenciales incorrectas. Inténtalo de nuevo.');
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Entrar →';
+        }
+      } catch {
+        showError('Error de conexión. Comprueba que el servidor está activo.');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Entrar →';
+      }
+    });
+  </script>
+</body>
+</html>
