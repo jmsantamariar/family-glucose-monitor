@@ -1,4 +1,30 @@
-"""FastAPI REST API server for external consumption (widgets, dashboards, etc.)."""
+"""FastAPI REST API server for external consumption (widgets, dashboards, etc.).
+
+This module provides the **external read-only API** whose routes are distinct
+from the authenticated dashboard served by ``src/api.py``:
+
+* ``src/api.py``        — Authenticated internal dashboard (login, setup, patient
+                          cache, alert history).  Runs on the dashboard port
+                          (default 8080).  All routes require a session cookie.
+* ``src/api_server.py`` — Unauthenticated external read-only REST API backed by
+                          the ``readings_cache.json`` file written by the polling
+                          daemon.  Intended for widgets, Home Assistant, or other
+                          local integrations.  Runs on a separate port (default
+                          8081, configurable).
+
+Route contracts are intentionally different:
+
+* ``/api/health`` here returns ``patient_count`` / ``updated_at`` /
+  ``cache_age_seconds`` (file-cache freshness).
+* ``/api/health`` in ``api.py`` returns ``patients_monitored`` / ``timestamp``
+  (in-memory cache snapshot).
+
+CORS origins are restricted by default.  Set the ``CORS_ALLOWED_ORIGINS``
+environment variable to a comma-separated list of allowed origins when the API
+needs to be reached from a browser on a different origin, e.g.::
+
+    CORS_ALLOWED_ORIGINS=http://localhost:3000,https://dashboard.example.com
+"""
 import json
 import logging
 import os
@@ -26,9 +52,16 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# ---------------------------------------------------------------------------
+# CORS — restricted by default to protect health data.
+# Override via the CORS_ALLOWED_ORIGINS environment variable.
+# ---------------------------------------------------------------------------
+_cors_origins_raw = os.environ.get("CORS_ALLOWED_ORIGINS", "")
+_cors_origins: list[str] = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_methods=["GET"],
     allow_headers=["*"],
 )
