@@ -157,6 +157,34 @@ def validate_config(config: Any) -> list[str]:
                     f"outputs[{i}].type {out_type!r} is not a recognised output type"
                 )
 
+    # --- dashboard_auth section ---
+    # Required when the dashboard is used (i.e. always, since the setup wizard
+    # creates this section).  Validates presence and basic PBKDF2 hash format.
+    dash_auth = config.get("dashboard_auth")
+    if not isinstance(dash_auth, dict):
+        errors.append(
+            "Missing required section: dashboard_auth "
+            "(username and password_hash for the web dashboard)"
+        )
+    else:
+        da_username = dash_auth.get("username")
+        if not da_username or not isinstance(da_username, str) or not da_username.strip():
+            errors.append("dashboard_auth.username is required and must be a non-empty string")
+
+        da_hash = dash_auth.get("password_hash")
+        if not da_hash or not isinstance(da_hash, str) or not da_hash.strip():
+            errors.append(
+                "dashboard_auth.password_hash is required and must be a non-empty string"
+            )
+        else:
+            # Validate the PBKDF2 hash format: pbkdf2:sha256:<iter>:<salt_hex>:<key_hex>
+            parts = da_hash.split(":")
+            if len(parts) != 5 or parts[0] != "pbkdf2" or parts[1] != "sha256":
+                errors.append(
+                    "dashboard_auth.password_hash has an invalid format; "
+                    "expected 'pbkdf2:sha256:<iterations>:<salt_hex>:<key_hex>'"
+                )
+
     # --- alert_history_db (optional) ---
     alert_history_db = config.get("alert_history_db")
     if alert_history_db is not None and not isinstance(alert_history_db, str):

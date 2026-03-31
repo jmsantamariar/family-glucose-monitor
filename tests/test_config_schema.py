@@ -17,6 +17,10 @@ def _valid_config():
             "password": "secret",
             "region": "EU",
         },
+        "dashboard_auth": {
+            "username": "user@example.com",
+            "password_hash": "pbkdf2:sha256:260000:aabbcc:ddeeff",
+        },
         "alerts": {
             "low_threshold": 70,
             "high_threshold": 180,
@@ -104,6 +108,65 @@ def test_valid_password_via_env(monkeypatch):
     cfg["librelinkup"]["password"] = ""
     errors = validate_config(cfg)
     assert not any("password" in e for e in errors)
+
+
+# ---------------------------------------------------------------------------
+# dashboard_auth section
+# ---------------------------------------------------------------------------
+
+def test_missing_dashboard_auth_section():
+    cfg = _valid_config()
+    del cfg["dashboard_auth"]
+    errors = validate_config(cfg)
+    assert any("dashboard_auth" in e for e in errors)
+
+
+def test_dashboard_auth_not_a_dict():
+    cfg = _valid_config()
+    cfg["dashboard_auth"] = "admin:secret"
+    errors = validate_config(cfg)
+    assert any("dashboard_auth" in e for e in errors)
+
+
+def test_dashboard_auth_missing_username():
+    cfg = _valid_config()
+    del cfg["dashboard_auth"]["username"]
+    errors = validate_config(cfg)
+    assert any("username" in e for e in errors)
+
+
+def test_dashboard_auth_empty_username():
+    cfg = _valid_config()
+    cfg["dashboard_auth"]["username"] = "   "
+    errors = validate_config(cfg)
+    assert any("username" in e for e in errors)
+
+
+def test_dashboard_auth_missing_password_hash():
+    cfg = _valid_config()
+    del cfg["dashboard_auth"]["password_hash"]
+    errors = validate_config(cfg)
+    assert any("password_hash" in e for e in errors)
+
+
+def test_dashboard_auth_empty_password_hash():
+    cfg = _valid_config()
+    cfg["dashboard_auth"]["password_hash"] = ""
+    errors = validate_config(cfg)
+    assert any("password_hash" in e for e in errors)
+
+
+def test_dashboard_auth_invalid_hash_format():
+    cfg = _valid_config()
+    cfg["dashboard_auth"]["password_hash"] = "plaintext_password"
+    errors = validate_config(cfg)
+    assert any("password_hash" in e for e in errors)
+
+
+def test_dashboard_auth_valid():
+    cfg = _valid_config()
+    errors = validate_config(cfg)
+    assert errors == []
 
 
 # ---------------------------------------------------------------------------
