@@ -13,3 +13,5 @@ build/
 coverage.xml
 htmlcov/
 readings_cache.json
+*.db
+alert_history.db
