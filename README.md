@@ -279,6 +279,43 @@ api:
 
 ---
 
+## 🖥️ Dashboard
+
+El sistema incluye un dashboard web en tiempo real que muestra el estado de todos los pacientes monitoreados.
+
+### Características del Dashboard
+
+- **Vista multi-paciente**: Tarjetas con lectura actual, tendencia y tiempo desde última lectura
+- **Código de colores semáforo**: Verde (normal), Amarillo (precaución), Rojo (alerta)
+- **Gráficas de alertas por hora**: Histograma apilado por paciente (últimas 24h)
+- **Distribución por nivel**: Gráfica de dona mostrando proporción bajo/normal/alto
+- **Valores de glucosa en alertas**: Gráfica de línea por paciente con zonas de rango
+- **Filtros**: Por paciente y por período de tiempo
+- **Modo oscuro**: Adaptación automática al tema del sistema
+- **Auto-actualización**: Los datos se refrescan automáticamente
+
+### Mockup del Dashboard
+
+![Dashboard Mockup](docs/images/dashboard-mockup.png)
+
+> **Nota**: Este mockup muestra las mejoras planificadas para el dashboard. La versión actual ya incluye la tabla de pacientes en tiempo real con código de colores.
+
+### Ejecutar el Dashboard
+
+```bash
+# Modo solo dashboard
+# En config.yaml, establece monitoring.mode: "dashboard"
+python -m src.main
+
+# Modo completo (monitoreo + dashboard)
+# En config.yaml, establece monitoring.mode: "full"
+python -m src.main
+```
+
+El dashboard estará disponible en `http://localhost:8080` por defecto.
+
+---
+
 ## 🧪 Tests
 
 ```bash
