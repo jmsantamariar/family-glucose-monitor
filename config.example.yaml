@@ -12,7 +12,7 @@ librelinkup:
 #   python -c "from src.auth import hash_password; print(hash_password('your-password'))"
 dashboard_auth:
   username: "your-email@example.com"
-  password_hash: ""  # set via the setup wizard or the command above
+  password_hash: "pbkdf2_sha256$260000$example_salt$examplehashvalue0123456789abcdef"  # example hash; replace with output of the command above
 
 alerts:
   low_threshold: 70
