@@ -49,11 +49,20 @@ _readings_cache: dict = {}
 _cache_lock = threading.Lock()
 _config: dict = {}
 
+APP_ENV = os.environ.get("APP_ENV") or os.environ.get("ENV") or "dev"
+_ALLOW_AUTH_DISABLED = (
+    os.environ.get("AUTH_DISABLED") == "1"
+    and APP_ENV.lower() in {"dev", "development", "local", "test"}
+)
+if os.environ.get("AUTH_DISABLED") == "1" and not _ALLOW_AUTH_DISABLED:
+    logger.warning(
+        "AUTH_DISABLED=1 ignorado porque APP_ENV/ENV=%s no es un entorno de desarrollo",
+        APP_ENV,
+    )
 
 def load_config(path: str = "config.yaml") -> dict:
     with open(path) as f:
         return yaml.safe_load(f)
-
 
 @asynccontextmanager
 async def lifespan(application: "FastAPI"):
@@ -69,7 +78,6 @@ async def lifespan(application: "FastAPI"):
         logger.info("Background polling started every %d seconds", interval)
     yield
 
-
 app = FastAPI(title="Family Glucose Monitor", version="1.0.0", lifespan=lifespan)
 
 # ── Authentication middleware ─────────────────────────────────────────────────
@@ -83,11 +91,10 @@ _AUTH_EXEMPT_PATHS = {
     "/setup",
 }
 
-
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     """Enforce session authentication on all protected routes."""
-    if os.environ.get("AUTH_DISABLED") == "1":
+    if _ALLOW_AUTH_DISABLED:
         return await call_next(request)
 
     if request.url.path in _AUTH_EXEMPT_PATHS:
@@ -100,7 +107,6 @@ async def auth_middleware(request: Request, call_next):
     if is_configured():
         return RedirectResponse(url="/login", status_code=302)
     return RedirectResponse(url="/setup", status_code=302)
-
 
 def _poll_loop(interval: int):
     """Background thread that polls LibreLinkUp and updates the cache.
@@ -142,14 +148,12 @@ def _get_color(level: str, trend_alert: str) -> str:
         return "yellow"
     return "green"
 
-
 @app.get("/api/patients", response_class=JSONResponse)
 def get_patients():
     """Return all patients with their latest readings."""
     with _cache_lock:
         patients = list(_readings_cache.values())
     return {"patients": patients, "count": len(patients)}
-
 
 @app.get("/api/patients/{patient_id}", response_class=JSONResponse)
 def get_patient(patient_id: str):
@@ -159,7 +163,6 @@ def get_patient(patient_id: str):
     if not reading:
         raise HTTPException(status_code=404, detail="Patient not found")
     return reading
-
 
 @app.get("/api/health", response_class=JSONResponse)
 def health_check():
@@ -171,7 +174,6 @@ def health_check():
         "patients_monitored": patient_count,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
-
 
 @app.get("/api/alerts", response_class=JSONResponse)
 def get_alert_history(patient_id: Optional[str] = None, hours: int = 24):
@@ -186,7 +188,6 @@ def get_alert_history(patient_id: Optional[str] = None, hours: int = 24):
     alerts = get_alerts(db_path, patient_id=patient_id, hours=hours)
     return alerts
 
-
 @app.get("/", response_class=HTMLResponse)
 def dashboard():
     """Serve the dashboard HTML page."""
@@ -194,7 +195,6 @@ def dashboard():
     if not html_path.exists():
         raise HTTPException(status_code=500, detail="Dashboard HTML not found")
     return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
-
 
 # ── Auth / Setup routes ───────────────────────────────────────────────────────
 
@@ -208,7 +208,6 @@ def login_page():
         raise HTTPException(status_code=500, detail="Login HTML not found")
     return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
 
-
 @app.get("/setup", response_class=HTMLResponse)
 def setup_page():
     """Serve the setup wizard page."""
@@ -217,12 +216,10 @@ def setup_page():
         raise HTTPException(status_code=500, detail="Setup HTML not found")
     return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
 
-
 @app.get("/api/setup/status", response_class=JSONResponse)
 def setup_status():
     """Return whether the system has already been configured."""
     return {"configured": is_configured()}
-
 
 @app.post("/api/login", response_class=JSONResponse)
 async def api_login(request: Request, response: Response):
@@ -254,7 +251,6 @@ async def api_login(request: Request, response: Response):
     )
     return {"success": True}
 
-
 @app.post("/api/logout", response_class=JSONResponse)
 async def api_logout(request: Request, response: Response):
     """Invalidate the current session."""
@@ -263,7 +259,6 @@ async def api_logout(request: Request, response: Response):
         session_manager.invalidate(token)
     response.delete_cookie("session_token")
     return {"success": True}
-
 
 @app.post("/api/setup", response_class=JSONResponse)
 async def api_setup(request: Request, response: Response):
