@@ -415,3 +415,53 @@ def test_trend_section_omitted_is_valid():
     # trend section is optional — omitting it should not produce errors
     cfg = _valid_config()
     assert validate_config(cfg) == []
+
+
+# ---------------------------------------------------------------------------
+# monitoring.mode validation
+# ---------------------------------------------------------------------------
+
+def test_monitoring_mode_unknown():
+    cfg = _valid_config()
+    cfg["monitoring"] = {"mode": "typo_mode"}
+    errors = validate_config(cfg)
+    assert any("monitoring.mode" in e for e in errors)
+
+
+def test_monitoring_mode_not_a_string():
+    cfg = _valid_config()
+    cfg["monitoring"] = {"mode": 42}
+    errors = validate_config(cfg)
+    assert any("monitoring.mode" in e for e in errors)
+
+
+def test_monitoring_mode_cron_valid():
+    cfg = _valid_config()
+    cfg["monitoring"] = {"mode": "cron"}
+    assert validate_config(cfg) == []
+
+
+def test_monitoring_mode_daemon_valid():
+    cfg = _valid_config()
+    cfg["monitoring"] = {"mode": "daemon"}
+    assert validate_config(cfg) == []
+
+
+def test_monitoring_mode_dashboard_no_outputs_valid():
+    cfg = _valid_config()
+    cfg["monitoring"] = {"mode": "dashboard"}
+    cfg["outputs"] = []
+    assert validate_config(cfg) == []
+
+
+def test_monitoring_mode_full_valid():
+    cfg = _valid_config()
+    cfg["monitoring"] = {"mode": "full"}
+    assert validate_config(cfg) == []
+
+
+def test_monitoring_not_a_dict():
+    cfg = _valid_config()
+    cfg["monitoring"] = "cron"
+    errors = validate_config(cfg)
+    assert any("monitoring" in e for e in errors)
