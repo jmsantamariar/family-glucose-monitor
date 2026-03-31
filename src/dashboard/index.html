@@ -384,10 +384,16 @@
       <h3>Alertas por hora</h3>
       <canvas id="chart-by-hour"></canvas>
     </div>
-    <div class="chart-card">
+    <div id="level-chart-container" class="chart-card">
       <h3>Distribución por nivel</h3>
       <canvas id="chart-by-level"></canvas>
     </div>
+  </div>
+
+  <!-- per-patient glucose value charts -->
+  <div id="glucose-charts-section" style="display:none">
+    <p class="section-title">📉 Valores de glucosa en alertas</p>
+    <div id="glucose-charts-grid" class="charts-grid"></div>
   </div>
 
   <!-- history table -->
@@ -555,91 +561,200 @@
   }
 
   // ── Chart instances ──────────────────────────────────────────────
-  let chartByHour = null;
+  let chartByHour  = null;
   let chartByLevel = null;
+  const _glucoseCharts = {}; // patientId -> Chart instance
+
+  // ── Patient color palette ────────────────────────────────────────
+  const PATIENT_PALETTE = [
+    { bg: 'rgba(26,  54,  93,  .7)', border: 'rgba(26,  54,  93,  1)' },
+    { bg: 'rgba(49, 151, 149,  .7)', border: 'rgba(49, 151, 149,  1)' },
+    { bg: 'rgba(214,158,  46,  .7)', border: 'rgba(214,158,  46,  1)' },
+    { bg: 'rgba(154, 68,  68,  .7)', border: 'rgba(154, 68,  68,  1)' },
+    { bg: 'rgba(49, 130, 206,  .7)', border: 'rgba(49, 130, 206,  1)' },
+    { bg: 'rgba(72, 187, 120,  .7)', border: 'rgba(72, 187, 120,  1)' },
+  ];
+  const _patientColorIdx = {}; // patientId -> palette index
+
+  function getPatientColor(patientId) {
+    if (_patientColorIdx[patientId] === undefined) {
+      _patientColorIdx[patientId] = Object.keys(_patientColorIdx).length % PATIENT_PALETTE.length;
+    }
+    return PATIENT_PALETTE[_patientColorIdx[patientId]];
+  }
 
   function renderCharts(alerts) {
-    const HOUR_IN_MS = 3600000;
+    const HOUR_IN_MS  = 3600000;
+    const now         = Date.now();
+    const selectedPid = document.getElementById('patient-filter').value;
 
-    // Chart 1: alerts per hour (last 24h, bucketized by calendar hour)
-    // Use ISO date+hour string as bucket key to avoid collisions across days.
-    const now = Date.now();
-    const hourBuckets = {}; // key: ISO hour string, value: { label, count }
+    // ── Chart 1: alerts per hour, stacked by patient ─────────────
+    const hourBuckets = {}; // key -> { label }
     for (let h = 23; h >= 0; h--) {
-      const d = new Date(now - h * HOUR_IN_MS);
+      const d   = new Date(now - h * HOUR_IN_MS);
       const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}T${String(d.getHours()).padStart(2,'0')}`;
-      const label = d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-      hourBuckets[key] = { label, count: 0 };
+      hourBuckets[key] = { label: d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) };
     }
+
+    const hourKeys   = Object.keys(hourBuckets);
+    const hourLabels = hourKeys.map(k => hourBuckets[k].label);
+
+    // Collect unique patient IDs that appear in these alerts (preserving discovery order)
+    const patientIds = [];
+    const _seen = new Set();
     alerts.forEach(a => {
-      const ts = new Date(a.timestamp);
-      const key = `${ts.getFullYear()}-${String(ts.getMonth()+1).padStart(2,'0')}-${String(ts.getDate()).padStart(2,'0')}T${String(ts.getHours()).padStart(2,'0')}`;
-      if (key in hourBuckets) hourBuckets[key].count++;
+      if (a.patient_id && !_seen.has(a.patient_id)) {
+        _seen.add(a.patient_id);
+        patientIds.push(a.patient_id);
+        getPatientColor(a.patient_id); // ensure color is assigned in encounter order
+      }
     });
 
-    const hourLabels = Object.values(hourBuckets).map(b => b.label);
-    const hourData   = Object.values(hourBuckets).map(b => b.count);
+    // Per-patient hour counts
+    const patientHourCounts = {};
+    patientIds.forEach(pid => {
+      patientHourCounts[pid] = {};
+      hourKeys.forEach(k => { patientHourCounts[pid][k] = 0; });
+    });
+    alerts.forEach(a => {
+      const ts  = new Date(a.timestamp);
+      const key = `${ts.getFullYear()}-${String(ts.getMonth()+1).padStart(2,'0')}-${String(ts.getDate()).padStart(2,'0')}T${String(ts.getHours()).padStart(2,'0')}`;
+      if (key in hourBuckets && a.patient_id && patientHourCounts[a.patient_id]) {
+        patientHourCounts[a.patient_id][key]++;
+      }
+    });
+
+    const hourDatasets = patientIds.map(pid => {
+      const color = getPatientColor(pid);
+      return {
+        label: _knownPatients[pid] || pid,
+        data: hourKeys.map(k => patientHourCounts[pid][k]),
+        backgroundColor: color.bg,
+        borderColor: color.border,
+        borderWidth: 1,
+      };
+    });
 
     const ctxHour = document.getElementById('chart-by-hour').getContext('2d');
     if (chartByHour) chartByHour.destroy();
     chartByHour = new Chart(ctxHour, {
       type: 'bar',
-      data: {
-        labels: hourLabels,
-        datasets: [{
-          label: 'Alertas',
-          data: hourData,
-          backgroundColor: 'rgba(26, 54, 93, 0.7)',
-          borderColor: 'rgba(26, 54, 93, 1)',
-          borderWidth: 1,
-        }],
-      },
+      data: { labels: hourLabels, datasets: hourDatasets },
       options: {
         responsive: true,
-        plugins: { legend: { display: false } },
+        plugins: { legend: { display: patientIds.length > 1 } },
         scales: {
-          x: { ticks: { maxTicksLimit: 6 } },
-          y: { beginAtZero: true, ticks: { stepSize: 1 } },
+          x: { stacked: true, ticks: { maxTicksLimit: 6 } },
+          y: { stacked: true, beginAtZero: true, ticks: { stepSize: 1 } },
         },
       },
     });
 
-    // Chart 2: distribution by level
-    const levelCounts = { low: 0, high: 0, trend: 0 };
-    alerts.forEach(a => {
-      const l = a.level;
-      if (l === 'low') levelCounts.low++;
-      else if (l === 'high') levelCounts.high++;
-      else levelCounts.trend++;
+    // ── Chart 2: distribution by level (only for a specific patient) ──
+    const levelContainer = document.getElementById('level-chart-container');
+    if (selectedPid) {
+      levelContainer.style.display = '';
+      const levelCounts = { low: 0, high: 0, trend: 0 };
+      alerts.forEach(a => {
+        if (a.level === 'low')       levelCounts.low++;
+        else if (a.level === 'high') levelCounts.high++;
+        else                         levelCounts.trend++;
+      });
+      const ctxLevel = document.getElementById('chart-by-level').getContext('2d');
+      if (chartByLevel) chartByLevel.destroy();
+      chartByLevel = new Chart(ctxLevel, {
+        type: 'doughnut',
+        data: {
+          labels: ['Baja', 'Alta', 'Tendencia'],
+          datasets: [{
+            data: [levelCounts.low, levelCounts.high, levelCounts.trend],
+            backgroundColor: ['rgba(252,129,129,.8)', 'rgba(246,224,94,.8)', 'rgba(154,230,180,.8)'],
+            borderColor:     ['rgba(252,129,129,1)',  'rgba(246,224,94,1)',  'rgba(154,230,180,1)'],
+            borderWidth: 1,
+          }],
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { position: 'bottom' } },
+        },
+      });
+    } else {
+      levelContainer.style.display = 'none';
+      if (chartByLevel) { chartByLevel.destroy(); chartByLevel = null; }
+    }
+
+    // ── Chart 3: glucose values per patient (separate chart each) ──
+    const glucoseSection = document.getElementById('glucose-charts-section');
+    const glucoseGrid    = document.getElementById('glucose-charts-grid');
+
+    // Destroy any existing glucose charts
+    Object.values(_glucoseCharts).forEach(c => c.destroy());
+    Object.keys(_glucoseCharts).forEach(k => delete _glucoseCharts[k]);
+    glucoseGrid.innerHTML = '';
+
+    if (alerts.length === 0) {
+      glucoseSection.style.display = 'none';
+      return;
+    }
+
+    glucoseSection.style.display = '';
+
+    // Group and sort alerts per patient (oldest first for the time-series chart)
+    const patientAlerts = {};
+    patientIds.forEach(pid => {
+      patientAlerts[pid] = alerts
+        .filter(a => a.patient_id === pid)
+        .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
     });
 
-    const ctxLevel = document.getElementById('chart-by-level').getContext('2d');
-    if (chartByLevel) chartByLevel.destroy();
-    chartByLevel = new Chart(ctxLevel, {
-      type: 'doughnut',
-      data: {
-        labels: ['Baja', 'Alta', 'Tendencia'],
-        datasets: [{
-          data: [levelCounts.low, levelCounts.high, levelCounts.trend],
-          backgroundColor: [
-            'rgba(252, 129, 129, 0.8)',
-            'rgba(246, 224, 94, 0.8)',
-            'rgba(154, 230, 180, 0.8)',
-          ],
-          borderColor: [
-            'rgba(252, 129, 129, 1)',
-            'rgba(246, 224, 94, 1)',
-            'rgba(154, 230, 180, 1)',
-          ],
-          borderWidth: 1,
-        }],
-      },
-      options: {
-        responsive: true,
-        plugins: {
-          legend: { position: 'bottom' },
+    patientIds.forEach(pid => {
+      const patAlerts = patientAlerts[pid];
+      if (!patAlerts.length) return;
+
+      const color       = getPatientColor(pid);
+      const patientName = _knownPatients[pid] || pid;
+
+      const card   = document.createElement('div');
+      card.className = 'chart-card';
+
+      const title  = document.createElement('h3');
+      title.textContent = patientName;
+
+      const canvas = document.createElement('canvas');
+      canvas.id = `chart-glucose-${String(pid).replace(/[^a-z0-9_-]/gi, '_')}`;
+
+      card.appendChild(title);
+      card.appendChild(canvas);
+      glucoseGrid.appendChild(card);
+
+      _glucoseCharts[pid] = new Chart(canvas.getContext('2d'), {
+        type: 'line',
+        data: {
+          labels: patAlerts.map(a => formatDateTime(a.timestamp)),
+          datasets: [{
+            label: `${patientName} (mg/dL)`,
+            data: patAlerts.map(a => a.glucose_value),
+            backgroundColor: color.bg,
+            borderColor: color.border,
+            borderWidth: 2,
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            fill: false,
+            tension: 0.3,
+          }],
         },
-      },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: ctx => `${ctx.parsed.y} mg/dL` } },
+          },
+          scales: {
+            x: { ticks: { maxTicksLimit: 8, maxRotation: 45 } },
+            y: { beginAtZero: false },
+          },
+        },
+      });
     });
   }
 
