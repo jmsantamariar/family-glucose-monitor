@@ -51,6 +51,21 @@ def test_init_db_creates_table(tmp_path):
     assert row is not None, "alerts table should exist after init_db"
 
 
+def test_init_db_creates_indexes(tmp_path):
+    db = _db(tmp_path)
+    init_db(db)
+
+    with sqlite3.connect(db) as conn:
+        index_names = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='alerts'"
+            ).fetchall()
+        }
+    assert "idx_alerts_timestamp" in index_names
+    assert "idx_alerts_patient_timestamp" in index_names
+
+
 def test_init_db_idempotent(tmp_path):
     """Calling init_db twice should not raise."""
     db = _db(tmp_path)
