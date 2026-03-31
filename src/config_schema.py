@@ -184,6 +184,46 @@ def validate_config(config: Any) -> list[str]:
                     "dashboard_auth.password_hash has an invalid format; "
                     "expected 'pbkdf2:sha256:<iterations>:<salt_hex>:<key_hex>'"
                 )
+            else:
+                iter_part = parts[2]
+                salt_hex = parts[3]
+                key_hex = parts[4]
+
+                try:
+                    iterations = int(iter_part)
+                    if iterations <= 0 or iterations > 1_000_000_000:
+                        errors.append(
+                            "dashboard_auth.password_hash iterations must be a positive integer "
+                            "within a reasonable range"
+                        )
+                except (TypeError, ValueError):
+                    errors.append(
+                        "dashboard_auth.password_hash iterations must be a valid integer"
+                    )
+
+                if not salt_hex:
+                    errors.append(
+                        "dashboard_auth.password_hash salt_hex must be a non-empty hex string"
+                    )
+                else:
+                    try:
+                        bytes.fromhex(salt_hex)
+                    except ValueError:
+                        errors.append(
+                            "dashboard_auth.password_hash salt_hex must be a valid hex string"
+                        )
+
+                if not key_hex:
+                    errors.append(
+                        "dashboard_auth.password_hash key_hex must be a non-empty hex string"
+                    )
+                else:
+                    try:
+                        bytes.fromhex(key_hex)
+                    except ValueError:
+                        errors.append(
+                            "dashboard_auth.password_hash key_hex must be a valid hex string"
+                        )
 
     # --- alert_history_db (optional) ---
     alert_history_db = config.get("alert_history_db")
