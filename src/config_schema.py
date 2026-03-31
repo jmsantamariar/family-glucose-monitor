@@ -152,6 +152,27 @@ def validate_config(config: Any) -> list[str]:
                 errors.append(
                     f"outputs[{i}].type {out_type!r} is not a recognised output type"
                 )
+            if not out.get("enabled"):
+                continue
+            if out_type == "telegram":
+                if not out.get("bot_token"):
+                    errors.append(f"outputs[{i}] (telegram): bot_token is required")
+                if not out.get("chat_id"):
+                    errors.append(f"outputs[{i}] (telegram): chat_id is required")
+            elif out_type == "webhook":
+                if not out.get("url"):
+                    errors.append(f"outputs[{i}] (webhook): url is required")
+            elif out_type == "whatsapp":
+                if not out.get("phone_number_id"):
+                    errors.append(f"outputs[{i}] (whatsapp): phone_number_id is required")
+                if not out.get("recipient"):
+                    errors.append(f"outputs[{i}] (whatsapp): recipient is required")
+                access_token = out.get("access_token") or os.environ.get("WHATSAPP_ACCESS_TOKEN", "")
+                if not access_token:
+                    errors.append(
+                        f"outputs[{i}] (whatsapp): access_token is required "
+                        "(or set the WHATSAPP_ACCESS_TOKEN environment variable)"
+                    )
 
     # --- alert_history_db (optional) ---
     alert_history_db = config.get("alert_history_db")
