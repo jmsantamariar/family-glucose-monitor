@@ -17,6 +17,10 @@ def _valid_config():
             "password": "secret",
             "region": "EU",
         },
+        "dashboard_auth": {
+            "username": "user@example.com",
+            "password_hash": "pbkdf2:sha256:260000:aabbcc:ddeeff",
+        },
         "alerts": {
             "low_threshold": 70,
             "high_threshold": 180,
@@ -107,6 +111,100 @@ def test_valid_password_via_env(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# dashboard_auth section
+# ---------------------------------------------------------------------------
+
+def test_missing_dashboard_auth_section():
+    cfg = _valid_config()
+    del cfg["dashboard_auth"]
+    errors = validate_config(cfg)
+    assert any("dashboard_auth" in e for e in errors)
+
+
+def test_dashboard_auth_not_a_dict():
+    cfg = _valid_config()
+    cfg["dashboard_auth"] = "admin:secret"
+    errors = validate_config(cfg)
+    assert any("dashboard_auth" in e for e in errors)
+
+
+def test_dashboard_auth_missing_username():
+    cfg = _valid_config()
+    del cfg["dashboard_auth"]["username"]
+    errors = validate_config(cfg)
+    assert any("username" in e for e in errors)
+
+
+def test_dashboard_auth_empty_username():
+    cfg = _valid_config()
+    cfg["dashboard_auth"]["username"] = "   "
+    errors = validate_config(cfg)
+    assert any("username" in e for e in errors)
+
+
+def test_dashboard_auth_missing_password_hash():
+    cfg = _valid_config()
+    del cfg["dashboard_auth"]["password_hash"]
+    errors = validate_config(cfg)
+    assert any("password_hash" in e for e in errors)
+
+
+def test_dashboard_auth_empty_password_hash():
+    cfg = _valid_config()
+    cfg["dashboard_auth"]["password_hash"] = ""
+    errors = validate_config(cfg)
+    assert any("password_hash" in e for e in errors)
+
+
+def test_dashboard_auth_invalid_hash_format():
+    cfg = _valid_config()
+    cfg["dashboard_auth"]["password_hash"] = "plaintext_password"
+    errors = validate_config(cfg)
+    assert any("password_hash" in e for e in errors)
+
+
+def test_dashboard_auth_invalid_hash_iterations_not_int():
+    cfg = _valid_config()
+    cfg["dashboard_auth"]["password_hash"] = "pbkdf2:sha256:notanint:aabbcc:ddeeff"
+    errors = validate_config(cfg)
+    assert any("iterations" in e for e in errors)
+
+
+def test_dashboard_auth_invalid_hash_iterations_zero():
+    cfg = _valid_config()
+    cfg["dashboard_auth"]["password_hash"] = "pbkdf2:sha256:0:aabbcc:ddeeff"
+    errors = validate_config(cfg)
+    assert any("iterations" in e for e in errors)
+
+
+def test_dashboard_auth_invalid_hash_iterations_too_large():
+    cfg = _valid_config()
+    cfg["dashboard_auth"]["password_hash"] = "pbkdf2:sha256:2000000000:aabbcc:ddeeff"
+    errors = validate_config(cfg)
+    assert any("iterations" in e for e in errors)
+
+
+def test_dashboard_auth_invalid_hash_salt_not_hex():
+    cfg = _valid_config()
+    cfg["dashboard_auth"]["password_hash"] = "pbkdf2:sha256:260000:nothex!:ddeeff"
+    errors = validate_config(cfg)
+    assert any("salt_hex" in e for e in errors)
+
+
+def test_dashboard_auth_invalid_hash_key_not_hex():
+    cfg = _valid_config()
+    cfg["dashboard_auth"]["password_hash"] = "pbkdf2:sha256:260000:aabbcc:nothex!"
+    errors = validate_config(cfg)
+    assert any("key_hex" in e for e in errors)
+
+
+def test_dashboard_auth_valid():
+    cfg = _valid_config()
+    errors = validate_config(cfg)
+    assert errors == []
+
+
+# ---------------------------------------------------------------------------
 # alerts section
 # ---------------------------------------------------------------------------
 
@@ -180,6 +278,7 @@ def test_threshold_not_a_number():
 # ---------------------------------------------------------------------------
 
 def test_no_enabled_outputs():
+    """cron mode requires at least one enabled output."""
     cfg = _valid_config()
     cfg["outputs"][0]["enabled"] = False
     errors = validate_config(cfg)
@@ -187,8 +286,43 @@ def test_no_enabled_outputs():
 
 
 def test_empty_outputs_list():
+    """cron mode with no outputs at all must fail validation."""
     cfg = _valid_config()
     cfg["outputs"] = []
+    errors = validate_config(cfg)
+    assert any("output" in e.lower() for e in errors)
+
+
+def test_dashboard_mode_allows_empty_outputs():
+    """dashboard mode does not need enabled outputs (no alerting)."""
+    cfg = _valid_config()
+    cfg["outputs"] = []
+    cfg["monitoring"] = {"mode": "dashboard", "interval_seconds": 300}
+    errors = validate_config(cfg)
+    assert not any("output" in e.lower() for e in errors)
+
+
+def test_dashboard_mode_allows_all_disabled_outputs():
+    """dashboard mode accepts an all-disabled outputs list."""
+    cfg = _valid_config()
+    cfg["outputs"] = [{"type": "telegram", "enabled": False, "bot_token": "", "chat_id": ""}]
+    cfg["monitoring"] = {"mode": "dashboard", "interval_seconds": 300}
+    errors = validate_config(cfg)
+    assert not any("output" in e.lower() for e in errors)
+
+
+def test_daemon_mode_requires_enabled_output():
+    cfg = _valid_config()
+    cfg["outputs"] = []
+    cfg["monitoring"] = {"mode": "daemon", "interval_seconds": 300}
+    errors = validate_config(cfg)
+    assert any("output" in e.lower() for e in errors)
+
+
+def test_full_mode_requires_enabled_output():
+    cfg = _valid_config()
+    cfg["outputs"] = []
+    cfg["monitoring"] = {"mode": "full", "interval_seconds": 300}
     errors = validate_config(cfg)
     assert any("output" in e.lower() for e in errors)
 
@@ -281,6 +415,56 @@ def test_trend_section_omitted_is_valid():
     # trend section is optional — omitting it should not produce errors
     cfg = _valid_config()
     assert validate_config(cfg) == []
+
+
+# ---------------------------------------------------------------------------
+# monitoring.mode validation
+# ---------------------------------------------------------------------------
+
+def test_monitoring_mode_unknown():
+    cfg = _valid_config()
+    cfg["monitoring"] = {"mode": "typo_mode"}
+    errors = validate_config(cfg)
+    assert any("monitoring.mode" in e for e in errors)
+
+
+def test_monitoring_mode_not_a_string():
+    cfg = _valid_config()
+    cfg["monitoring"] = {"mode": 42}
+    errors = validate_config(cfg)
+    assert any("monitoring.mode" in e for e in errors)
+
+
+def test_monitoring_mode_cron_valid():
+    cfg = _valid_config()
+    cfg["monitoring"] = {"mode": "cron"}
+    assert validate_config(cfg) == []
+
+
+def test_monitoring_mode_daemon_valid():
+    cfg = _valid_config()
+    cfg["monitoring"] = {"mode": "daemon"}
+    assert validate_config(cfg) == []
+
+
+def test_monitoring_mode_dashboard_no_outputs_valid():
+    cfg = _valid_config()
+    cfg["monitoring"] = {"mode": "dashboard"}
+    cfg["outputs"] = []
+    assert validate_config(cfg) == []
+
+
+def test_monitoring_mode_full_valid():
+    cfg = _valid_config()
+    cfg["monitoring"] = {"mode": "full"}
+    assert validate_config(cfg) == []
+
+
+def test_monitoring_not_a_dict():
+    cfg = _valid_config()
+    cfg["monitoring"] = "cron"
+    errors = validate_config(cfg)
+    assert any("monitoring" in e for e in errors)
 
 
 # ---------------------------------------------------------------------------
