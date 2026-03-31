@@ -132,11 +132,26 @@ def validate_config(config: Any) -> list[str]:
                                     f"alerts.trend.messages.{key} must be a string, got {type(tmpl).__name__}"
                                 )
 
+    # --- monitoring section ---
+    valid_modes = {"cron", "daemon", "full", "dashboard"}
+    monitoring = config.get("monitoring")
+    if monitoring is not None and not isinstance(monitoring, dict):
+        errors.append("monitoring must be a mapping (dict)")
+        monitoring_mode = "cron"
+    else:
+        monitoring_mode = (monitoring or {}).get("mode", "cron")
+        if not isinstance(monitoring_mode, str) or monitoring_mode not in valid_modes:
+            errors.append(
+                f"monitoring.mode {monitoring_mode!r} is not a recognised mode; "
+                f"allowed values are: {', '.join(sorted(valid_modes))}"
+            )
+            # Fall back to cron so output validation still runs correctly
+            monitoring_mode = "cron"
+
     # --- outputs section ---
     # At least one enabled output is required in alerting modes (cron / daemon
     # / full).  Dashboard-only mode does not send alerts so no output is needed.
     outputs = config.get("outputs", [])
-    monitoring_mode = config.get("monitoring", {}).get("mode", "cron") if isinstance(config.get("monitoring"), dict) else "cron"
     alerting_modes = {"cron", "daemon", "full"}
     if not isinstance(outputs, list):
         errors.append("outputs must be a list")
@@ -220,48 +235,6 @@ def validate_config(config: Any) -> list[str]:
                 else:
                     try:
                         bytes.fromhex(key_hex)
-                    except ValueError:
-                        errors.append(
-                            "dashboard_auth.password_hash key_hex must be a valid hex string"
-                )
-            else:
-                iter_part = parts[2]
-                salt_hex = parts[3]
-                key_hex = parts[4]
-
-                # Validate iterations is an integer within a sane range
-                try:
-                    iterations = int(iter_part)
-                    if iterations <= 0 or iterations > 1_000_000_000:
-                        errors.append(
-                            "dashboard_auth.password_hash iterations must be a positive integer "
-                            "within a reasonable range"
-                        )
-                except (TypeError, ValueError):
-                    errors.append(
-                        "dashboard_auth.password_hash iterations must be a valid integer"
-                    )
-
-                # Validate that salt_hex and key_hex are non-empty valid hex strings
-                if not salt_hex:
-                    errors.append(
-                        "dashboard_auth.password_hash salt_hex must be a non-empty hex string"
-                    )
-                else:
-                    try:
-                        int(salt_hex, 16)
-                    except ValueError:
-                        errors.append(
-                            "dashboard_auth.password_hash salt_hex must be a valid hex string"
-                        )
-
-                if not key_hex:
-                    errors.append(
-                        "dashboard_auth.password_hash key_hex must be a non-empty hex string"
-                    )
-                else:
-                    try:
-                        int(key_hex, 16)
                     except ValueError:
                         errors.append(
                             "dashboard_auth.password_hash key_hex must be a valid hex string"
