@@ -1,4 +1,27 @@
-"""FastAPI web server for the glucose monitoring dashboard and REST API."""
+"""FastAPI web server for the authenticated glucose monitoring dashboard.
+
+This is the **internal** authenticated application.  All routes (except the
+setup wizard and login pages) require a valid session cookie.
+
+Responsibilities
+----------------
+* Serve the dashboard UI (``/``, ``/login``, ``/setup``).
+* Handle authentication: setup wizard, login, logout.
+* Maintain an in-memory cache of the latest patient readings updated by a
+  background polling thread.
+* Expose internal API routes: ``/api/patients``, ``/api/health``,
+  ``/api/alerts``.
+
+Contrast with ``src/api_server.py``
+------------------------------------
+``src/api_server.py`` is the **external read-only REST API** intended for
+widgets, Home Assistant, or other local integrations.  It serves a different
+port (configurable), has no authentication, and reads data from the
+``readings_cache.json`` file written by the main polling daemon.  Its
+``/api/health`` response schema differs (``patient_count`` / ``updated_at`` /
+``cache_age_seconds``) from this module's schema (``patients_monitored`` /
+``timestamp``).  The two modules are **intentionally separate**.
+"""
 import logging
 import os
 import threading
@@ -14,7 +37,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from src import alert_engine
 from src.alert_history import get_alerts
-from src.auth import is_configured, session_manager, verify_credentials
+from src.auth import hash_password, is_configured, session_manager, verify_credentials
 from src.glucose_reader import read_all_patients
 
 logger = logging.getLogger(__name__)
@@ -80,23 +103,31 @@ async def auth_middleware(request: Request, call_next):
 
 
 def _poll_loop(interval: int):
-    """Background thread that polls LibreLinkUp and updates the cache."""
+    """Background thread that polls LibreLinkUp and updates the cache.
+
+    The in-memory cache is **replaced atomically** on every cycle so that
+    patients who are no longer returned by the API are removed immediately
+    instead of remaining as stale ghost entries.
+    """
     while True:
         try:
             readings = read_all_patients(_config)
+            new_cache: dict = {}
+            for r in readings:
+                pid = r["patient_id"]
+                glucose = r["value"]
+                trend_arrow = r.get("trend_arrow", "")
+                level = alert_engine.evaluate(glucose, _config)
+                trend_alert = alert_engine.evaluate_trend(glucose, trend_arrow, _config)
+                r["glucose_value"] = glucose
+                r["level"] = level
+                r["trend_alert"] = trend_alert
+                r["color"] = _get_color(level, trend_alert)
+                r["fetched_at"] = datetime.now(timezone.utc).isoformat()
+                new_cache[pid] = r
             with _cache_lock:
-                for r in readings:
-                    pid = r["patient_id"]
-                    glucose = r["value"]
-                    trend_arrow = r.get("trend_arrow", "")
-                    level = alert_engine.evaluate(glucose, _config)
-                    trend_alert = alert_engine.evaluate_trend(glucose, trend_arrow, _config)
-                    r["glucose_value"] = glucose
-                    r["level"] = level
-                    r["trend_alert"] = trend_alert
-                    r["color"] = _get_color(level, trend_alert)
-                    r["fetched_at"] = datetime.now(timezone.utc).isoformat()
-                    _readings_cache[pid] = r
+                _readings_cache.clear()
+                _readings_cache.update(new_cache)
             logger.info("Polled %d patients successfully", len(readings))
         except Exception as e:
             logger.error("Polling error: %s", e)
@@ -195,16 +226,22 @@ def setup_status():
 
 @app.post("/api/login", response_class=JSONResponse)
 async def api_login(request: Request, response: Response):
-    """Validate credentials against config.yaml and issue a session cookie."""
+    """Validate credentials against dashboard_auth in config.yaml and issue a session cookie.
+
+    Accepts ``username`` (or the legacy ``email`` field as an alias) and
+    ``password``.  Credentials are verified against the ``dashboard_auth``
+    section — **not** the LibreLinkUp credentials.
+    """
     try:
         data = await request.json()
     except Exception:
         raise HTTPException(status_code=400, detail="JSON inválido")
 
-    email = str(data.get("email", ""))
+    # Accept both "username" and legacy "email" field
+    username = str(data.get("username") or data.get("email", ""))
     password = str(data.get("password", ""))
 
-    if not verify_credentials(email, password):
+    if not verify_credentials(username, password):
         raise HTTPException(status_code=401, detail="Credenciales incorrectas")
 
     token = session_manager.create_session()
@@ -230,7 +267,20 @@ async def api_logout(request: Request, response: Response):
 
 @app.post("/api/setup", response_class=JSONResponse)
 async def api_setup(request: Request, response: Response):
-    """Receive wizard data, write config.yaml, and issue a session cookie."""
+    """Receive wizard data, write config.yaml, and issue a session cookie.
+
+    LibreLinkUp credentials (``email`` / ``password``) are stored as-is under
+    the ``librelinkup`` section so that the polling service can authenticate
+    with the external API.
+
+    Dashboard credentials are stored **separately** under ``dashboard_auth``:
+    - ``username``: the dashboard login name (defaults to the LibreLinkUp email).
+    - ``password_hash``: PBKDF2-HMAC-SHA256 hash of the dashboard password
+      collected via the ``dashboard_password`` field.
+
+    The two sets of credentials are **intentionally independent** — changing
+    the LibreLinkUp password does not affect dashboard access and vice-versa.
+    """
     global _config
     try:
         data = await request.json()
@@ -243,6 +293,15 @@ async def api_setup(request: Request, response: Response):
         raise HTTPException(
             status_code=422, detail="Email y contraseña son obligatorios"
         )
+
+    # Dashboard credentials — separate from LibreLinkUp credentials.
+    dashboard_password = str(data.get("dashboard_password", "")).strip()
+    if not dashboard_password:
+        raise HTTPException(
+            status_code=422,
+            detail="La contraseña del dashboard es obligatoria",
+        )
+    dashboard_username = str(data.get("dashboard_username", email)).strip() or email
 
     try:
         low_threshold = int(data.get("low_threshold", 70))
@@ -294,22 +353,22 @@ async def api_setup(request: Request, response: Response):
                 "language_code": "es_MX",
             }
         )
-    else:
-        # No notifications selected — add a disabled telegram placeholder
-        outputs.append(
-            {
-                "type": "telegram",
-                "enabled": False,
-                "bot_token": "",
-                "chat_id": "",
-            }
-        )
+    # When notification_type is "none", outputs remains empty and the
+    # monitoring mode is set to "dashboard" so validation passes correctly.
+
+    # Choose a sensible default mode: dashboard-only when no alerting output
+    # is configured, cron otherwise.
+    monitoring_mode = "cron" if outputs else "dashboard"
 
     config_dict = {
         "librelinkup": {
             "email": email,
             "password": password,
             "region": "EU",
+        },
+        "dashboard_auth": {
+            "username": dashboard_username,
+            "password_hash": hash_password(dashboard_password),
         },
         "alerts": {
             "low_threshold": low_threshold,
@@ -334,7 +393,7 @@ async def api_setup(request: Request, response: Response):
         },
         "outputs": outputs,
         "monitoring": {
-            "mode": "cron",
+            "mode": monitoring_mode,
             "interval_seconds": 300,
         },
         "dashboard": {

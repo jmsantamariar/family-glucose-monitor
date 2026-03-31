@@ -1,5 +1,13 @@
-"""Authentication module: session management and credential verification."""
+"""Authentication module: session management and credential verification.
+
+Dashboard authentication is handled via the ``dashboard_auth`` section of
+``config.yaml``, which is **separate** from the LibreLinkUp API credentials
+stored under the ``librelinkup`` section.  Passwords are stored as
+PBKDF2-HMAC-SHA256 hashes — never in plain text.
+"""
+import hashlib
 import hmac
+import os
 import secrets
 import time
 from pathlib import Path
@@ -48,28 +56,82 @@ class SessionManager:
 
 session_manager = SessionManager()
 
+# ---------------------------------------------------------------------------
+# Password hashing helpers
+# ---------------------------------------------------------------------------
+
+_HASH_PREFIX = "pbkdf2:sha256"
+# 260 000 iterations aligns with the OWASP 2023 recommendation for
+# PBKDF2-HMAC-SHA256 on commodity hardware.
+_PBKDF2_ITERATIONS = 260_000
+
+
+def hash_password(password: str) -> str:
+    """Return a PBKDF2-HMAC-SHA256 hash of *password*.
+
+    The returned string encodes the algorithm, iteration count, salt, and
+    derived key in a single portable string:
+
+        ``pbkdf2:sha256:<iterations>:<salt_hex>:<key_hex>``
+    """
+    salt = os.urandom(16)
+    key = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt, _PBKDF2_ITERATIONS
+    )
+    return f"{_HASH_PREFIX}:{_PBKDF2_ITERATIONS}:{salt.hex()}:{key.hex()}"
+
+
+def check_password(password: str, hashed: str) -> bool:
+    """Return True if *password* matches the stored PBKDF2 *hashed* value.
+
+    Uses ``hmac.compare_digest`` for the final key comparison to prevent
+    timing-based attacks.
+    """
+    try:
+        parts = hashed.split(":")
+        if len(parts) != 5 or parts[0] != "pbkdf2" or parts[1] != "sha256":
+            return False
+        iterations = int(parts[2])
+        salt = bytes.fromhex(parts[3])
+        stored_key = bytes.fromhex(parts[4])
+        key = hashlib.pbkdf2_hmac(
+            "sha256", password.encode("utf-8"), salt, iterations
+        )
+        return hmac.compare_digest(stored_key, key)
+    except Exception:
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Config helpers
+# ---------------------------------------------------------------------------
+
 
 def is_configured() -> bool:
     """Return True if config.yaml exists on disk."""
     return _CONFIG_PATH.exists()
 
 
-def verify_credentials(email: str, password: str) -> bool:
-    """Verify email and password against the credentials in config.yaml.
+def verify_credentials(username: str, password: str) -> bool:
+    """Verify dashboard credentials against ``dashboard_auth`` in config.yaml.
 
-    Uses ``hmac.compare_digest`` for constant-time comparison to prevent
-    timing-based attacks.
+    The dashboard ``username`` and ``password_hash`` are stored under the
+    ``dashboard_auth`` section and are **independent** of the LibreLinkUp
+    credentials kept under ``librelinkup``.
+
+    Uses ``hmac.compare_digest`` for the username comparison and PBKDF2 for
+    the password check to prevent timing attacks.
     """
     if not _CONFIG_PATH.exists():
         return False
     try:
         with open(_CONFIG_PATH, encoding="utf-8") as f:
             config = yaml.safe_load(f)
-        ll = config.get("librelinkup", {})
-        stored_email = str(ll.get("email", ""))
-        stored_password = str(ll.get("password", ""))
-        email_ok = hmac.compare_digest(stored_email, email)
-        password_ok = hmac.compare_digest(stored_password, password)
-        return email_ok and password_ok
+        dash_auth = config.get("dashboard_auth", {})
+        stored_username = str(dash_auth.get("username", ""))
+        stored_hash = str(dash_auth.get("password_hash", ""))
+        if not hmac.compare_digest(stored_username, username):
+            return False
+        return check_password(password, stored_hash)
     except Exception:
         return False

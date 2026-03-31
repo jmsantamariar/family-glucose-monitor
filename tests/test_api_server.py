@@ -190,9 +190,34 @@ def test_health_zero_patients_when_empty_readings(tmp_path):
 # CORS headers
 # ---------------------------------------------------------------------------
 
-def test_cors_header_present(tmp_path):
+def test_cors_no_wildcard_by_default(tmp_path):
+    """By default, CORS wildcard must not be set — origins are empty."""
     cache_file = tmp_path / "readings_cache.json"
     cache_file.write_text(json.dumps(SAMPLE_CACHE))
     with patch("src.api_server.CACHE_FILE", cache_file):
         response = client.get("/api/readings", headers={"Origin": "http://localhost:3000"})
-    assert response.headers.get("access-control-allow-origin") == "*"
+    # No wildcard origin should be in the response by default
+    assert response.headers.get("access-control-allow-origin") != "*"
+
+
+def test_cors_allowed_origin_via_env(tmp_path, monkeypatch):
+    """When CORS_ALLOWED_ORIGINS is set, the specified origin is reflected."""
+    import importlib
+
+    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000")
+    # Reimport the module so CORS middleware is rebuilt with the new env value
+    import src.api_server as api_server_module
+    importlib.reload(api_server_module)
+
+    cache_file = tmp_path / "readings_cache.json"
+    cache_file.write_text(json.dumps(SAMPLE_CACHE))
+    test_client = TestClient(api_server_module.app)
+    with patch.object(api_server_module, "CACHE_FILE", cache_file):
+        response = test_client.get(
+            "/api/readings", headers={"Origin": "http://localhost:3000"}
+        )
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"
+
+    # Restore original module state
+    monkeypatch.delenv("CORS_ALLOWED_ORIGINS", raising=False)
+    importlib.reload(api_server_module)

@@ -132,16 +132,20 @@ def validate_config(config: Any) -> list[str]:
                                     f"alerts.trend.messages.{key} must be a string, got {type(tmpl).__name__}"
                                 )
 
-    # --- outputs section: at least one must be enabled ---
+    # --- outputs section ---
+    # At least one enabled output is required in alerting modes (cron / daemon
+    # / full).  Dashboard-only mode does not send alerts so no output is needed.
     outputs = config.get("outputs", [])
+    monitoring_mode = config.get("monitoring", {}).get("mode", "cron") if isinstance(config.get("monitoring"), dict) else "cron"
+    alerting_modes = {"cron", "daemon", "full"}
     if not isinstance(outputs, list):
         errors.append("outputs must be a list")
     else:
         enabled_outputs = [o for o in outputs if isinstance(o, dict) and o.get("enabled")]
-        if not enabled_outputs:
+        if monitoring_mode in alerting_modes and not enabled_outputs:
             errors.append(
-                "At least one output must be enabled in the outputs list "
-                "(telegram, webhook, or whatsapp)"
+                f"At least one output must be enabled in the outputs list "
+                f"(telegram, webhook, or whatsapp) when monitoring.mode is '{monitoring_mode}'"
             )
         for i, out in enumerate(outputs):
             if not isinstance(out, dict):
