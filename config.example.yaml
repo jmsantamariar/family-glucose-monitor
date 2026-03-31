@@ -12,7 +12,7 @@ librelinkup:
 #   python -c "from src.auth import hash_password; print(hash_password('your-password'))"
 dashboard_auth:
   username: "your-email@example.com"
-  password_hash: "pbkdf2_sha256$260000$example_salt$examplehashvalue0123456789abcdef"  # example hash; replace with output of the command above
+  password_hash: "pbkdf2:sha256:260000:78cbb776ba2e8ee86972321678cc9b95:252bb819f5ef2a13db52f6b09f783e81bb990e979feba565f0af7da26929acd8"  # example hash for password 'changeme'; replace with output of the command above
 
 alerts:
   low_threshold: 70

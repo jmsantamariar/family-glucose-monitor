@@ -132,26 +132,26 @@ def validate_config(config: Any) -> list[str]:
                                     f"alerts.trend.messages.{key} must be a string, got {type(tmpl).__name__}"
                                 )
 
-    # --- monitoring section ---
-    valid_modes = {"cron", "daemon", "full", "dashboard"}
+    # --- monitoring section (optional) ---
+    _VALID_MODES = {"cron", "daemon", "full", "dashboard"}
     monitoring = config.get("monitoring")
-    if monitoring is not None and not isinstance(monitoring, dict):
-        errors.append("monitoring must be a mapping (dict)")
-        monitoring_mode = "cron"
-    else:
-        monitoring_mode = (monitoring or {}).get("mode", "cron")
-        if not isinstance(monitoring_mode, str) or monitoring_mode not in valid_modes:
+    if monitoring is not None and isinstance(monitoring, dict):
+        mode = monitoring.get("mode")
+        if mode is not None and mode not in _VALID_MODES:
             errors.append(
-                f"monitoring.mode {monitoring_mode!r} is not a recognised mode; "
-                f"allowed values are: {', '.join(sorted(valid_modes))}"
+                f"monitoring.mode {mode!r} is not valid; "
+                f"allowed values are: {', '.join(sorted(_VALID_MODES))}"
             )
-            # Fall back to cron so output validation still runs correctly
-            monitoring_mode = "cron"
 
     # --- outputs section ---
     # At least one enabled output is required in alerting modes (cron / daemon
     # / full).  Dashboard-only mode does not send alerts so no output is needed.
     outputs = config.get("outputs", [])
+    monitoring_mode = (
+        monitoring.get("mode", "cron")
+        if isinstance(monitoring, dict)
+        else "cron"
+    )
     alerting_modes = {"cron", "daemon", "full"}
     if not isinstance(outputs, list):
         errors.append("outputs must be a list")
@@ -260,6 +260,7 @@ def validate_config(config: Any) -> list[str]:
                         errors.append(
                             "dashboard_auth.password_hash key_hex must be a valid hex string"
                         )
+
     # --- alert_history_db (optional) ---
     alert_history_db = config.get("alert_history_db")
     if alert_history_db is not None and not isinstance(alert_history_db, str):
