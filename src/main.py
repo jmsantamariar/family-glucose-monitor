@@ -12,6 +12,7 @@ import yaml
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 from src.alert_engine import build_message, evaluate, evaluate_trend, is_stale, should_alert
+from src.alert_history import cleanup_old_alerts, init_db, log_alert
 from src.config_schema import validate_config as schema_validate_config
 from src.glucose_reader import read_all_patients
 from src.outputs.telegram import TelegramOutput
@@ -123,6 +124,12 @@ def run_once(config: dict) -> None:
     state_path = config.get("state_file", "state.json")
     if not os.path.isabs(state_path):
         state_path = str(PROJECT_ROOT / state_path)
+
+    db_path = config.get("alert_history_db", "alert_history.db")
+    if not os.path.isabs(db_path):
+        db_path = str(PROJECT_ROOT / db_path)
+    init_db(db_path)
+
     state = load_state(state_path)
     readings = read_all_patients(config)
     if not readings:
@@ -177,11 +184,23 @@ def run_once(config: dict) -> None:
             }
             state = set_patient_state(state, patient_id, new_patient_state)
             state_changed = True
+            log_alert(
+                db_path,
+                patient_id,
+                patient_name,
+                glucose_value,
+                effective_level,
+                trend_arrow,
+                message,
+            )
             logger.info("  Alert sent for %s: %s", patient_name, message)
         else:
             logger.error("  All outputs failed for %s, state not updated", patient_name)
     if state_changed:
         save_state(state_path, state)
+
+    max_days = config.get("alert_history_max_days", 7)
+    cleanup_old_alerts(db_path, max_days)
 
 
 def _start_dashboard(config: dict) -> None:
