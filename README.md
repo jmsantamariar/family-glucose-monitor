@@ -186,12 +186,12 @@ monitoring:
 
 El modo de ejecución se configura con `monitoring.mode` en `config.yaml`. Hay cuatro modos disponibles:
 
-| Modo | Descripción | Monitoreo | Dashboard |
-|------|-------------|-----------|-----------|
-| `cron` | Una sola lectura y salida (default) | ✅ una vez | ❌ |
-| `daemon` | Bucle continuo en foreground | ✅ continuo | ❌ |
-| `dashboard` | Solo panel web, sin monitoreo activo | ❌ | ✅ |
-| `full` | Monitoreo continuo + panel web | ✅ continuo | ✅ |
+| Modo | Descripción | Polling LibreLinkUp | Ciclo de alertas | Dashboard |
+|------|-------------|---------------------|------------------|-----------|
+| `cron` | Una sola lectura y salida (default) | ✅ una vez | ✅ una vez | ❌ |
+| `daemon` | Bucle continuo en foreground | ✅ continuo | ✅ continuo | ❌ |
+| `dashboard` | Panel web; hace polling sin ciclo de alertas/salidas | ✅ background | ❌ | ✅ |
+| `full` | Polling + ciclo de alertas + panel web | ✅ background | ✅ background | ✅ |
 
 ### Modo cron (una sola lectura)
 
@@ -353,6 +353,8 @@ api:
   cache_file: "readings_cache.json"
 ```
 
+> **Nota:** `api.cache_file` configura la ruta donde `src/main.py` escribe el cache. Sin embargo, `src/api_server.py` lee siempre desde `readings_cache.json` en el directorio raíz del proyecto (ruta fija). Para evitar desincronización, mantén el valor por defecto o asegúrate de montar ambas rutas al mismo archivo.
+
 Para una guía completa de despliegue incluyendo HTTPS, reverse proxy, permisos y configuración de producción, consulta [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ---
@@ -381,11 +383,11 @@ El sistema incluye un dashboard web en tiempo real que muestra el estado de todo
 ### Ejecutar el Dashboard
 
 ```bash
-# Modo solo dashboard (sin monitoreo activo)
+# Modo solo dashboard (polling a LibreLinkUp en background, sin envío de alertas)
 # En config.yaml: monitoring.mode: "dashboard"
 python -m src.main
 
-# Modo completo (monitoreo + dashboard en paralelo)
+# Modo completo (polling + ciclo de alertas + dashboard en paralelo)
 # En config.yaml: monitoring.mode: "full"
 python -m src.main
 ```

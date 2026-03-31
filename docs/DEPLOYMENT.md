@@ -22,12 +22,12 @@ Esta guía cubre las distintas formas de ejecutar Family Glucose Monitor, desde 
 
 El modo se configura en `config.yaml` bajo `monitoring.mode`:
 
-| Modo | Qué hace | Bucle de monitoreo | Dashboard web | API externa |
-|------|----------|--------------------|---------------|-------------|
-| `cron` | Una sola lectura y salida | ❌ (lo maneja cron del SO) | ❌ | ❌ |
-| `daemon` | Bucle continuo en foreground | ✅ cada N segundos | ❌ | ❌ |
-| `dashboard` | Solo dashboard web, sin monitoreo | ❌ | ✅ | ❌ |
-| `full` | Dashboard + bucle de monitoreo | ✅ en segundo plano | ✅ | ❌ |
+| Modo | Qué hace | Polling a LibreLinkUp | Ciclo de alertas/salidas | Dashboard web | API externa |
+|------|----------|-----------------------|--------------------------|---------------|-------------|
+| `cron` | Una sola lectura y salida | ✅ durante la ejecución | ✅ durante la ejecución | ❌ | ❌ |
+| `daemon` | Bucle continuo en foreground | ✅ cada N segundos | ✅ continuo | ❌ | ❌ |
+| `dashboard` | Panel web; polling a LibreLinkUp en background, sin alertas/salidas | ✅ en segundo plano (vía `api.py`) | ❌ | ✅ | ❌ |
+| `full` | Dashboard + ciclo de alertas/salidas | ✅ en segundo plano | ✅ en segundo plano | ✅ | ❌ |
 
 La API externa (`src/api_server.py`) se ejecuta **siempre por separado**, independientemente del modo anterior. Ver [Componentes del sistema](#componentes-del-sistema).
 
@@ -64,7 +64,7 @@ python -m src.main
 
 Se queda en foreground. Usa `systemd` o `supervisor` para gestionarlo como servicio.
 
-### Dashboard (panel web sin monitoreo)
+### Dashboard (panel web con polling, sin ciclo de alertas)
 
 ```yaml
 monitoring:
@@ -79,7 +79,7 @@ dashboard:
 python -m src.main
 ```
 
-Solo lanza el servidor FastAPI (`src/api.py`) en `host:port`. No realiza ninguna llamada a LibreLinkUp. Útil cuando otro proceso externo ya corre el monitoreo.
+Solo lanza el servidor FastAPI (`src/api.py`) en `host:port`. El dashboard hace polling a LibreLinkUp en segundo plano para mostrar lecturas en tiempo real, pero **no ejecuta el ciclo de alertas/salidas ni escribe `readings_cache.json`**. Útil como panel de solo visualización o cuando otro proceso externo ya corre el ciclo de alertas.
 
 ### Full (monitoreo + dashboard)
 
@@ -306,7 +306,9 @@ services:
     restart: unless-stopped
     volumes:
       - ./config.yaml:/app/config.yaml:ro
-      - glucose_data:/app
+      - /var/lib/glucose/state.json:/app/state.json
+      - /var/lib/glucose/alert_history.db:/app/alert_history.db
+      - /var/lib/glucose/readings_cache.json:/app/readings_cache.json
     ports:
       - "127.0.0.1:8080:8080"
     env_file: .env
@@ -321,16 +323,16 @@ services:
     restart: unless-stopped
     command: uvicorn src.api_server:app --host 0.0.0.0 --port 8081
     volumes:
-      - glucose_data:/app
+      - /var/lib/glucose/readings_cache.json:/app/readings_cache.json:ro
+      - /var/lib/glucose/alert_history.db:/app/alert_history.db:ro
     ports:
       - "127.0.0.1:8081:8081"
     env_file: .env
     depends_on:
       - monitor
-
-volumes:
-  glucose_data:
 ```
+
+> **Nota:** cada servicio monta solo los archivos de datos que necesita directamente sobre `/app`, sin ocultar el código de la imagen. Crea previamente los archivos en el host: `touch /var/lib/glucose/state.json /var/lib/glucose/alert_history.db /var/lib/glucose/readings_cache.json`.
 
 ---
 
@@ -402,7 +404,7 @@ sudo certbot --nginx -d glucose.tudominio.com -d glucose-api.tudominio.com
 
 ### CORS en producción
 
-`src/api_server.py` actualmente configura `allow_origins=["*"]`, lo que permite peticiones desde cualquier dominio. Para producción, restringe el origen al dominio de tu aplicación cliente:
+`src/api_server.py` actualmente configura `allow_origins=["*"]`, lo que permite peticiones desde cualquier dominio. Para producción, edita el middleware en `src/api_server.py` para restringir el origen al dominio de tu aplicación cliente:
 
 ```python
 # src/api_server.py — ajuste para producción
@@ -414,9 +416,7 @@ app.add_middleware(
 )
 ```
 
-O bien, si la API solo la consume tu propio dashboard (mismo dominio), puedes eliminar el middleware CORS por completo y confiar en que el proxy gestiona el enrutamiento.
-
-> **Nota:** Este ajuste toca `src/api_server.py` y puede solapar con trabajo en curso (Priority 1). Evalúa el momento de aplicarlo según el estado del merge.
+Si la API solo la consume tu propio dashboard (mismo dominio), puedes eliminar el middleware CORS por completo y confiar en que el proxy gestiona el enrutamiento.
 
 ---
 
@@ -478,9 +478,9 @@ Resumen de archivos sensibles:
 
 ## Caveats operativos
 
-### Lock de instancia única (modo cron/daemon)
+### Lock de instancia única (modos con bucle de monitoreo: `cron`, `daemon`, `full`)
 
-En modo `cron` y `daemon`, el sistema adquiere un lock exclusivo en `/tmp/family-glucose-monitor.lock` (configurable con `lock_file` en `config.yaml`). Si una ejecución tarda más que el intervalo del cron, la siguiente intentará adquirir el lock y saldrá limpiamente para evitar duplicación de alertas.
+En modos `cron`, `daemon` y `full`, el sistema adquiere un lock exclusivo en `/tmp/family-glucose-monitor.lock` (configurable con `lock_file` en `config.yaml`). Si una ejecución tarda más que el intervalo del cron, la siguiente intentará adquirir el lock y saldrá limpiamente para evitar duplicación de alertas y condiciones de carrera en `state.json`.
 
 En Windows este lock no funciona (usa `fcntl` de Unix). Si tu entorno es Windows, podrías lanzar instancias duplicadas; considera usar `filelock` como dependencia cross-platform.
 
@@ -490,7 +490,9 @@ El dashboard mantiene las últimas lecturas en memoria. Al reiniciar el proceso,
 
 ### Cache compartida entre monitor y API externa
 
-El monitor escribe `readings_cache.json` de forma atómica (archivo temporal + `os.replace`). La API externa lee ese archivo en cada petición. Si la API externa se inicia antes de que el monitor haya hecho su primera escritura, devolverá lecturas vacías hasta que el monitor complete su primer ciclo.
+El monitor escribe `readings_cache.json` de forma atómica (archivo temporal + `os.replace`). La API externa (`src/api_server.py`) lee siempre el archivo en `PROJECT_ROOT/readings_cache.json` (ruta fija). Si la API externa se inicia antes de que el monitor haya hecho su primera escritura, devolverá lecturas vacías hasta que el monitor complete su primer ciclo.
+
+> **Limitación:** aunque `config.yaml` admite `api.cache_file` para personalizar la ruta del archivo cache que escribe `src/main.py`, `src/api_server.py` siempre lee desde su `PROJECT_ROOT/readings_cache.json` fijo. Para que ambos compartan el mismo archivo, mantén el nombre por defecto (`readings_cache.json`) o monta el archivo en esa ruta dentro del contenedor.
 
 ### Sesiones del Dashboard en memoria
 
