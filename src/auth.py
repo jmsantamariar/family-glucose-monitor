@@ -92,6 +92,8 @@ def check_password(password: str, hashed: str) -> bool:
         if len(parts) != 5 or parts[0] != "pbkdf2" or parts[1] != "sha256":
             return False
         iterations = int(parts[2])
+        if iterations <= 0 or iterations > 1_000_000_000:
+            return False
         salt = bytes.fromhex(parts[3])
         stored_key = bytes.fromhex(parts[4])
         key = hashlib.pbkdf2_hmac(

@@ -163,6 +163,41 @@ def test_dashboard_auth_invalid_hash_format():
     assert any("password_hash" in e for e in errors)
 
 
+def test_dashboard_auth_invalid_hash_iterations_not_int():
+    cfg = _valid_config()
+    cfg["dashboard_auth"]["password_hash"] = "pbkdf2:sha256:notanint:aabbcc:ddeeff"
+    errors = validate_config(cfg)
+    assert any("iterations" in e for e in errors)
+
+
+def test_dashboard_auth_invalid_hash_iterations_zero():
+    cfg = _valid_config()
+    cfg["dashboard_auth"]["password_hash"] = "pbkdf2:sha256:0:aabbcc:ddeeff"
+    errors = validate_config(cfg)
+    assert any("iterations" in e for e in errors)
+
+
+def test_dashboard_auth_invalid_hash_iterations_too_large():
+    cfg = _valid_config()
+    cfg["dashboard_auth"]["password_hash"] = "pbkdf2:sha256:2000000000:aabbcc:ddeeff"
+    errors = validate_config(cfg)
+    assert any("iterations" in e for e in errors)
+
+
+def test_dashboard_auth_invalid_hash_salt_not_hex():
+    cfg = _valid_config()
+    cfg["dashboard_auth"]["password_hash"] = "pbkdf2:sha256:260000:nothex!:ddeeff"
+    errors = validate_config(cfg)
+    assert any("salt_hex" in e for e in errors)
+
+
+def test_dashboard_auth_invalid_hash_key_not_hex():
+    cfg = _valid_config()
+    cfg["dashboard_auth"]["password_hash"] = "pbkdf2:sha256:260000:aabbcc:nothex!"
+    errors = validate_config(cfg)
+    assert any("key_hex" in e for e in errors)
+
+
 def test_dashboard_auth_valid():
     cfg = _valid_config()
     errors = validate_config(cfg)
