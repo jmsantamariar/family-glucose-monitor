@@ -28,9 +28,36 @@ flowchart TD
 Punto de entrada del sistema. Responsabilidades:
 - Cargar y validar `config.yaml`
 - Configurar logging
-- Adquirir file lock (evita ejecuciones concurrentes)
-- Ejecutar en modo `cron` (una sola vez) o `daemon` (bucle con intervalo)
+- Adquirir file lock (evita ejecuciones concurrentes en modo cron/daemon)
+- Ejecutar en modo `cron` (una sola vez), `daemon` (bucle con intervalo), `dashboard` (solo panel web) o `full` (dashboard + bucle)
 - Orquestar el ciclo completo: lectura → evaluación → estado → envío → persistencia
+
+### `src/api.py` — Dashboard web interno
+
+Servidor FastAPI del panel de control. Responsabilidades:
+- Servir la interfaz HTML/JS del dashboard
+- Gestionar autenticación por cookie de sesión
+- Hacer polling a LibreLinkUp en un hilo de segundo plano para mantener la caché en memoria
+- Exponer endpoints protegidos: `/api/patients`, `/api/alerts`, `/api/health`
+- Gestionar el flujo de configuración inicial (`/setup`) y login (`/login`)
+- Se inicia automáticamente con `monitoring.mode: dashboard` o `full`
+
+### `src/api_server.py` — API REST externa (solo lectura)
+
+Servidor FastAPI ligero para consumo externo (widgets, apps móviles, watchfaces). Responsabilidades:
+- Leer `readings_cache.json` que `src/main.py` actualiza en cada ciclo
+- Exponer endpoints sin autenticación: `/api/readings`, `/api/health`, `/api/alerts`
+- Configurar CORS para permitir acceso desde distintos orígenes
+- Se inicia manualmente con `uvicorn src.api_server:app`
+
+> **Distinción clave:** `src/api.py` es el backend del dashboard (auth requerida, datos en memoria). `src/api_server.py` es la API pública (sin auth, datos del archivo cache).
+
+### `src/auth.py` — Gestión de sesiones y credenciales
+
+Gestiona la autenticación del dashboard web. Responsabilidades:
+- Verificar credenciales contra `config.yaml`
+- Crear y validar tokens de sesión (almacenados en memoria, TTL de 24 horas)
+- Detectar si el sistema ya ha sido configurado (`is_configured()`)
 
 ### `src/config_schema.py` — Validación de configuración
 
@@ -54,7 +81,7 @@ Mantiene el estado de alertas por `patient_id` en un archivo JSON. Escritura at�
 
 ### `src/outputs/` — Salidas de alertas
 
-Patrón Strategy con clase base abstracta `BaseOutput`:
+Patrón Strategy con clase base abstracta `BaseOutput`. El módulo `src/outputs/__init__.py` expone `build_outputs(config)`, una función de fábrica que instancia todos los canales habilitados en la configuración.
 
 | Clase | Descripción |
 |-------|-------------|
