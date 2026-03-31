@@ -9,4 +9,7 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+.coverage
+coverage.xml
+htmlcov/
 readings_cache.json
