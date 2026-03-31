@@ -104,7 +104,7 @@
       margin-bottom: .4rem;
     }
 
-    input[type="email"],
+    input[type="text"],
     input[type="password"] {
       width: 100%;
       padding: .6rem .85rem;
@@ -188,11 +188,11 @@
         <div class="form-group">
           <label for="email">👤 Usuario del panel</label>
           <input
-            type="email"
-            id="email"
-            name="email"
-            placeholder="tu@email.com"
-            autocomplete="email"
+            type="text"
+            id="username"
+            name="username"
+            placeholder="usuario"
+            autocomplete="username"
             required
           />
         </div>
@@ -238,10 +238,10 @@
       e.preventDefault();
       hideError();
 
-      const email = document.getElementById('email').value.trim();
+      const username = document.getElementById('username').value.trim();
       const password = document.getElementById('password').value;
 
-      if (!email || !password) {
+      if (!username || !password) {
         showError('Por favor completa todos los campos.');
         return;
       }
@@ -253,7 +253,7 @@
         const res = await fetch('/api/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password }),
+          body: JSON.stringify({ username, password }),
         });
 
         if (res.ok) {

@@ -327,6 +327,40 @@ def test_full_mode_requires_enabled_output():
     assert any("output" in e.lower() for e in errors)
 
 
+def test_dashboard_mode_allows_empty_outputs():
+    """dashboard mode does not need enabled outputs (no alerting)."""
+    cfg = _valid_config()
+    cfg["outputs"] = []
+    cfg["monitoring"] = {"mode": "dashboard", "interval_seconds": 300}
+    errors = validate_config(cfg)
+    assert not any("output" in e.lower() for e in errors)
+
+
+def test_dashboard_mode_allows_all_disabled_outputs():
+    """dashboard mode accepts an all-disabled outputs list."""
+    cfg = _valid_config()
+    cfg["outputs"] = [{"type": "telegram", "enabled": False, "bot_token": "", "chat_id": ""}]
+    cfg["monitoring"] = {"mode": "dashboard", "interval_seconds": 300}
+    errors = validate_config(cfg)
+    assert not any("output" in e.lower() for e in errors)
+
+
+def test_daemon_mode_requires_enabled_output():
+    cfg = _valid_config()
+    cfg["outputs"] = []
+    cfg["monitoring"] = {"mode": "daemon", "interval_seconds": 300}
+    errors = validate_config(cfg)
+    assert any("output" in e.lower() for e in errors)
+
+
+def test_full_mode_requires_enabled_output():
+    cfg = _valid_config()
+    cfg["outputs"] = []
+    cfg["monitoring"] = {"mode": "full", "interval_seconds": 300}
+    errors = validate_config(cfg)
+    assert any("output" in e.lower() for e in errors)
+
+
 def test_unknown_output_type():
     cfg = _valid_config()
     cfg["outputs"].append({"type": "sms", "enabled": True})
