@@ -15,9 +15,7 @@ from src.alert_engine import build_message, evaluate, evaluate_trend, is_stale, 
 from src.alert_history import cleanup_old_alerts, init_db, log_alert
 from src.config_schema import validate_config as schema_validate_config
 from src.glucose_reader import read_all_patients
-from src.outputs.telegram import TelegramOutput
-from src.outputs.webhook import WebhookOutput
-from src.outputs.whatsapp import WhatsAppOutput
+from src.outputs import build_outputs
 from src.state import (
     clear_patient_state,
     get_patient_state,
@@ -42,38 +40,6 @@ def configure_logging(config: dict) -> None:
     root = logging.getLogger()
     root.setLevel(level)
     root.addHandler(handler)
-
-
-def build_outputs(config: dict) -> list:
-    outputs = []
-    for out_cfg in config.get("outputs", []):
-        if not out_cfg.get("enabled", False):
-            continue
-        out_type = out_cfg.get("type")
-        if out_type == "webhook":
-            outputs.append(WebhookOutput(
-                url=out_cfg["url"],
-                token=out_cfg.get("token", ""),
-                device=out_cfg.get("device", ""),
-                language=out_cfg.get("language", ""),
-            ))
-        elif out_type == "whatsapp":
-            access_token = os.environ.get("WHATSAPP_ACCESS_TOKEN") or out_cfg.get("access_token", "")
-            outputs.append(WhatsAppOutput(
-                phone_number_id=out_cfg["phone_number_id"],
-                access_token=access_token,
-                recipient=out_cfg["recipient"],
-                template_name=out_cfg.get("template_name", "glucose_alert"),
-                language_code=out_cfg.get("language_code", "es_MX"),
-            ))
-        elif out_type == "telegram":
-            outputs.append(TelegramOutput(
-                bot_token=out_cfg["bot_token"],
-                chat_id=out_cfg["chat_id"],
-            ))
-        else:
-            logger.warning("Unknown output type '%s', skipping", out_type)
-    return outputs
 
 
 def acquire_lock(lock_path: str):
