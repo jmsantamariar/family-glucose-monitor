@@ -1,7 +1,25 @@
 """Alert logic: threshold evaluation, cooldown, stale detection, message building with patient name."""
+import string as _string
 from datetime import datetime, timezone
 
-# Trend arrow classification
+
+class _RestrictedFormatter(_string.Formatter):
+    """String formatter that blocks attribute/item access in template placeholders.
+
+    Prevents format-string injection: a template like ``{patient_name.__class__}``
+    would normally access the ``__class__`` attribute of the substituted value.
+    This formatter raises ``KeyError`` for any placeholder that uses ``.`` or
+    ``[`` notation so that only simple ``{key}`` substitutions are allowed.
+    """
+
+    def get_field(self, field_name: str, args, kwargs):
+        if "." in field_name or "[" in field_name:
+            raise KeyError(field_name)
+        return super().get_field(field_name, args, kwargs)
+
+
+_formatter = _RestrictedFormatter()
+
 TREND_ARROWS = {
     "↑": "rising_fast",
     "↗": "rising",
@@ -99,7 +117,10 @@ def should_alert(level: str, state: dict, cooldown_minutes: int, trend_alert: st
     if effective_alert != last_level:
         return True
 
-    last_dt = datetime.fromisoformat(last_time)
+    try:
+        last_dt = datetime.fromisoformat(last_time)
+    except (ValueError, TypeError):
+        return True
     now = datetime.now(timezone.utc)
     elapsed = (now - last_dt).total_seconds()
     return elapsed > cooldown_minutes * 60
@@ -145,7 +166,11 @@ def build_message(glucose_value: int, level: str, trend_arrow: str,
                 "Alerta: {patient_name} glucosa {value} mg/dL {trend}, nivel {level}",
             )
 
-    return template.format(
-        value=glucose_value, trend=trend_arrow, level=level,
-        patient_name=patient_name, trend_alert=trend_alert
-    )
+    try:
+        return _formatter.format(
+            template,
+            **{"value": glucose_value, "trend": trend_arrow, "level": level,
+               "patient_name": patient_name, "trend_alert": trend_alert}
+        )
+    except KeyError:
+        return template

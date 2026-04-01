@@ -149,3 +149,27 @@ def test_build_message_unknown_level_fallback():
     msg = build_message(100, "unknown_level", "→", "Test")
     assert "Test" in msg
     assert "100" in msg
+
+
+def test_build_message_format_map_safe_against_attribute_access():
+    """A template with {patient_name.__class__} must NOT execute attribute traversal."""
+    config = {
+        "alerts": {
+            "messages": {
+                "low": "{patient_name.__class__}",
+            }
+        }
+    }
+    # format_map raises KeyError for attribute-access placeholders — the
+    # build_message fallback returns the raw template string unchanged.
+    result = build_message(60, "low", "→", "Juan", config)
+    assert result == "{patient_name.__class__}"
+
+
+def test_should_alert_corrupt_timestamp_returns_true():
+    """A malformed timestamp in state should not crash; should re-alert."""
+    state = {
+        "last_alert_time": "not-a-valid-date",
+        "last_alert_level": "low",
+    }
+    assert should_alert("low", state, cooldown_minutes=20) is True

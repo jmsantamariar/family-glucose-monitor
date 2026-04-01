@@ -221,3 +221,89 @@ def test_cors_allowed_origin_via_env(tmp_path, monkeypatch):
     # Restore original module state
     monkeypatch.delenv("CORS_ALLOWED_ORIGINS", raising=False)
     importlib.reload(api_server_module)
+
+
+# ---------------------------------------------------------------------------
+# API key authentication
+# ---------------------------------------------------------------------------
+
+def test_no_api_key_set_allows_unauthenticated(tmp_path, monkeypatch):
+    """When API_KEY env var is not set, endpoints are publicly accessible."""
+    import importlib
+    monkeypatch.delenv("API_KEY", raising=False)
+    import src.api_server as api_server_module
+    importlib.reload(api_server_module)
+    cache_file = tmp_path / "readings_cache.json"
+    cache_file.write_text(json.dumps(SAMPLE_CACHE))
+    test_client = TestClient(api_server_module.app)
+    with patch.object(api_server_module, "CACHE_FILE", cache_file):
+        response = test_client.get("/api/readings")
+    assert response.status_code == 200
+    importlib.reload(api_server_module)
+
+
+def test_api_key_set_blocks_unauthenticated(tmp_path, monkeypatch):
+    """When API_KEY is set, requests without the key return 401."""
+    import importlib
+    monkeypatch.setenv("API_KEY", "test-secret-key")
+    import src.api_server as api_server_module
+    importlib.reload(api_server_module)
+    cache_file = tmp_path / "readings_cache.json"
+    cache_file.write_text(json.dumps(SAMPLE_CACHE))
+    test_client = TestClient(api_server_module.app)
+    with patch.object(api_server_module, "CACHE_FILE", cache_file):
+        response = test_client.get("/api/readings")
+    assert response.status_code == 401
+    monkeypatch.delenv("API_KEY", raising=False)
+    importlib.reload(api_server_module)
+
+
+def test_api_key_set_allows_correct_key(tmp_path, monkeypatch):
+    """When API_KEY is set, a correct Authorization: Bearer header grants access."""
+    import importlib
+    monkeypatch.setenv("API_KEY", "test-secret-key")
+    import src.api_server as api_server_module
+    importlib.reload(api_server_module)
+    cache_file = tmp_path / "readings_cache.json"
+    cache_file.write_text(json.dumps(SAMPLE_CACHE))
+    test_client = TestClient(api_server_module.app)
+    with patch.object(api_server_module, "CACHE_FILE", cache_file):
+        response = test_client.get(
+            "/api/readings",
+            headers={"Authorization": "Bearer test-secret-key"},
+        )
+    assert response.status_code == 200
+    monkeypatch.delenv("API_KEY", raising=False)
+    importlib.reload(api_server_module)
+
+
+def test_api_key_set_blocks_wrong_key(tmp_path, monkeypatch):
+    """When API_KEY is set, a wrong key returns 401."""
+    import importlib
+    monkeypatch.setenv("API_KEY", "test-secret-key")
+    import src.api_server as api_server_module
+    importlib.reload(api_server_module)
+    cache_file = tmp_path / "readings_cache.json"
+    cache_file.write_text(json.dumps(SAMPLE_CACHE))
+    test_client = TestClient(api_server_module.app)
+    with patch.object(api_server_module, "CACHE_FILE", cache_file):
+        response = test_client.get(
+            "/api/readings",
+            headers={"Authorization": "Bearer wrong-key"},
+        )
+    assert response.status_code == 401
+    monkeypatch.delenv("API_KEY", raising=False)
+    importlib.reload(api_server_module)
+
+
+def test_alerts_hours_max_is_168(monkeypatch):
+    """The /api/alerts endpoint must reject hours > 168."""
+    import importlib
+    monkeypatch.delenv("API_KEY", raising=False)
+    import src.api_server as api_server_module
+    importlib.reload(api_server_module)
+    test_client = TestClient(api_server_module.app)
+    with patch("src.alert_history.get_alerts", return_value=[]):
+        response = test_client.get("/api/alerts?hours=200")
+    assert response.status_code == 422  # Exceeds le=168 constraint
+    importlib.reload(api_server_module)
