@@ -102,6 +102,9 @@ _ALLOW_AUTH_DISABLED = (
     os.environ.get("AUTH_DISABLED") == "1"
     and APP_ENV.lower() in {"dev", "development", "local", "test"}
 )
+_IS_DEV = APP_ENV.lower() in {"dev", "development", "local", "test"}
+# Secure cookies require HTTPS — only enforced in non-development environments.
+_SECURE_COOKIES = not _IS_DEV
 if os.environ.get("AUTH_DISABLED") == "1" and not _ALLOW_AUTH_DISABLED:
     logger.warning(
         "AUTH_DISABLED=1 ignorado porque APP_ENV/ENV=%s no es un entorno de desarrollo",
@@ -396,7 +399,7 @@ async def api_login(request: Request, response: Response):
     ``password``.  Credentials are verified against the ``dashboard_auth``
     section — **not** the LibreLinkUp credentials.
     """    
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = request.client.host if request.client else "__no_client__"
 
     if not _check_rate_limit(client_ip):
         raise HTTPException(
@@ -423,7 +426,7 @@ async def api_login(request: Request, response: Response):
         key="session_token",
         value=token,
         httponly=True,
-        secure=True,
+        secure=_SECURE_COOKIES,
         max_age=86400,
         samesite="lax",
     )
@@ -602,7 +605,7 @@ async def api_setup(request: Request, response: Response):
         key="session_token",
         value=token,
         httponly=True,
-        secure=True,
+        secure=_SECURE_COOKIES,
         max_age=86400,
         samesite="lax",
     )
