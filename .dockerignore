@@ -1,0 +1,17 @@
+.git
+.github
+tests/
+docs/
+pulls/
+*.md
+__pycache__
+*.pyc
+.coverage
+coverage.xml
+*.egg-info
+.secret_key
+config.yaml
+state.json
+sessions.db
+alert_history.db
+readings_cache.json

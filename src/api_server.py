@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.alert_history import get_alerts
@@ -65,6 +65,16 @@ app.add_middleware(
     allow_methods=["GET"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    """Add HTTP security headers to every response."""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
 
 
 def _load_cache() -> dict:
@@ -124,7 +134,7 @@ def get_health():
 
 
 @app.get("/api/alerts")
-def get_alert_history(patient_id: Optional[str] = None, hours: int = 24):
+def get_alert_history(patient_id: Optional[str] = None, hours: int = Query(default=24, ge=1, le=8760)):
     """Return alert history for the last *hours* hours.
 
     Optionally filter by *patient_id*.  Returns an empty list when there are no

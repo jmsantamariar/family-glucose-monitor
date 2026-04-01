@@ -37,5 +37,5 @@ def set_patient_state(state: dict, patient_id: str, patient_state: dict) -> dict
 
 
 def clear_patient_state(state: dict, patient_id: str) -> dict:
-    state[patient_id] = {}
+    state.pop(patient_id, None)
     return state

@@ -583,3 +583,93 @@ class TestPageRoutes:
         assert resp.status_code == 200
         assert "text/html" in resp.headers["content-type"]
         assert "LibreLinkUp" in resp.text
+
+
+# ── Login rate limiting ────────────────────────────────────────────────────────
+
+
+class TestLoginRateLimit:
+    """Tests for brute-force protection on the /api/login endpoint."""
+
+    @pytest.fixture
+    def client(self):
+        return TestClient(app, follow_redirects=False)
+
+    @pytest.fixture(autouse=True)
+    def _reset_rate_limiter(self):
+        """Clear any accumulated failed-login state before each test."""
+        import src.api as _api
+        with _api._login_failures_lock:
+            _api._login_failures.clear()
+        yield
+        with _api._login_failures_lock:
+            _api._login_failures.clear()
+
+    def test_rate_limit_after_max_attempts(self, client, tmp_path):
+        """After MAX failed attempts the next request must return 429."""
+        import src.api as _api
+
+        cfg = tmp_path / "config.yaml"
+        cfg.write_text(
+            yaml.dump(
+                {
+                    "dashboard_auth": {
+                        "username": "user",
+                        "password_hash": hash_password("secret"),
+                    }
+                }
+            )
+        )
+        with patch("src.auth._CONFIG_PATH", cfg):
+            # Exhaust the allowed attempts
+            for _ in range(_api._LOGIN_MAX_ATTEMPTS):
+                resp = client.post(
+                    "/api/login",
+                    json={"username": "user", "password": "wrong"},
+                )
+                assert resp.status_code == 401
+
+            # The next attempt must be blocked
+            resp = client.post(
+                "/api/login",
+                json={"username": "user", "password": "wrong"},
+            )
+        assert resp.status_code == 429
+
+    def test_successful_login_resets_counter(self, client, tmp_path):
+        """A successful login clears the failed-attempt counter for that IP."""
+        import src.api as _api
+
+        cfg = tmp_path / "config.yaml"
+        cfg.write_text(
+            yaml.dump(
+                {
+                    "dashboard_auth": {
+                        "username": "user",
+                        "password_hash": hash_password("correct"),
+                    }
+                }
+            )
+        )
+        with patch("src.auth._CONFIG_PATH", cfg):
+            # Accumulate some failures
+            for _ in range(_api._LOGIN_MAX_ATTEMPTS - 1):
+                client.post(
+                    "/api/login",
+                    json={"username": "user", "password": "wrong"},
+                )
+
+            # Successful login should reset the counter
+            resp = client.post(
+                "/api/login",
+                json={"username": "user", "password": "correct"},
+            )
+            assert resp.status_code == 200
+
+            # Immediately after, a wrong password should NOT be rate-limited (counter was reset)
+            for _ in range(_api._LOGIN_MAX_ATTEMPTS):
+                resp = client.post(
+                    "/api/login",
+                    json={"username": "user", "password": "wrong"},
+                )
+                assert resp.status_code == 401  # still within limit after reset
