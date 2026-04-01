@@ -169,8 +169,8 @@ def build_message(glucose_value: int, level: str, trend_arrow: str,
     try:
         return _formatter.format(
             template,
-            **{"value": glucose_value, "trend": trend_arrow, "level": level,
-               "patient_name": patient_name, "trend_alert": trend_alert}
+            value=glucose_value, trend=trend_arrow, level=level,
+            patient_name=patient_name, trend_alert=trend_alert,
         )
     except KeyError:
         return template
