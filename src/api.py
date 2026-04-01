@@ -23,7 +23,6 @@ port (configurable), has no authentication, and reads data from the
 ``timestamp``).  Both modules now share ``readings_cache.json`` as the single
 source of truth.
 """
-import collections
 import json
 import logging
 import os
@@ -112,7 +111,8 @@ if os.environ.get("AUTH_DISABLED") == "1" and not _ALLOW_AUTH_DISABLED:
     )
 
 def load_config(path: str = "config.yaml") -> dict:
-    with open(path) as f:
+    resolved = path if os.path.isabs(path) else str(PROJECT_ROOT / path)
+    with open(resolved) as f:
         return yaml.safe_load(f)
 
 # ── Login rate limiter ────────────────────────────────────────────────────────
@@ -120,36 +120,21 @@ def load_config(path: str = "config.yaml") -> dict:
 _LOGIN_MAX_ATTEMPTS = 10
 _LOGIN_WINDOW_SECONDS = 600  # 10 minutes
 
-# Maps client IP → deque of timestamps of failed login attempts
-_login_failures: dict[str, collections.deque] = collections.defaultdict(
-    lambda: collections.deque()
-)
-_login_failures_lock = threading.Lock()
-
 
 def _check_rate_limit(ip: str) -> bool:
     """Return True if the IP is allowed to attempt login, False if rate-limited."""
-    now = time.time()
-    cutoff = now - _LOGIN_WINDOW_SECONDS
-    with _login_failures_lock:
-        dq = _login_failures[ip]
-        # Purge timestamps outside the sliding window
-        while dq and dq[0] < cutoff:
-            dq.popleft()
-        return len(dq) < _LOGIN_MAX_ATTEMPTS
+    count = session_manager.get_recent_failed_logins(ip, _LOGIN_WINDOW_SECONDS)
+    return count < _LOGIN_MAX_ATTEMPTS
 
 
 def _record_failed_login(ip: str) -> None:
     """Record a failed login attempt for the given IP."""
-    now = time.time()
-    with _login_failures_lock:
-        _login_failures[ip].append(now)
+    session_manager.record_failed_login(ip)
 
 
 def _reset_login_failures(ip: str) -> None:
     """Clear failed login counter for the given IP on successful login."""
-    with _login_failures_lock:
-        _login_failures.pop(ip, None)
+    session_manager.clear_failed_logins(ip)
 
 @asynccontextmanager
 async def lifespan(application: "FastAPI"):
@@ -168,6 +153,10 @@ async def lifespan(application: "FastAPI"):
                     logger.debug("Cleaned up %d expired session(s)", removed)
             except Exception as exc:
                 logger.warning("Session cleanup failed: %s", exc)
+            try:
+                session_manager.cleanup_old_login_attempts(window_seconds=_LOGIN_WINDOW_SECONDS)
+            except Exception as exc:
+                logger.warning("Login attempts cleanup failed: %s", exc)
 
     cleanup_thread = threading.Thread(target=_session_cleanup_loop, daemon=True)
     cleanup_thread.start()
@@ -456,8 +445,20 @@ async def api_setup(request: Request, response: Response):
 
     The two sets of credentials are **intentionally independent** — changing
     the LibreLinkUp password does not affect dashboard access and vice-versa.
+
+    If the system is already configured, a valid session token is required to
+    prevent unauthorised reconfiguration.
     """
     global _config
+
+    # Issue 1.1: block reconfiguration unless the caller is authenticated.
+    if is_configured():
+        token = request.cookies.get("session_token")
+        if not session_manager.is_valid(token):
+            raise HTTPException(
+                status_code=403,
+                detail="Ya configurado. Inicia sesión para reconfigurar.",
+            )
     try:
         data = await request.json()
     except Exception:
@@ -477,7 +478,18 @@ async def api_setup(request: Request, response: Response):
             status_code=422,
             detail="La contraseña del dashboard es obligatoria",
         )
+    if len(dashboard_password) < 8:
+        raise HTTPException(
+            status_code=422,
+            detail="La contraseña del panel de control debe tener al menos 8 caracteres.",
+        )
     dashboard_username = str(data.get("dashboard_username", email)).strip() or email
+
+    # Region selector — validated against the supported REGION_MAP keys.
+    _VALID_REGIONS = {"US", "EU", "EU2", "DE", "FR", "JP", "AP", "AU", "AE", "CA", "LA", "RU"}
+    region = str(data.get("region", "EU")).upper().strip()
+    if region not in _VALID_REGIONS:
+        raise HTTPException(status_code=422, detail=f"Región no válida: {region}")
 
     try:
         low_threshold = int(data.get("low_threshold", 70))
@@ -540,7 +552,7 @@ async def api_setup(request: Request, response: Response):
         "librelinkup": {
             "email": email,
             "password": encrypt_value(password),
-            "region": "EU",
+            "region": region,
         },
         "dashboard_auth": {
             "username": dashboard_username,

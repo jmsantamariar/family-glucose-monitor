@@ -36,6 +36,16 @@ _CREATE_SESSIONS_INDEX = (
     "CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);"
 )
 
+_CREATE_LOGIN_ATTEMPTS_TABLE = """
+CREATE TABLE IF NOT EXISTS login_attempts (
+    ip          TEXT NOT NULL,
+    timestamp   REAL NOT NULL
+);
+"""
+_CREATE_LOGIN_ATTEMPTS_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_ts ON login_attempts(ip, timestamp);"
+)
+
 
 class SessionManager:
     """Manages persistent session tokens backed by SQLite with TTL."""
@@ -47,6 +57,8 @@ class SessionManager:
             with self._get_conn() as conn:
                 conn.execute(_CREATE_SESSIONS_TABLE)
                 conn.execute(_CREATE_SESSIONS_INDEX)
+                conn.execute(_CREATE_LOGIN_ATTEMPTS_TABLE)
+                conn.execute(_CREATE_LOGIN_ATTEMPTS_INDEX)
                 conn.commit()
         except sqlite3.OperationalError as exc:
             logger.error("Failed to initialise sessions DB at %s: %s", self._db_path, exc)
@@ -120,6 +132,68 @@ class SessionManager:
         except sqlite3.OperationalError as exc:
             logger.error("Failed to clean up expired sessions: %s", exc)
             return 0
+
+    # ---------------------------------------------------------------------------
+    # Login attempt tracking (persistent rate-limiter)
+    # ---------------------------------------------------------------------------
+
+    def record_failed_login(self, ip: str) -> None:
+        """Record a failed login attempt for *ip*."""
+        try:
+            with self._get_conn() as conn:
+                conn.execute(
+                    "INSERT INTO login_attempts (ip, timestamp) VALUES (?, ?)",
+                    (ip, time.time()),
+                )
+                conn.commit()
+        except sqlite3.OperationalError as exc:
+            logger.error("Failed to record failed login for %s: %s", ip, exc)
+
+    def get_recent_failed_logins(self, ip: str, window_seconds: int) -> int:
+        """Return the number of failed login attempts for *ip* within *window_seconds*."""
+        cutoff = time.time() - window_seconds
+        try:
+            with self._get_conn() as conn:
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM login_attempts WHERE ip = ? AND timestamp >= ?",
+                    (ip, cutoff),
+                ).fetchone()
+                return row[0] if row else 0
+        except sqlite3.OperationalError as exc:
+            logger.error("Failed to query failed logins for %s: %s", ip, exc)
+            return 0
+
+    def clear_failed_logins(self, ip: str) -> None:
+        """Remove all failed login records for *ip* (called on successful login)."""
+        try:
+            with self._get_conn() as conn:
+                conn.execute("DELETE FROM login_attempts WHERE ip = ?", (ip,))
+                conn.commit()
+        except sqlite3.OperationalError as exc:
+            logger.error("Failed to clear failed logins for %s: %s", ip, exc)
+
+    def cleanup_old_login_attempts(self, window_seconds: int = 600) -> int:
+        """Delete login attempt records older than *window_seconds*. Returns rows removed."""
+        cutoff = time.time() - window_seconds
+        try:
+            with self._get_conn() as conn:
+                cursor = conn.execute(
+                    "DELETE FROM login_attempts WHERE timestamp < ?", (cutoff,)
+                )
+                conn.commit()
+                return cursor.rowcount
+        except sqlite3.OperationalError as exc:
+            logger.error("Failed to clean up old login attempts: %s", exc)
+            return 0
+
+    def clear_all_login_attempts(self) -> None:
+        """Remove all login attempt records (used in tests)."""
+        try:
+            with self._get_conn() as conn:
+                conn.execute("DELETE FROM login_attempts")
+                conn.commit()
+        except sqlite3.OperationalError as exc:
+            logger.error("Failed to clear all login attempts: %s", exc)
 
 
 session_manager = SessionManager(db_path=_SESSIONS_DB)

@@ -322,7 +322,26 @@
 
         <div class="form-group">
           <label for="dashboardPassword">🛡️ Contraseña del panel de control</label>
-          <input type="password" id="dashboardPassword" placeholder="••••••••" autocomplete="new-password" required />
+          <input type="password" id="dashboardPassword" placeholder="Mínimo 8 caracteres" autocomplete="new-password" required minlength="8" />
+        </div>
+
+        <div class="form-group">
+          <label for="region">🌍 Región de LibreLinkUp</label>
+          <select id="region">
+            <option value="EU" selected>EU — Europa (predeterminado)</option>
+            <option value="US">US — Estados Unidos</option>
+            <option value="EU2">EU2 — Europa 2</option>
+            <option value="DE">DE — Alemania</option>
+            <option value="FR">FR — Francia</option>
+            <option value="JP">JP — Japón</option>
+            <option value="AP">AP — Asia-Pacífico</option>
+            <option value="AU">AU — Australia</option>
+            <option value="AE">AE — Emiratos Árabes</option>
+            <option value="CA">CA — Canadá</option>
+            <option value="LA">LA — Latinoamérica</option>
+            <option value="RU">RU — Rusia</option>
+          </select>
+          <small class="hint">Elige la misma región que tu app LibreLinkUp.</small>
         </div>
 
         <div class="btn-row">
@@ -464,6 +483,7 @@
         }
         if (!password) { showAlert('Por favor ingresa tu contraseña de LibreLinkUp.', 'error'); return false; }
         if (!dashboardPassword) { showAlert('Por favor ingresa la contraseña del panel de control.', 'error'); return false; }
+        if (dashboardPassword.length < 8) { showAlert('La contraseña del panel de control debe tener al menos 8 caracteres.', 'error'); return false; }
       }
       if (step === 2) {
         const low = parseInt(document.getElementById('lowThreshold').value, 10);
@@ -515,6 +535,7 @@
         email: document.getElementById('email').value.trim(),
         password: document.getElementById('password').value,
         dashboard_password: document.getElementById('dashboardPassword').value,
+        region: document.getElementById('region').value,
         low_threshold: parseInt(document.getElementById('lowThreshold').value, 10),
         high_threshold: parseInt(document.getElementById('highThreshold').value, 10),
         cooldown_minutes: parseInt(document.getElementById('cooldown').value, 10),

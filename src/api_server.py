@@ -28,12 +28,14 @@ needs to be reached from a browser on a different origin, e.g.::
 import json
 import logging
 import os
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Request, Query
+from fastapi import FastAPI, HTTPException, Request, Query, Security
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from src.alert_history import get_alerts
 
@@ -46,10 +48,39 @@ CACHE_FILE = PROJECT_ROOT / "readings_cache.json"
 _default_db = str(PROJECT_ROOT / "alert_history.db")
 DB_FILE = os.environ.get("ALERT_HISTORY_DB", _default_db)
 
+# Optional API key authentication.  When API_KEY is set, all data endpoints
+# require the caller to pass "Authorization: Bearer <key>".  If unset, the API
+# remains unauthenticated (backward compatible) but a startup warning is logged.
+API_KEY: str | None = os.environ.get("API_KEY") or None
+
+_bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def _require_api_key(
+    credentials: HTTPAuthorizationCredentials | None = Security(_bearer_scheme),
+) -> None:
+    """Dependency that enforces API key auth when API_KEY env var is set."""
+    if API_KEY is None:
+        return  # No key configured — unauthenticated access allowed.
+    if credentials is None or credentials.credentials != API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key.")
+
+
+@asynccontextmanager
+async def lifespan(application: "FastAPI"):
+    if API_KEY is None:
+        logger.warning(
+            "API_KEY is not set — the external API is unauthenticated. "
+            "Set API_KEY to protect health data."
+        )
+    yield
+
+
 app = FastAPI(
     title="Family Glucose Monitor API",
     description="REST API for external consumption of glucose readings (widgets, dashboards, etc.)",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # ---------------------------------------------------------------------------
@@ -90,7 +121,7 @@ def _load_cache() -> dict:
 
 
 @app.get("/api/readings")
-def get_all_readings():
+def get_all_readings(_: None = Security(_require_api_key)):
     """Return all cached patient glucose readings."""
     cache = _load_cache()
     return {
@@ -100,7 +131,7 @@ def get_all_readings():
 
 
 @app.get("/api/readings/{patient_id}")
-def get_patient_reading(patient_id: str):
+def get_patient_reading(patient_id: str, _: None = Security(_require_api_key)):
     """Return the latest glucose reading for a specific patient."""
     cache = _load_cache()
     readings = cache.get("readings", [])
@@ -111,7 +142,7 @@ def get_patient_reading(patient_id: str):
 
 
 @app.get("/api/health")
-def get_health():
+def get_health(_: None = Security(_require_api_key)):
     """Return API health status and data freshness information."""
     cache = _load_cache()
     updated_at = cache.get("updated_at")
@@ -134,8 +165,8 @@ def get_health():
 
 
 @app.get("/api/alerts")
-def get_alert_history(patient_id: Optional[str] = None, hours: int = Query(default=24, ge=1, le=8760)):
-    """Return alert history for the last *hours* hours.
+def get_alert_history(patient_id: Optional[str] = None, hours: int = Query(default=24, ge=1, le=168), _: None = Security(_require_api_key)):
+    """Return alert history for the last *hours* hours (max 168 = 1 week).
 
     Optionally filter by *patient_id*.  Returns an empty list when there are no
     alerts or the database does not exist yet.
