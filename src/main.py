@@ -103,6 +103,12 @@ def run_once(config: dict) -> None:
         logger.error("No readings obtained from any patient")
         return
     _save_readings_cache(readings, config)
+    # Update in-memory dashboard cache if running in full mode
+    try:
+        from src.api import update_readings_cache
+        update_readings_cache(readings, config)
+    except ImportError:
+        pass
     max_age = config["alerts"]["max_reading_age_minutes"]
     cooldown = config["alerts"]["cooldown_minutes"]
     outputs = build_outputs(config)
@@ -228,11 +234,31 @@ def main() -> None:
         return
 
     if mode == "full":
-        # Run dashboard in background thread, monitoring loop in foreground
+        from src.api import set_external_polling
+        set_external_polling(True)
+
+        interval = config.get("monitoring", {}).get("interval_seconds", 300)
+        lock_fd = acquire_lock(lock_path)
+
+        def _polling_loop():
+            logger.info("Starting polling loop in background (interval: %ds)", interval)
+            while True:
+                try:
+                    run_once(config)
+                except Exception as e:
+                    logger.error("Error in monitoring cycle: %s: %s", type(e).__name__, e)
+                time.sleep(interval)
+
         import threading as _threading
-        dash_thread = _threading.Thread(target=_start_dashboard, args=(config,), daemon=True)
-        dash_thread.start()
-        mode = "daemon"  # fall through to daemon loop below
+        poll_thread = _threading.Thread(target=_polling_loop, daemon=True)
+        poll_thread.start()
+
+        # Uvicorn runs on the main thread for proper signal handling
+        try:
+            _start_dashboard(config)
+        finally:
+            release_lock(lock_fd)
+        return
 
     lock_fd = acquire_lock(lock_path)
     try:

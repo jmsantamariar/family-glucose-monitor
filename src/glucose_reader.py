@@ -1,6 +1,8 @@
 """Multi-patient glucose data reader using pylibrelinkup."""
 import logging
 import os
+import random
+import time
 
 from pylibrelinkup import PyLibreLinkUp
 from pylibrelinkup.api_url import APIUrl
@@ -26,15 +28,68 @@ REGION_MAP = {
 }
 
 
+def _retry_with_backoff(
+    func,
+    *args,
+    max_retries: int = 3,
+    base_delay: float = 2.0,
+    max_delay: float = 60.0,
+    retryable_exceptions: tuple = (Exception,),
+    non_retryable_exceptions: tuple = (),
+    **kwargs,
+):
+    """Execute *func* with exponential backoff on retryable failures.
+
+    Retry up to *max_retries* times.  The delay between attempts grows
+    exponentially: base_delay * 2^attempt, capped at *max_delay*.
+    A small random jitter (±25%) is added to avoid thundering-herd problems.
+
+    Exceptions in *non_retryable_exceptions* are re-raised immediately without
+    any retry.  If all retries are exhausted, the last exception is re-raised.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(max_retries + 1):
+        try:
+            return func(*args, **kwargs)
+        except non_retryable_exceptions:
+            raise
+        except retryable_exceptions as e:
+            last_exc = e
+            if attempt < max_retries:
+                delay = min(base_delay * (2 ** attempt), max_delay)
+                delay *= random.uniform(0.75, 1.25)
+                logger.warning(
+                    "Retry %d/%d after %.1fs: %s",
+                    attempt + 1,
+                    max_retries,
+                    delay,
+                    type(e).__name__,
+                )
+                time.sleep(delay)
+            else:
+                logger.error("Exhausted %d retries: %s", max_retries, type(e).__name__)
+    raise last_exc  # type: ignore[misc]
+
+
 def _build_client(email: str, password: str, region: str) -> PyLibreLinkUp:
     api_url = REGION_MAP.get(region.upper(), APIUrl.US)
     client = PyLibreLinkUp(email=email, password=password, api_url=api_url)
     try:
-        client.authenticate()
+        _retry_with_backoff(
+            client.authenticate,
+            max_retries=3,
+            base_delay=2.0,
+            non_retryable_exceptions=(RedirectError,),
+        )
     except RedirectError as e:
         logger.info("Redirect to region %s, re-authenticating", e.region)
         client = PyLibreLinkUp(email=email, password=password, api_url=e.region)
-        client.authenticate()
+        _retry_with_backoff(
+            client.authenticate,
+            max_retries=3,
+            base_delay=2.0,
+            non_retryable_exceptions=(RedirectError,),
+        )
     return client
 
 
@@ -43,9 +98,18 @@ def read_all_patients(config: dict) -> list[dict]:
         email = os.environ.get("LIBRELINKUP_EMAIL") or config["librelinkup"]["email"]
         password = os.environ.get("LIBRELINKUP_PASSWORD") or decrypt_value(config["librelinkup"]["password"])
         region = config.get("librelinkup", {}).get("region", "US")
+        retry_cfg = config.get("librelinkup", {}).get("retry", {})
+        patients_max_retries: int = retry_cfg.get("max_retries", 2)
+        patients_base_delay: float = retry_cfg.get("base_delay", 2.0)
+        patients_max_delay: float = retry_cfg.get("max_delay", 60.0)
         client = _build_client(email, password, region)
         logger.info("Authentication successful")
-        patients = client.get_patients()
+        patients = _retry_with_backoff(
+            client.get_patients,
+            max_retries=patients_max_retries,
+            base_delay=patients_base_delay,
+            max_delay=patients_max_delay,
+        )
         if not patients:
             logger.error("No patients found in LibreLinkUp account")
             return []
@@ -54,7 +118,13 @@ def read_all_patients(config: dict) -> list[dict]:
         for patient in patients:
             patient_name = f"{patient.first_name} {patient.last_name}"
             try:
-                latest = client.latest(patient)
+                latest = _retry_with_backoff(
+                    client.latest,
+                    patient,
+                    max_retries=2,
+                    base_delay=patients_base_delay,
+                    max_delay=patients_max_delay,
+                )
                 if latest is None:
                     logger.warning("No glucose data for %s", patient_name)
                     continue
