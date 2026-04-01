@@ -128,7 +128,9 @@ def _load_and_enrich_cache() -> None:
     try:
         mtime = os.path.getmtime(cache_path)
     except OSError:
-        # File does not exist — clear cache
+        # File does not exist — clear cache and reset mtime so that when the
+        # file is re-created (even with a previously-seen mtime) we always
+        # detect it as new.
         with _cache_lock:
             _readings_cache.clear()
             _last_mtime = 0.0
@@ -172,7 +174,7 @@ def _load_and_enrich_cache() -> None:
         new_cache[pid] = r
 
     with _cache_lock:
-        if mtime >= _last_mtime:
+        if mtime > _last_mtime:
             _readings_cache.clear()
             _readings_cache.update(new_cache)
             _last_mtime = mtime
