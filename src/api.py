@@ -26,6 +26,7 @@ source of truth.
 import json
 import logging
 import os
+import stat
 import threading
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -450,7 +451,7 @@ async def api_setup(request: Request, response: Response):
     config_dict = {
         "librelinkup": {
             "email": email,
-            "password": password,
+            "password": encrypt_value(password),
             "region": "EU",
         },
         "dashboard_auth": {
@@ -501,6 +502,12 @@ async def api_setup(request: Request, response: Response):
     config_path = PROJECT_ROOT / "config.yaml"
     with open(config_path, "w", encoding="utf-8") as f:
         yaml.dump(config_dict, f, allow_unicode=True, default_flow_style=False)
+
+    # Restrict file permissions: owner read/write only (0600)
+    try:
+        os.chmod(config_path, stat.S_IRUSR | stat.S_IWUSR)
+    except OSError as e:
+        logger.warning("Could not restrict config.yaml permissions: %s", e)
 
     # Reload internal config
     _config = config_dict

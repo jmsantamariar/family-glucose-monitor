@@ -380,8 +380,10 @@ class TestSetupEndpoint:
         """LibreLinkUp password must not be used verbatim as the dashboard password."""
         client.post("/api/setup", json=self._minimal_payload())
         config = yaml.safe_load((tmp_path / "config.yaml").read_text())
-        # LibreLinkUp section still has the original password (needed for API calls)
-        assert config["librelinkup"]["password"] == "secret"
+        # LibreLinkUp section must store the password encrypted, not plain text
+        llu_stored = config["librelinkup"]["password"]
+        assert llu_stored.startswith("encrypted:")
+        assert llu_stored != "secret"
         # Dashboard hash must NOT validate with the LibreLinkUp password
         stored_hash = config["dashboard_auth"]["password_hash"]
         assert not check_password("secret", stored_hash)
@@ -477,6 +479,25 @@ class TestSetupEndpoint:
         assert config["dashboard"]["enabled"] is True
         assert "logging" in config
         assert "state_file" in config
+
+    def test_setup_encrypts_librelinkup_password(self, client, tmp_path):
+        """After POST /api/setup, the LibreLinkUp password must be encrypted in config.yaml."""
+        client.post("/api/setup", json=self._minimal_payload())
+        config = yaml.safe_load((tmp_path / "config.yaml").read_text())
+        stored = config["librelinkup"]["password"]
+        assert stored.startswith("encrypted:")
+        assert stored != "secret"
+
+    def test_setup_config_has_restricted_permissions(self, client, tmp_path):
+        """After POST /api/setup, config.yaml must have permissions 0600."""
+        import stat as _stat
+        client.post("/api/setup", json=self._minimal_payload())
+        cfg_path = tmp_path / "config.yaml"
+        mode = cfg_path.stat().st_mode
+        assert mode & _stat.S_IRUSR
+        assert mode & _stat.S_IWUSR
+        assert not (mode & _stat.S_IRGRP)
+        assert not (mode & _stat.S_IROTH)
 
 
 # ── Auth middleware ───────────────────────────────────────────────────────────
