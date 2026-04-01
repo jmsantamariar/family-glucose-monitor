@@ -7,6 +7,8 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
+import src.api
+import src.auth
 from src.api import app
 from src.auth import (
     SESSION_TTL,
@@ -17,6 +19,21 @@ from src.auth import (
     session_manager,
     verify_credentials,
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolated_session_manager(tmp_path, monkeypatch):
+    """Replace the global session_manager with an isolated SQLite-backed instance
+    in a temporary directory so tests never write to the production sessions.db."""
+    sm = SessionManager(db_path=str(tmp_path / "test_sessions.db"))
+    monkeypatch.setattr(src.auth, "session_manager", sm)
+    monkeypatch.setattr(src.api, "session_manager", sm)
+    # Also update the name bound at module level in *this* test file so that
+    # the unqualified ``session_manager`` references inside test methods resolve
+    # to the isolated instance.
+    import tests.test_auth as _this_module
+    monkeypatch.setattr(_this_module, "session_manager", sm)
+    yield sm
 
 
 # ── SessionManager ────────────────────────────────────────────────────────────
@@ -52,8 +69,8 @@ class TestSessionManager:
     def test_invalidate_unknown_token_does_not_raise(self):
         session_manager.invalidate("ghost_token")  # Should not raise
 
-    def test_expired_token_is_invalid(self):
-        mgr = SessionManager()
+    def test_expired_token_is_invalid(self, tmp_path):
+        mgr = SessionManager(db_path=str(tmp_path / "mgr_test.db"))
         token = mgr.create_session()
         # Simulate expired session by patching time.time to return a future time
         with patch("src.auth.time") as mock_time:
