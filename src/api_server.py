@@ -6,11 +6,20 @@ from the authenticated dashboard served by ``src/api.py``:
 * ``src/api.py``        — Authenticated internal dashboard (login, setup, patient
                           cache, alert history).  Runs on the dashboard port
                           (default 8080).  All routes require a session cookie.
-* ``src/api_server.py`` — Unauthenticated external read-only REST API backed by
-                          the ``readings_cache.json`` file written by the polling
+* ``src/api_server.py`` — External read-only REST API backed by the
+                          ``readings_cache.json`` file written by the polling
                           daemon.  Intended for widgets, Home Assistant, or other
                           local integrations.  Runs on a separate port (default
                           8081, configurable).
+
+**Authentication — secure by default**
+
+The external API requires an ``Authorization: Bearer <key>`` header by default.
+Set the ``API_KEY`` environment variable to a strong random secret.
+
+For local development or trusted networks only, you may opt out of authentication
+by setting ``ALLOW_INSECURE_LOCAL_API=1``.  This must be done explicitly and
+should **never** be enabled in production, as the API exposes health data.
 
 Route contracts are intentionally different:
 
@@ -48,10 +57,11 @@ CACHE_FILE = PROJECT_ROOT / "readings_cache.json"
 _default_db = str(PROJECT_ROOT / "alert_history.db")
 DB_FILE = os.environ.get("ALERT_HISTORY_DB", _default_db)
 
-# Optional API key authentication.  When API_KEY is set, all data endpoints
-# require the caller to pass "Authorization: Bearer <key>".  If unset, the API
-# remains unauthenticated (backward compatible) but a startup warning is logged.
+# --- Authentication configuration ---
+# Secure by default: API_KEY is required.
+# Set ALLOW_INSECURE_LOCAL_API=1 only for local/dev environments to bypass auth.
 API_KEY: str | None = os.environ.get("API_KEY") or None
+ALLOW_INSECURE_LOCAL_API: bool = os.environ.get("ALLOW_INSECURE_LOCAL_API") == "1"
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -59,20 +69,46 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 def _require_api_key(
     credentials: HTTPAuthorizationCredentials | None = Security(_bearer_scheme),
 ) -> None:
-    """Dependency that enforces API key auth when API_KEY env var is set."""
-    if API_KEY is None:
-        return  # No key configured — unauthenticated access allowed.
-    if credentials is None or credentials.credentials != API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid or missing API key.")
+    """Dependency that enforces API key authentication.
+
+    - When ``API_KEY`` is set: the caller must supply a matching
+      ``Authorization: Bearer <key>`` header.
+    - When ``API_KEY`` is unset and ``ALLOW_INSECURE_LOCAL_API=1``: unauthenticated
+      access is allowed (development/local use only).
+    - When ``API_KEY`` is unset and ``ALLOW_INSECURE_LOCAL_API`` is not set:
+      all requests are rejected with 401 to prevent accidental data exposure.
+    """
+    if API_KEY is not None:
+        if credentials is None or credentials.credentials != API_KEY:
+            raise HTTPException(status_code=401, detail="Invalid or missing API key.")
+        return
+    # No API_KEY configured — check explicit opt-out flag.
+    if not ALLOW_INSECURE_LOCAL_API:
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "API authentication is required. "
+                "Set the API_KEY environment variable, or set "
+                "ALLOW_INSECURE_LOCAL_API=1 for local/development use only."
+            ),
+        )
 
 
 @asynccontextmanager
 async def lifespan(application: "FastAPI"):
     if API_KEY is None:
-        logger.warning(
-            "API_KEY is not set — the external API is unauthenticated. "
-            "Set API_KEY to protect health data."
-        )
+        if ALLOW_INSECURE_LOCAL_API:
+            logger.warning(
+                "ALLOW_INSECURE_LOCAL_API=1 — external API is running without "
+                "authentication. This should only be used in local/dev environments."
+            )
+        else:
+            logger.error(
+                "API_KEY is not set and ALLOW_INSECURE_LOCAL_API is not enabled. "
+                "All API requests will be rejected. "
+                "Set API_KEY to enable authenticated access, or set "
+                "ALLOW_INSECURE_LOCAL_API=1 for local/development use only."
+            )
     yield
 
 

@@ -135,13 +135,16 @@ def validate_config(config: Any) -> list[str]:
     # --- monitoring section (optional) ---
     _VALID_MODES = {"cron", "daemon", "full", "dashboard"}
     monitoring = config.get("monitoring")
-    if monitoring is not None and isinstance(monitoring, dict):
-        mode = monitoring.get("mode")
-        if mode is not None and mode not in _VALID_MODES:
-            errors.append(
-                f"monitoring.mode {mode!r} is not valid; "
-                f"allowed values are: {', '.join(sorted(_VALID_MODES))}"
-            )
+    if monitoring is not None:
+        if not isinstance(monitoring, dict):
+            errors.append("monitoring must be a mapping (dict)")
+        else:
+            mode = monitoring.get("mode")
+            if mode is not None and mode not in _VALID_MODES:
+                errors.append(
+                    f"monitoring.mode {mode!r} is not valid; "
+                    f"allowed values are: {', '.join(sorted(_VALID_MODES))}"
+                )
 
     # --- outputs section ---
     # At least one enabled output is required in alerting modes (cron / daemon

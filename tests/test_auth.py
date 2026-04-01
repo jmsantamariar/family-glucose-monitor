@@ -510,6 +510,8 @@ class TestAuthMiddleware:
     def auth_client(self, monkeypatch):
         """TestClient with auth enforcement enabled (no AUTH_DISABLED env var)."""
         monkeypatch.delenv("AUTH_DISABLED", raising=False)
+        import src.api as _api_module
+        monkeypatch.setattr(_api_module, "_ALLOW_AUTH_DISABLED", False)
         session_manager.clear_all()
         yield TestClient(app, follow_redirects=False)
         session_manager.clear_all()
@@ -856,3 +858,173 @@ class TestRegionSelector:
                 client.post("/api/setup", json=payload)
         config = yaml.safe_load((tmp_path / "config.yaml").read_text())
         assert config["librelinkup"]["region"] == "EU"
+
+
+# ── CSRF protection ───────────────────────────────────────────────────────────
+
+
+class TestCSRFProtection:
+    """Tests for CSRF validation on sensitive POST endpoints.
+
+    These tests enable real auth (disable the global bypass) and verify that
+    POST requests without a valid CSRF token are rejected with 403.
+    """
+
+    @pytest.fixture
+    def csrf_client(self, monkeypatch):
+        """TestClient with auth AND CSRF enforcement enabled."""
+        import src.api as _api_module
+        monkeypatch.setattr(_api_module, "_ALLOW_AUTH_DISABLED", False)
+        session_manager.clear_all()
+        yield TestClient(app, follow_redirects=False)
+        session_manager.clear_all()
+
+    def test_logout_without_csrf_returns_403(self, csrf_client):
+        """POST /api/logout without X-CSRF-Token must be rejected."""
+        token = session_manager.create_session()
+        csrf_client.cookies.set("session_token", token)
+        resp = csrf_client.post("/api/logout")
+        assert resp.status_code == 403
+
+    def test_logout_with_mismatched_csrf_returns_403(self, csrf_client):
+        """POST /api/logout with a wrong X-CSRF-Token must be rejected."""
+        token = session_manager.create_session()
+        csrf_client.cookies.set("session_token", token)
+        csrf_client.cookies.set("csrf_token", "correct-token")
+        resp = csrf_client.post("/api/logout", headers={"X-CSRF-Token": "wrong-token"})
+        assert resp.status_code == 403
+
+    def test_logout_with_valid_csrf_returns_200(self, csrf_client):
+        """POST /api/logout with matching CSRF cookie and header must succeed."""
+        token = session_manager.create_session()
+        csrf_token = "test-csrf-token-abc123"
+        csrf_client.cookies.set("session_token", token)
+        csrf_client.cookies.set("csrf_token", csrf_token)
+        resp = csrf_client.post("/api/logout", headers={"X-CSRF-Token": csrf_token})
+        assert resp.status_code == 200
+
+    def test_login_sets_csrf_cookie(self, csrf_client, tmp_path):
+        """Successful login must set both session_token and csrf_token cookies."""
+        with patch("src.api.verify_credentials", return_value=True):
+            with patch("src.api.PROJECT_ROOT", tmp_path):
+                resp = csrf_client.post(
+                    "/api/login",
+                    json={"username": "admin", "password": "pass"},
+                )
+        assert resp.status_code == 200
+        assert "csrf_token" in resp.cookies
+
+    def test_setup_sets_csrf_cookie(self, csrf_client, tmp_path):
+        """Successful setup must set a csrf_token cookie."""
+        payload = {
+            "email": "user@example.com",
+            "password": "secret",
+            "dashboard_password": "dashpass1",
+            "low_threshold": 70,
+            "high_threshold": 180,
+            "cooldown_minutes": 30,
+            "max_reading_age_minutes": 15,
+            "notification_type": "none",
+        }
+        with patch("src.api.PROJECT_ROOT", tmp_path):
+            resp = csrf_client.post("/api/setup", json=payload)
+        assert resp.status_code == 200
+        assert "csrf_token" in resp.cookies
+
+
+# ── Setup: output field validation ────────────────────────────────────────────
+
+
+class TestSetupOutputValidation:
+    """Verify that missing required fields for each output type are rejected."""
+
+    @pytest.fixture
+    def client(self, tmp_path):
+        session_manager.clear_all()
+        with patch("src.api.PROJECT_ROOT", tmp_path):
+            yield TestClient(app)
+        session_manager.clear_all()
+
+    def _base(self):
+        return {
+            "email": "user@example.com",
+            "password": "secret",
+            "dashboard_password": "dashpass1",
+            "low_threshold": 70,
+            "high_threshold": 180,
+            "cooldown_minutes": 30,
+            "max_reading_age_minutes": 15,
+        }
+
+    def test_telegram_missing_bot_token_returns_422(self, client):
+        payload = {**self._base(), "notification_type": "telegram", "telegram_chat_id": "-1"}
+        resp = client.post("/api/setup", json=payload)
+        assert resp.status_code == 422
+
+    def test_telegram_missing_chat_id_returns_422(self, client):
+        payload = {**self._base(), "notification_type": "telegram", "telegram_bot_token": "TOK"}
+        resp = client.post("/api/setup", json=payload)
+        assert resp.status_code == 422
+
+    def test_webhook_missing_url_returns_422(self, client):
+        payload = {**self._base(), "notification_type": "webhook"}
+        resp = client.post("/api/setup", json=payload)
+        assert resp.status_code == 422
+
+    def test_whatsapp_missing_fields_returns_422(self, client):
+        payload = {**self._base(), "notification_type": "whatsapp", "whatsapp_phone_number_id": "123"}
+        resp = client.post("/api/setup", json=payload)
+        assert resp.status_code == 422
+
+
+# ── Setup: config validated before persisting ─────────────────────────────────
+
+
+class TestSetupConfigValidation:
+    """Verify that the config is validated via schema before being written."""
+
+    @pytest.fixture
+    def client(self, tmp_path):
+        session_manager.clear_all()
+        with patch("src.api.PROJECT_ROOT", tmp_path):
+            yield TestClient(app)
+        session_manager.clear_all()
+
+    def test_valid_config_is_persisted(self, client, tmp_path):
+        payload = {
+            "email": "user@example.com",
+            "password": "secret",
+            "dashboard_password": "dashpass1",
+            "low_threshold": 70,
+            "high_threshold": 180,
+            "cooldown_minutes": 30,
+            "max_reading_age_minutes": 15,
+            "notification_type": "none",
+        }
+        with patch("src.api.PROJECT_ROOT", tmp_path):
+            resp = client.post("/api/setup", json=payload)
+        assert resp.status_code == 200
+        assert (tmp_path / "config.yaml").exists()
+
+    def test_config_persisted_as_safe_yaml(self, client, tmp_path):
+        """Config must be written with yaml.safe_dump (no Python tags)."""
+        import yaml as _yaml
+
+        payload = {
+            "email": "user@example.com",
+            "password": "secret",
+            "dashboard_password": "dashpass1",
+            "low_threshold": 70,
+            "high_threshold": 180,
+            "cooldown_minutes": 30,
+            "max_reading_age_minutes": 15,
+            "notification_type": "none",
+        }
+        with patch("src.api.PROJECT_ROOT", tmp_path):
+            client.post("/api/setup", json=payload)
+        content = (tmp_path / "config.yaml").read_text()
+        # yaml.safe_dump must not emit Python-specific tags like !!python/
+        assert "!!python/" not in content
+        # Must be parseable by safe_load without error
+        loaded = _yaml.safe_load(content)
+        assert isinstance(loaded, dict)

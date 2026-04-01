@@ -555,9 +555,18 @@
       }
 
       try {
+        // Include the CSRF token if one is present (reconfiguration case where
+        // the user is already authenticated).
+        const csrfToken = document.cookie
+          .split('; ')
+          .find(row => row.startsWith('csrf_token='))
+          ?.split('=')[1];
+        const headers = { 'Content-Type': 'application/json' };
+        if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+
         const res = await fetch('/api/setup', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify(payload),
         });
 
