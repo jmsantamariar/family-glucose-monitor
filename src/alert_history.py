@@ -8,6 +8,8 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from src.db import connect_db
+
 logger = logging.getLogger(__name__)
 
 _CREATE_TABLE = """
@@ -32,7 +34,7 @@ _CREATE_INDEXES = [
 def init_db(db_path: str) -> None:
     """Create the alerts table and supporting indexes if they do not already exist."""
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(db_path) as conn:
+    with connect_db(db_path) as conn:
         conn.execute(_CREATE_TABLE)
         for idx_sql in _CREATE_INDEXES:
             conn.execute(idx_sql)
@@ -51,7 +53,7 @@ def log_alert(
 ) -> None:
     """Record a successfully sent alert in the history database."""
     timestamp = datetime.now(timezone.utc).isoformat()
-    with sqlite3.connect(db_path) as conn:
+    with connect_db(db_path) as conn:
         conn.execute(
             """
             INSERT INTO alerts
@@ -79,7 +81,7 @@ def get_alerts(
     since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
 
     try:
-        with sqlite3.connect(db_path) as conn:
+        with connect_db(db_path) as conn:
             conn.row_factory = sqlite3.Row
             if patient_id is not None:
                 rows = conn.execute(
@@ -108,7 +110,7 @@ def cleanup_old_alerts(db_path: str, max_days: int = 7) -> int:
 
     cutoff = (datetime.now(timezone.utc) - timedelta(days=max_days)).isoformat()
     try:
-        with sqlite3.connect(db_path) as conn:
+        with connect_db(db_path) as conn:
             cursor = conn.execute("DELETE FROM alerts WHERE timestamp < ?", (cutoff,))
             conn.commit()
             deleted = cursor.rowcount

@@ -64,7 +64,8 @@ class SessionManager:
             logger.error("Failed to initialise sessions DB at %s: %s", self._db_path, exc)
 
     def _get_conn(self) -> sqlite3.Connection:
-        return sqlite3.connect(self._db_path, timeout=10)
+        from src.db import connect_db
+        return connect_db(self._db_path)
 
     def create_session(self) -> str:
         """Create a new session token valid for SESSION_TTL seconds."""

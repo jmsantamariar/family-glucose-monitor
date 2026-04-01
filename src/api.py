@@ -26,6 +26,7 @@ source of truth.
 import json
 import logging
 import os
+import secrets
 import stat
 import threading
 import time
@@ -42,6 +43,7 @@ from fastapi import Query
 from src import alert_engine
 from src.alert_history import get_alerts
 from src.auth import hash_password, is_configured, session_manager, verify_credentials
+from src.config_schema import validate_config as schema_validate_config
 from src.crypto import encrypt_value
 
 logger = logging.getLogger(__name__)
@@ -109,6 +111,54 @@ if os.environ.get("AUTH_DISABLED") == "1" and not _ALLOW_AUTH_DISABLED:
         "AUTH_DISABLED=1 ignorado porque APP_ENV/ENV=%s no es un entorno de desarrollo",
         APP_ENV,
     )
+
+# ── CSRF helpers ──────────────────────────────────────────────────────────────
+
+_CSRF_COOKIE = "csrf_token"
+_CSRF_HEADER = "X-CSRF-Token"
+
+# POST endpoints that are intentionally exempt from CSRF validation because
+# they are pre-authentication (no session exists yet to forge).
+_CSRF_EXEMPT_PATHS = {"/api/login"}
+
+
+def _generate_csrf_token() -> str:
+    """Return a cryptographically random CSRF token."""
+    return secrets.token_hex(32)
+
+
+def _set_csrf_cookie(response: Response, token: str) -> None:
+    """Attach the CSRF token as a non-httponly cookie so JS can read it."""
+    response.set_cookie(
+        key=_CSRF_COOKIE,
+        value=token,
+        httponly=False,  # JS must be able to read this to send it as a header
+        secure=_SECURE_COOKIES,
+        samesite="strict",
+        path="/",
+        max_age=86400,
+    )
+
+
+def _validate_csrf(request: Request) -> None:
+    """Raise 403 if the CSRF token in the cookie does not match the request header.
+
+    Skipped when ``_ALLOW_AUTH_DISABLED`` is True (tests / dev environment).
+    Skipped for GET/HEAD/OPTIONS requests (idempotent).
+    Skipped for paths in ``_CSRF_EXEMPT_PATHS`` (pre-auth endpoints).
+    """
+    if _ALLOW_AUTH_DISABLED:
+        return
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return
+    if request.url.path in _CSRF_EXEMPT_PATHS:
+        return
+
+    cookie_token = request.cookies.get(_CSRF_COOKIE)
+    header_token = request.headers.get(_CSRF_HEADER)
+    if not cookie_token or not header_token or cookie_token != header_token:
+        raise HTTPException(status_code=403, detail="CSRF validation failed.")
+
 
 def load_config(path: str = "config.yaml") -> dict:
     resolved = path if os.path.isabs(path) else str(PROJECT_ROOT / path)
@@ -411,23 +461,28 @@ async def api_login(request: Request, response: Response):
 
     _reset_login_failures(client_ip)
     token = session_manager.create_session()
+    csrf_token = _generate_csrf_token()
     response.set_cookie(
         key="session_token",
         value=token,
         httponly=True,
         secure=_SECURE_COOKIES,
         max_age=86400,
-        samesite="lax",
+        samesite="strict",
+        path="/",
     )
+    _set_csrf_cookie(response, csrf_token)
     return {"success": True}
 
 @app.post("/api/logout", response_class=JSONResponse)
 async def api_logout(request: Request, response: Response):
     """Invalidate the current session."""
+    _validate_csrf(request)
     token = request.cookies.get("session_token")
     if token:
         session_manager.invalidate(token)
-    response.delete_cookie("session_token")
+    response.delete_cookie("session_token", path="/")
+    response.delete_cookie(_CSRF_COOKIE, path="/")
     return {"success": True}
 
 @app.post("/api/setup", response_class=JSONResponse)
@@ -451,7 +506,7 @@ async def api_setup(request: Request, response: Response):
     """
     global _config
 
-    # Issue 1.1: block reconfiguration unless the caller is authenticated.
+    # Block reconfiguration unless the caller is authenticated.
     if is_configured():
         token = request.cookies.get("session_token")
         if not session_manager.is_valid(token):
@@ -459,6 +514,8 @@ async def api_setup(request: Request, response: Response):
                 status_code=403,
                 detail="Ya configurado. Inicia sesión para reconfigurar.",
             )
+        # Enforce CSRF for authenticated reconfiguration requests.
+        _validate_csrf(request)
     try:
         data = await request.json()
     except Exception:
@@ -505,38 +562,59 @@ async def api_setup(request: Request, response: Response):
             detail="El umbral bajo debe ser menor que el umbral alto",
         )
 
-    # Build outputs list
+    # Build outputs list — validate required fields per output type.
     notification_type = data.get("notification_type", "none")
     outputs: list[dict] = []
 
     if notification_type == "telegram":
+        bot_token = str(data.get("telegram_bot_token", "")).strip()
+        chat_id = str(data.get("telegram_chat_id", "")).strip()
+        if not bot_token or not chat_id:
+            raise HTTPException(
+                status_code=422,
+                detail="Telegram requiere bot_token y chat_id",
+            )
         outputs.append(
             {
                 "type": "telegram",
                 "enabled": True,
-                "bot_token": str(data.get("telegram_bot_token", "")),
-                "chat_id": str(data.get("telegram_chat_id", "")),
+                "bot_token": bot_token,
+                "chat_id": chat_id,
             }
         )
     elif notification_type == "webhook":
+        webhook_url = str(data.get("webhook_url", "")).strip()
+        if not webhook_url:
+            raise HTTPException(
+                status_code=422,
+                detail="Webhook requiere url",
+            )
         outputs.append(
             {
                 "type": "webhook",
                 "enabled": True,
-                "url": str(data.get("webhook_url", "")),
+                "url": webhook_url,
                 "token": "",
                 "device": "",
                 "language": "es-MX",
             }
         )
     elif notification_type == "whatsapp":
+        phone_number_id = str(data.get("whatsapp_phone_number_id", "")).strip()
+        access_token = str(data.get("whatsapp_access_token", "")).strip()
+        recipient = str(data.get("whatsapp_recipient", "")).strip()
+        if not phone_number_id or not access_token or not recipient:
+            raise HTTPException(
+                status_code=422,
+                detail="WhatsApp requiere phone_number_id, access_token y recipient",
+            )
         outputs.append(
             {
                 "type": "whatsapp",
                 "enabled": True,
-                "phone_number_id": str(data.get("whatsapp_phone_number_id", "")),
-                "access_token": str(data.get("whatsapp_access_token", "")),
-                "recipient": str(data.get("whatsapp_recipient", "")),
+                "phone_number_id": phone_number_id,
+                "access_token": access_token,
+                "recipient": recipient,
                 "template_name": "glucose_alert",
                 "language_code": "es_MX",
             }
@@ -599,9 +677,18 @@ async def api_setup(request: Request, response: Response):
         "alert_history_max_days": 7,
     }
 
+    # Validate the assembled config before writing it to disk.
+    config_errors = schema_validate_config(config_dict)
+    if config_errors:
+        logger.warning("Setup produced invalid config (%d error(s)); not persisting", len(config_errors))
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "La configuración generada no es válida.", "errors": config_errors},
+        )
+
     config_path = PROJECT_ROOT / "config.yaml"
     with open(config_path, "w", encoding="utf-8") as f:
-        yaml.dump(config_dict, f, allow_unicode=True, default_flow_style=False)
+        yaml.safe_dump(config_dict, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
     # Restrict file permissions: owner read/write only (0600)
     try:
@@ -613,12 +700,15 @@ async def api_setup(request: Request, response: Response):
     _config = config_dict
 
     token = session_manager.create_session()
+    csrf_token = _generate_csrf_token()
     response.set_cookie(
         key="session_token",
         value=token,
         httponly=True,
         secure=_SECURE_COOKIES,
         max_age=86400,
-        samesite="lax",
+        samesite="strict",
+        path="/",
     )
+    _set_csrf_cookie(response, csrf_token)
     return {"success": True}
