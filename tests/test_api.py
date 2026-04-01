@@ -1,18 +1,63 @@
 """Tests for FastAPI endpoints in src/api.py."""
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
-from src.api import app, _get_color, _readings_cache, _cache_lock
+import src.api as api_module
+from src.api import app, _get_color
 
+# ── Minimal config used to make alert_engine calls succeed ────────────────────
+
+_MINIMAL_CONFIG = {
+    "api": {},  # cache_file will be injected by tmp_cache fixture
+    "alerts": {
+        "low_threshold": 70,
+        "high_threshold": 180,
+        "trend": {"enabled": False},
+    },
+}
+
+
+# ── Shared fixtures ──────────────────────────────────────────────────────────
 
 @pytest.fixture(autouse=True)
-def clear_cache():
-    """Ensure a clean readings cache for each test."""
-    with _cache_lock:
-        _readings_cache.clear()
+def reset_state(monkeypatch):
+    """Disable auth middleware and reset cache state before/after each test."""
+    # Patch the module-level flag that the auth middleware reads at request time
+    monkeypatch.setattr(api_module, "_ALLOW_AUTH_DISABLED", True)
+    # Reset in-memory cache
+    with api_module._cache_lock:
+        api_module._readings_cache.clear()
+    api_module._last_mtime = 0.0
     yield
-    with _cache_lock:
-        _readings_cache.clear()
+    with api_module._cache_lock:
+        api_module._readings_cache.clear()
+    api_module._last_mtime = 0.0
+
+
+@pytest.fixture
+def tmp_cache(tmp_path, monkeypatch):
+    """Create a temporary cache file and patch api.py to use it.
+
+    Provides a ``pathlib.Path`` pointing to the temp ``readings_cache.json``.
+    The fixture also injects a minimal config so that ``alert_engine`` calls
+    inside ``_load_and_enrich_cache()`` do not raise ``KeyError``.
+    """
+    cache_file = tmp_path / "readings_cache.json"
+    cache_file.write_text('{"readings": [], "updated_at": null}')
+    config = dict(_MINIMAL_CONFIG)
+    config["api"] = {"cache_file": str(cache_file)}
+    monkeypatch.setattr(api_module, "_config", config)
+    api_module._last_mtime = 0.0
+    return cache_file
+
+
+def _write_readings(cache_file, readings):
+    """Write *readings* to *cache_file* and reset mtime tracker to force reload."""
+    payload = {"readings": readings, "updated_at": "2024-01-01T00:00:00+00:00"}
+    cache_file.write_text(json.dumps(payload))
+    api_module._last_mtime = 0.0
 
 
 @pytest.fixture
@@ -23,26 +68,27 @@ def client():
 # ── /api/health ──────────────────────────────────────────────────────────────
 
 class TestHealthEndpoint:
-    def test_returns_200(self, client):
+    def test_returns_200(self, client, tmp_cache):
         resp = client.get("/api/health")
         assert resp.status_code == 200
 
-    def test_status_is_ok(self, client):
+    def test_status_is_ok(self, client, tmp_cache):
         resp = client.get("/api/health")
         assert resp.json()["status"] == "ok"
 
-    def test_has_timestamp(self, client):
+    def test_has_timestamp(self, client, tmp_cache):
         resp = client.get("/api/health")
         assert "timestamp" in resp.json()
 
-    def test_patients_monitored_zero_when_empty(self, client):
+    def test_patients_monitored_zero_when_empty(self, client, tmp_cache):
         resp = client.get("/api/health")
         assert resp.json()["patients_monitored"] == 0
 
-    def test_patients_monitored_counts_cache(self, client):
-        with _cache_lock:
-            _readings_cache["p1"] = {"patient_id": "p1"}
-            _readings_cache["p2"] = {"patient_id": "p2"}
+    def test_patients_monitored_counts_cache(self, client, tmp_cache):
+        _write_readings(tmp_cache, [
+            {"patient_id": "p1", "patient_name": "Ana", "value": 100, "trend_arrow": "→"},
+            {"patient_id": "p2", "patient_name": "Juan", "value": 120, "trend_arrow": "→"},
+        ])
         resp = client.get("/api/health")
         assert resp.json()["patients_monitored"] == 2
 
@@ -50,20 +96,21 @@ class TestHealthEndpoint:
 # ── /api/patients ────────────────────────────────────────────────────────────
 
 class TestPatientsListEndpoint:
-    def test_returns_200(self, client):
+    def test_returns_200(self, client, tmp_cache):
         resp = client.get("/api/patients")
         assert resp.status_code == 200
 
-    def test_empty_cache_returns_empty_list(self, client):
+    def test_empty_cache_returns_empty_list(self, client, tmp_cache):
         resp = client.get("/api/patients")
         data = resp.json()
         assert data["patients"] == []
         assert data["count"] == 0
 
-    def test_returns_all_patients(self, client):
-        with _cache_lock:
-            _readings_cache["abc"] = {"patient_id": "abc", "patient_name": "Ana"}
-            _readings_cache["xyz"] = {"patient_id": "xyz", "patient_name": "Juan"}
+    def test_returns_all_patients(self, client, tmp_cache):
+        _write_readings(tmp_cache, [
+            {"patient_id": "abc", "patient_name": "Ana", "value": 100, "trend_arrow": "→"},
+            {"patient_id": "xyz", "patient_name": "Juan", "value": 120, "trend_arrow": "→"},
+        ])
         resp = client.get("/api/patients")
         data = resp.json()
         assert data["count"] == 2
@@ -74,25 +121,21 @@ class TestPatientsListEndpoint:
 # ── /api/patients/{patient_id} ───────────────────────────────────────────────
 
 class TestPatientDetailEndpoint:
-    def test_404_for_unknown_patient(self, client):
+    def test_404_for_unknown_patient(self, client, tmp_cache):
         resp = client.get("/api/patients/nonexistent")
         assert resp.status_code == 404
 
-    def test_returns_patient_data(self, client):
-        with _cache_lock:
-            _readings_cache["p42"] = {
-                "patient_id": "p42",
-                "patient_name": "María",
-                "glucose_value": 120,
-                "color": "green",
-            }
+    def test_returns_patient_data(self, client, tmp_cache):
+        _write_readings(tmp_cache, [
+            {"patient_id": "p42", "patient_name": "María", "value": 120, "trend_arrow": "→"},
+        ])
         resp = client.get("/api/patients/p42")
         assert resp.status_code == 200
         data = resp.json()
         assert data["patient_id"] == "p42"
         assert data["patient_name"] == "María"
 
-    def test_404_detail_message(self, client):
+    def test_404_detail_message(self, client, tmp_cache):
         resp = client.get("/api/patients/no-such-id")
         assert "not found" in resp.json()["detail"].lower()
 
@@ -150,45 +193,88 @@ class TestGetColor:
         assert _get_color("normal", "rising") == "green"
 
 
-# ── Polling cache atomicity ───────────────────────────────────────────────────
+# ── Cache file loading behaviour ─────────────────────────────────────────────
 
-class TestPollLoopCacheAtomicity:
-    """Verify that _poll_loop replaces the cache atomically each cycle."""
+class TestLoadAndEnrichCache:
+    """Verify file-based cache loading and enrichment."""
 
-    def test_removed_patient_not_in_cache_after_poll(self):
-        """A patient absent from the new poll result must be evicted from cache."""
-        from unittest.mock import MagicMock, patch
-        from src.api import _poll_loop, _readings_cache, _cache_lock
+    def test_missing_file_yields_empty_cache(self, tmp_path, monkeypatch):
+        """When the cache file does not exist the cache must be empty."""
+        config = dict(_MINIMAL_CONFIG)
+        config["api"] = {"cache_file": str(tmp_path / "nonexistent.json")}
+        monkeypatch.setattr(api_module, "_config", config)
+        api_module._last_mtime = 0.0
 
-        # Seed the cache with two patients
-        with _cache_lock:
-            _readings_cache.clear()
-            _readings_cache["p1"] = {"patient_id": "p1", "value": 100}
-            _readings_cache["p2"] = {"patient_id": "p2", "value": 120}
+        api_module._load_and_enrich_cache()
 
-        first_call = True
+        with api_module._cache_lock:
+            assert api_module._readings_cache == {}
 
-        def fake_read_all(config):
-            # Only return p1 — p2 has "disappeared"
-            return [{"patient_id": "p1", "value": 100, "trend_arrow": "→"}]
+    def test_valid_file_populates_cache(self, tmp_cache):
+        """Readings from the cache file are loaded and enriched."""
+        _write_readings(tmp_cache, [
+            {"patient_id": "p1", "patient_name": "Ana", "value": 100, "trend_arrow": "→"},
+        ])
+        api_module._load_and_enrich_cache()
 
-        with patch("src.api.read_all_patients", side_effect=fake_read_all):
-            with patch("src.api.alert_engine.evaluate", return_value="normal"):
-                with patch("src.api.alert_engine.evaluate_trend", return_value="normal"):
-                    with patch("src.api.time") as mock_time:
-                        # Make sleep raise StopIteration to exit after one cycle
-                        mock_time.time.return_value = 0
-                        mock_time.sleep.side_effect = StopIteration
-                        try:
-                            _poll_loop(300)
-                        except StopIteration:
-                            pass
+        with api_module._cache_lock:
+            assert "p1" in api_module._readings_cache
+            entry = api_module._readings_cache["p1"]
+        assert entry["glucose_value"] == 100
+        assert "level" in entry
+        assert "trend_alert" in entry
+        assert "color" in entry
+        assert "fetched_at" in entry
 
-        with _cache_lock:
-            assert "p1" in _readings_cache
-            assert "p2" not in _readings_cache, "Ghost patient must be evicted after poll"
+    def test_unchanged_file_not_reloaded(self, tmp_cache, monkeypatch):
+        """A second call with the same mtime must not re-read the file."""
+        _write_readings(tmp_cache, [
+            {"patient_id": "p1", "patient_name": "Ana", "value": 100, "trend_arrow": "→"},
+        ])
+        api_module._load_and_enrich_cache()
 
-    def teardown_method(self):
-        from src.api import _readings_cache, _cache_lock
-        with _cache_lock:
-            _readings_cache.clear()
+        # Modify in-memory cache to detect if reload happens
+        with api_module._cache_lock:
+            api_module._readings_cache["sentinel"] = {"patient_id": "sentinel"}
+
+        # Call again without touching the file — mtime unchanged
+        api_module._load_and_enrich_cache()
+
+        with api_module._cache_lock:
+            assert "sentinel" in api_module._readings_cache, (
+                "Cache was unexpectedly reloaded despite unchanged mtime"
+            )
+
+    def test_removed_patient_evicted_on_new_file(self, tmp_cache):
+        """A patient absent from the new cache file must be evicted."""
+        _write_readings(tmp_cache, [
+            {"patient_id": "p1", "patient_name": "A", "value": 100, "trend_arrow": "→"},
+            {"patient_id": "p2", "patient_name": "B", "value": 120, "trend_arrow": "→"},
+        ])
+        api_module._load_and_enrich_cache()
+
+        # Overwrite the file with only p1
+        _write_readings(tmp_cache, [
+            {"patient_id": "p1", "patient_name": "A", "value": 100, "trend_arrow": "→"},
+        ])
+        api_module._load_and_enrich_cache()
+
+        with api_module._cache_lock:
+            assert "p1" in api_module._readings_cache
+            assert "p2" not in api_module._readings_cache, "Ghost patient must be evicted"
+
+    def test_corrupt_json_clears_cache(self, tmp_cache):
+        """A file with invalid JSON must result in an empty cache."""
+        _write_readings(tmp_cache, [
+            {"patient_id": "p1", "patient_name": "A", "value": 100, "trend_arrow": "→"},
+        ])
+        api_module._load_and_enrich_cache()
+
+        # Corrupt the file
+        tmp_cache.write_text("not valid json{{{")
+        api_module._last_mtime = 0.0
+        api_module._load_and_enrich_cache()
+
+        with api_module._cache_lock:
+            assert api_module._readings_cache == {}
+
