@@ -2,6 +2,7 @@
 import json
 import logging
 import os
+import stat
 import sys
 import time
 from datetime import datetime, timezone
@@ -208,6 +209,14 @@ def main() -> None:
         print("ERROR: config.yaml is empty", file=sys.stderr)
         sys.exit(1)
     configure_logging(config)
+    # Ensure config.yaml permissions are restrictive (owner read/write only)
+    try:
+        current_mode = config_path.stat().st_mode
+        if current_mode & (stat.S_IRGRP | stat.S_IROTH | stat.S_IWGRP | stat.S_IWOTH):
+            os.chmod(config_path, stat.S_IRUSR | stat.S_IWUSR)
+            logger.info("Restricted config.yaml permissions to 0600")
+    except OSError:
+        pass  # Windows or other OS without Unix permissions
     errors = schema_validate_config(config)
     if errors:
         for err in errors:

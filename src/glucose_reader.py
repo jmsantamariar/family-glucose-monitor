@@ -8,6 +8,8 @@ from pylibrelinkup import PyLibreLinkUp
 from pylibrelinkup.api_url import APIUrl
 from pylibrelinkup.exceptions import RedirectError
 
+from src.crypto import decrypt_value
+
 logger = logging.getLogger(__name__)
 
 REGION_MAP = {
@@ -94,7 +96,7 @@ def _build_client(email: str, password: str, region: str) -> PyLibreLinkUp:
 def read_all_patients(config: dict) -> list[dict]:
     try:
         email = os.environ.get("LIBRELINKUP_EMAIL") or config["librelinkup"]["email"]
-        password = os.environ.get("LIBRELINKUP_PASSWORD") or config["librelinkup"]["password"]
+        password = os.environ.get("LIBRELINKUP_PASSWORD") or decrypt_value(config["librelinkup"]["password"])
         region = config.get("librelinkup", {}).get("region", "US")
         retry_cfg = config.get("librelinkup", {}).get("retry", {})
         patients_max_retries: int = retry_cfg.get("max_retries", 2)
