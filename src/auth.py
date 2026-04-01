@@ -7,54 +7,122 @@ PBKDF2-HMAC-SHA256 hashes — never in plain text.
 """
 import hashlib
 import hmac
+import logging
 import os
 import secrets
+import sqlite3
 import time
 from pathlib import Path
 from typing import Optional
 
 import yaml
 
+logger = logging.getLogger(__name__)
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _CONFIG_PATH = PROJECT_ROOT / "config.yaml"
 
-# In-memory session store: token -> expiry timestamp
-_sessions: dict[str, float] = {}
-
 SESSION_TTL = 24 * 3600  # 24 hours
+
+_SESSIONS_DB = str(PROJECT_ROOT / "sessions.db")
+
+_CREATE_SESSIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS sessions (
+    token       TEXT PRIMARY KEY,
+    expires_at  REAL NOT NULL
+);
+"""
+_CREATE_SESSIONS_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);"
+)
 
 
 class SessionManager:
-    """Manages in-memory session tokens with TTL."""
+    """Manages persistent session tokens backed by SQLite with TTL."""
+
+    def __init__(self, db_path: Optional[str] = None) -> None:
+        self._db_path = db_path if db_path is not None else _SESSIONS_DB
+        Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with self._get_conn() as conn:
+                conn.execute(_CREATE_SESSIONS_TABLE)
+                conn.execute(_CREATE_SESSIONS_INDEX)
+                conn.commit()
+        except sqlite3.OperationalError as exc:
+            logger.error("Failed to initialise sessions DB at %s: %s", self._db_path, exc)
+
+    def _get_conn(self) -> sqlite3.Connection:
+        return sqlite3.connect(self._db_path, timeout=10)
 
     def create_session(self) -> str:
         """Create a new session token valid for SESSION_TTL seconds."""
         token = secrets.token_hex(32)
-        _sessions[token] = time.time() + SESSION_TTL
+        expires_at = time.time() + SESSION_TTL
+        try:
+            with self._get_conn() as conn:
+                conn.execute(
+                    "INSERT INTO sessions (token, expires_at) VALUES (?, ?)",
+                    (token, expires_at),
+                )
+                conn.commit()
+        except sqlite3.OperationalError as exc:
+            logger.error("Failed to create session: %s", exc)
         return token
 
     def is_valid(self, token: Optional[str]) -> bool:
         """Return True if the token exists and has not expired."""
         if not token:
             return False
-        expiry = _sessions.get(token)
-        if expiry is None:
+        try:
+            with self._get_conn() as conn:
+                row = conn.execute(
+                    "SELECT expires_at FROM sessions WHERE token = ?", (token,)
+                ).fetchone()
+                if row is None:
+                    return False
+                expires_at = row[0]
+                if time.time() > expires_at:
+                    conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+                    conn.commit()
+                    return False
+                return True
+        except sqlite3.OperationalError as exc:
+            logger.error("Failed to validate session: %s", exc)
             return False
-        if time.time() > expiry:
-            del _sessions[token]
-            return False
-        return True
 
     def invalidate(self, token: str) -> None:
         """Remove a session token from the store."""
-        _sessions.pop(token, None)
+        try:
+            with self._get_conn() as conn:
+                conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+                conn.commit()
+        except sqlite3.OperationalError as exc:
+            logger.error("Failed to invalidate session: %s", exc)
 
     def clear_all(self) -> None:
         """Remove all sessions (used in tests)."""
-        _sessions.clear()
+        try:
+            with self._get_conn() as conn:
+                conn.execute("DELETE FROM sessions")
+                conn.commit()
+        except sqlite3.OperationalError as exc:
+            logger.error("Failed to clear all sessions: %s", exc)
+
+    def cleanup_expired(self) -> int:
+        """Delete expired sessions and return the number of rows removed."""
+        try:
+            with self._get_conn() as conn:
+                cursor = conn.execute(
+                    "DELETE FROM sessions WHERE expires_at < ?", (time.time(),)
+                )
+                conn.commit()
+                return cursor.rowcount
+        except sqlite3.OperationalError as exc:
+            logger.error("Failed to clean up expired sessions: %s", exc)
+            return 0
 
 
-session_manager = SessionManager()
+session_manager = SessionManager(db_path=_SESSIONS_DB)
 
 # ---------------------------------------------------------------------------
 # Password hashing helpers
