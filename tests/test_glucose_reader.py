@@ -247,3 +247,36 @@ def test_get_patients_failure_returns_empty_list():
         readings = read_all_patients(_CONFIG)
 
     assert readings == []
+
+
+# ---------------------------------------------------------------------------
+# Encrypted password is decrypted before use
+# ---------------------------------------------------------------------------
+
+
+def test_encrypted_password_is_decrypted(tmp_path):
+    """read_all_patients must decrypt an encrypted password before passing to client."""
+    import src.crypto as crypto_module
+    from src.crypto import encrypt_value
+
+    key_file = tmp_path / ".secret_key"
+    with patch.object(crypto_module, "_SECRET_KEY_FILE", key_file):
+        encrypted_password = encrypt_value("secret")
+
+    config_with_encrypted = {
+        "librelinkup": {
+            "email": "user@example.com",
+            "password": encrypted_password,
+            "region": "EU",
+        }
+    }
+
+    mock_client = MagicMock()
+    mock_client.get_patients.return_value = []
+
+    with patch.object(crypto_module, "_SECRET_KEY_FILE", key_file):
+        with patch("src.glucose_reader.PyLibreLinkUp", return_value=mock_client) as mock_cls:
+            read_all_patients(config_with_encrypted)
+
+    _, kwargs = mock_cls.call_args
+    assert kwargs["password"] == "secret"
