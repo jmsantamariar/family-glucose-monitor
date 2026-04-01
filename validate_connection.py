@@ -43,8 +43,10 @@ def main() -> None:
     try:
         from src.crypto import decrypt_value
         password = decrypt_value(password)
-    except Exception:
-        pass  # If crypto is unavailable, proceed with raw value
+    except ImportError:
+        pass  # If crypto module is unavailable, proceed with raw value
+    except Exception as exc:
+        print(f"WARNING: Could not decrypt LibreLinkUp password: {exc}. Using raw value.")
 
     if not email or not password:
         print("ERROR: Missing email or password in config.yaml [librelinkup] section")
