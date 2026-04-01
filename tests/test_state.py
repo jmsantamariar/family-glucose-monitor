@@ -101,13 +101,13 @@ def test_set_patient_state_updates_existing():
 def test_clear_patient_state():
     state = {"patient-1": {"last_alert_level": "low", "last_alert_time": "2026-01-01T00:00:00+00:00"}}
     clear_patient_state(state, "patient-1")
-    assert state["patient-1"] == {}
+    assert "patient-1" not in state
 
 
 def test_clear_patient_state_nonexistent():
     state = {}
     clear_patient_state(state, "patient-99")
-    assert state["patient-99"] == {}
+    assert "patient-99" not in state
 
 
 # ---------------------------------------------------------------------------
@@ -126,5 +126,5 @@ def test_multiple_patients_independent(tmp_path):
     assert loaded["p2"]["last_alert_level"] == "high"
     assert loaded["p3"]["last_alert_level"] == "normal"
     clear_patient_state(loaded, "p1")
-    assert loaded["p1"] == {}
+    assert "p1" not in loaded
     assert loaded["p2"]["last_alert_level"] == "high"

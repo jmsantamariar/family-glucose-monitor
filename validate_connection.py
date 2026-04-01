@@ -40,6 +40,14 @@ def main() -> None:
     password = ll_cfg.get("password", "")
     region = ll_cfg.get("region", "US")
 
+    try:
+        from src.crypto import decrypt_value
+        password = decrypt_value(password)
+    except ImportError:
+        pass  # If crypto module is unavailable, proceed with raw value
+    except Exception as exc:
+        print(f"WARNING: Could not decrypt LibreLinkUp password: {exc}. Using raw value.")
+
     if not email or not password:
         print("ERROR: Missing email or password in config.yaml [librelinkup] section")
         sys.exit(1)
