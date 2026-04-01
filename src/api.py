@@ -680,7 +680,7 @@ async def api_setup(request: Request, response: Response):
     # Validate the assembled config before writing it to disk.
     config_errors = schema_validate_config(config_dict)
     if config_errors:
-        logger.warning("Setup produced invalid config: %s", config_errors)
+        logger.warning("Setup produced invalid config (%d error(s)); not persisting", len(config_errors))
         raise HTTPException(
             status_code=422,
             detail={"message": "La configuración generada no es válida.", "errors": config_errors},
