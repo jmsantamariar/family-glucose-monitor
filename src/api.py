@@ -49,6 +49,52 @@ _readings_cache: dict = {}
 _cache_lock = threading.Lock()
 _config: dict = {}
 
+# When True, main.py drives the polling loop and api.py must NOT start its own.
+_external_polling: bool = False
+
+
+def set_external_polling(enabled: bool) -> None:
+    """Signal that an external caller (main.py) will manage the polling loop.
+
+    When *enabled* is True the ``lifespan`` handler will skip starting
+    ``_poll_loop`` so that ``main.py`` remains the single source of truth for
+    LibreLinkUp API requests.
+    """
+    global _external_polling
+    _external_polling = enabled
+
+
+def update_readings_cache(readings: list[dict], config: dict) -> None:
+    """Inject readings into the in-memory dashboard cache.
+
+    This applies the same enrichment that ``_poll_loop`` performs
+    (``glucose_value``, ``level``, ``trend_alert``, ``color``,
+    ``fetched_at``) so that the dashboard endpoints return consistent data.
+
+    Called by ``main.py`` after every ``run_once()`` cycle when running in
+    *full* mode, avoiding a second round-trip to the LibreLinkUp API.
+    """
+    global _config
+    if config is not None:
+        _config = config
+    new_cache: dict = {}
+    for r in readings:
+        pid = r["patient_id"]
+        glucose = r["value"]
+        trend_arrow = r.get("trend_arrow", "")
+        level = alert_engine.evaluate(glucose, _config)
+        trend_alert = alert_engine.evaluate_trend(glucose, trend_arrow, _config)
+        r["glucose_value"] = glucose
+        r["level"] = level
+        r["trend_alert"] = trend_alert
+        r["color"] = _get_color(level, trend_alert)
+        r["fetched_at"] = datetime.now(timezone.utc).isoformat()
+        new_cache[pid] = r
+    with _cache_lock:
+        _readings_cache.clear()
+        _readings_cache.update(new_cache)
+    logger.debug("Dashboard cache updated with %d patient(s) from external poll", len(readings))
+
 APP_ENV = os.environ.get("APP_ENV") or os.environ.get("ENV") or "dev"
 _ALLOW_AUTH_DISABLED = (
     os.environ.get("AUTH_DISABLED") == "1"
@@ -72,10 +118,15 @@ async def lifespan(application: "FastAPI"):
     except FileNotFoundError:
         logger.warning("config.yaml not found, dashboard will start without polling")
     else:
-        interval = _config.get("monitoring", {}).get("interval_seconds", 300)
-        thread = threading.Thread(target=_poll_loop, args=(interval,), daemon=True)
-        thread.start()
-        logger.info("Background polling started every %d seconds", interval)
+        if _external_polling:
+            logger.info(
+                "External polling is active; skipping internal _poll_loop to avoid duplicate API calls"
+            )
+        else:
+            interval = _config.get("monitoring", {}).get("interval_seconds", 300)
+            thread = threading.Thread(target=_poll_loop, args=(interval,), daemon=True)
+            thread.start()
+            logger.info("Background polling started every %d seconds", interval)
     yield
 
 app = FastAPI(title="Family Glucose Monitor", version="1.0.0", lifespan=lifespan)
