@@ -40,6 +40,7 @@ def configure_logging(config: dict) -> None:
         handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     root = logging.getLogger()
+    root.handlers.clear()
     root.setLevel(level)
     root.addHandler(handler)
 
@@ -88,7 +89,14 @@ def _save_readings_cache(readings: list[dict], config: dict) -> None:
         logger.error("Failed to save readings cache: %s", e)
 
 
-def run_once(config: dict) -> None:
+def run_once(config: dict, outputs: list | None = None) -> None:
+    """Execute one monitoring cycle: read → evaluate → alert → persist.
+
+    *outputs* is optional.  When provided (e.g. from a long-running daemon
+    that pre-builds outputs once), it is used directly and no new instances are
+    created.  When *None* (default, e.g. cron mode), outputs are built fresh
+    from the current config for this single invocation.
+    """
     state_path = config.get("state_file", "state.json")
     if not os.path.isabs(state_path):
         state_path = str(PROJECT_ROOT / state_path)
@@ -106,7 +114,8 @@ def run_once(config: dict) -> None:
     _save_readings_cache(readings, config)
     max_age = config["alerts"]["max_reading_age_minutes"]
     cooldown = config["alerts"]["cooldown_minutes"]
-    outputs = build_outputs(config)
+    if outputs is None:
+        outputs = build_outputs(config)
     if not outputs:
         logger.warning("No outputs enabled, cannot send alerts")
     state_changed = False
@@ -235,11 +244,13 @@ def main() -> None:
             set_external_polling(True)
             interval = config.get("monitoring", {}).get("interval_seconds", 300)
             logger.info("Starting full mode (daemon + dashboard, interval: %ds)", interval)
+            # Build outputs once; they are reused across every polling cycle.
+            _loop_outputs = build_outputs(config)
 
             def _polling_loop() -> None:
                 while True:
                     try:
-                        run_once(config)
+                        run_once(config, outputs=_loop_outputs)
                         update_readings_cache()
                     except Exception as e:
                         logger.error("Error in monitoring cycle: %s: %s", type(e).__name__, e)
@@ -258,9 +269,11 @@ def main() -> None:
         if mode == "daemon":
             interval = config.get("monitoring", {}).get("interval_seconds", 300)
             logger.info("Starting in daemon mode (interval: %ds)", interval)
+            # Build outputs once; they are reused across every polling cycle.
+            _daemon_outputs = build_outputs(config)
             while True:
                 try:
-                    run_once(config)
+                    run_once(config, outputs=_daemon_outputs)
                 except Exception as e:
                     logger.error("Error in monitoring cycle: %s: %s", type(e).__name__, e)
                 logger.info("Sleeping %d seconds...", interval)

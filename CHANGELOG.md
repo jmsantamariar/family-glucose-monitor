@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Security
+- **[CVE-2026-26007] Bump `cryptography` a `46.0.5`** — Se actualiza la dependencia `cryptography` de `44.0.2` a `46.0.5` para mitigar CVE-2026-26007 (subgroup attack en curvas SECT por falta de validación de subgrupos). Versiones afectadas: ≤ 46.0.4. Sin cambios de API; totalmente compatible con el resto de dependencias.
 - **Encriptación Fernet para credenciales LibreLinkUp** — Las contraseñas de LibreLinkUp ahora se almacenan encriptadas (AES-128-CBC + HMAC-SHA256) en `config.yaml` usando `cryptography.fernet.Fernet`. La clave se almacena en `.secret_key` con permisos `0600`. Backward compatible con configs en texto plano existentes. (PR #23)
 - **Sesiones persistentes en SQLite** — Las sesiones de usuario se almacenan en `sessions.db` en lugar de un diccionario in-memory, sobreviviendo reinicios y soportando múltiples workers. (PR #21)
 - **Autenticación separada para dashboard** — Las credenciales del dashboard (`dashboard_auth`) son independientes de las de LibreLinkUp. Contraseñas hasheadas con PBKDF2-HMAC-SHA256 (260,000 iteraciones, OWASP 2023). (PR #13)
