@@ -52,8 +52,12 @@ _cache_lock = threading.Lock()
 _config: dict = {}
 _last_mtime: float = 0.0
 
-# When True, main.py drives the polling loop and api.py must NOT start its own.
+# External polling state — governed by main.py in 'full' mode.
+# Use a dedicated lock to avoid coupling with _cache_lock.
 _external_polling: bool = False
+_external_last_payload: list | None = None
+_external_lock = threading.Lock()
+
 
 def set_external_polling(enabled: bool) -> None:
     """Signal that an external caller (main.py) will manage the polling loop.
@@ -63,39 +67,32 @@ def set_external_polling(enabled: bool) -> None:
     LibreLinkUp API requests.
     """
     global _external_polling
-    _external_polling = enabled
+    with _external_lock:
+        _external_polling = bool(enabled)
 
 
-def update_readings_cache(readings: list[dict], config: dict) -> None:
-    """Inject readings into the in-memory dashboard cache.
+def update_readings_cache(payload: list | None = None) -> None:
+    """Signal that new readings are available and invalidate the mtime cache.
 
-    This applies the same enrichment that ``_poll_loop`` performs
-    (``glucose_value``, ``level``, ``trend_alert``, ``color``,
-    ``fetched_at``) so that the dashboard endpoints return consistent data.
+    Called by ``main.py`` immediately after every ``run_once()`` cycle so
+    that the next dashboard request always reads the freshest data from the
+    cache file, even when the file mtime did not change (same-second write).
 
-    Called by ``main.py`` after every ``run_once()`` cycle when running in
-    *full* mode, avoiding a second round-trip to the LibreLinkUp API.
+    *payload* is optional:
+
+    * If provided, it is stored as ``_external_last_payload`` so that
+      ``_load_and_enrich_cache()`` can use it as an additional invalidation
+      signal when ``_external_polling`` is enabled.
+    * Whether or not *payload* is given, ``_last_mtime`` is reset to ``0.0``
+      so the next call to ``_load_and_enrich_cache()`` always re-reads the
+      cache file rather than relying solely on a potentially stale mtime.
     """
-    global _config
-    if config is not None:
-        _config = config
-    new_cache: dict = {}
-    for r in readings:
-        pid = r["patient_id"]
-        glucose = r["value"]
-        trend_arrow = r.get("trend_arrow", "")
-        level = alert_engine.evaluate(glucose, _config)
-        trend_alert = alert_engine.evaluate_trend(glucose, trend_arrow, _config)
-        r["glucose_value"] = glucose
-        r["level"] = level
-        r["trend_alert"] = trend_alert
-        r["color"] = _get_color(level, trend_alert)
-        r["fetched_at"] = datetime.now(timezone.utc).isoformat()
-        new_cache[pid] = r
+    global _external_last_payload, _last_mtime
+    with _external_lock:
+        _external_last_payload = payload
     with _cache_lock:
-        _readings_cache.clear()
-        _readings_cache.update(new_cache)
-    logger.debug("Dashboard cache updated with %d patient(s) from external poll", len(readings))
+        _last_mtime = 0.0
+    logger.debug("Dashboard cache invalidated; will reload from file on next request")
 
 APP_ENV = os.environ.get("APP_ENV") or os.environ.get("ENV") or "dev"
 _ALLOW_AUTH_DISABLED = (
@@ -168,8 +165,13 @@ def _load_and_enrich_cache() -> None:
     the last load.  If the file does not exist or contains invalid JSON the
     cache is cleared and the mtime marker is updated so we do not spam the
     log on every request.
-    """ 
-    global _last_mtime
+
+    When ``_external_polling`` is enabled and ``update_readings_cache()`` has
+    been called since the last load (indicated by ``_external_last_payload``
+    being non-``None``), ``_last_mtime`` is reset to ``0.0`` before the mtime
+    comparison so that same-second file writes are never missed.
+    """
+    global _last_mtime, _external_last_payload
 
     cache_path = _get_cache_path()
 
@@ -183,6 +185,17 @@ def _load_and_enrich_cache() -> None:
             _readings_cache.clear()
             _last_mtime = 0.0
         return
+
+    # If external polling flagged an update, force re-read regardless of mtime.
+    # This guards against same-second writes where mtime alone would not change.
+    force_reload = False
+    with _external_lock:
+        if _external_polling and _external_last_payload is not None:
+            _external_last_payload = None
+            force_reload = True
+    if force_reload:
+        with _cache_lock:
+            _last_mtime = 0.0
 
     with _cache_lock:
         if mtime == _last_mtime:
