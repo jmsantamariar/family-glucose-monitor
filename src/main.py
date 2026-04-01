@@ -4,6 +4,7 @@ import logging
 import os
 import stat
 import sys
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -103,12 +104,6 @@ def run_once(config: dict) -> None:
         logger.error("No readings obtained from any patient")
         return
     _save_readings_cache(readings, config)
-    # Update in-memory dashboard cache if running in full mode
-    try:
-        from src.api import set_external_polling, update_readings_cache
-        update_readings_cache(readings, config)
-    except ImportError:
-        pass
     max_age = config["alerts"]["max_reading_age_minutes"]
     cooldown = config["alerts"]["cooldown_minutes"]
     outputs = build_outputs(config)
@@ -233,29 +228,26 @@ def main() -> None:
         _start_dashboard(config)
         return
 
-if mode == "full":
-    dashboard_thread = threading.Thread(target=run_dashboard, daemon=True)
-    dashboard_thread.start()
-
-    set_external_polling(True)
-
-    interval = config.get("monitoring", {}).get("interval_seconds", 300)
-    logger.info("Starting polling loop in foreground (interval: %ds)", interval)
-
-    while True:
+    if mode == "full":
+        lock_fd = acquire_lock(lock_path)
         try:
-            result = run_once(config)
-            update_readings_cache(result)  # o sin argumento si esa es la firma real
-        except Exception as e:
-            logger.error("Error in monitoring cycle: %s: %s", type(e).__name__, e)
-        time.sleep(interval)
+            from src.api import set_external_polling, update_readings_cache
+            set_external_polling(True)
+            interval = config.get("monitoring", {}).get("interval_seconds", 300)
+            logger.info("Starting full mode (daemon + dashboard, interval: %ds)", interval)
 
-        import threading as _threading
-        poll_thread = _threading.Thread(target=_polling_loop, daemon=True)
-        poll_thread.start()
+            def _polling_loop() -> None:
+                while True:
+                    try:
+                        run_once(config)
+                        update_readings_cache()
+                    except Exception as e:
+                        logger.error("Error in monitoring cycle: %s: %s", type(e).__name__, e)
+                    time.sleep(interval)
 
-        # Uvicorn runs on the main thread for proper signal handling
-        try:
+            poll_thread = threading.Thread(target=_polling_loop, daemon=True)
+            poll_thread.start()
+            # Uvicorn runs on the main thread for proper signal handling
             _start_dashboard(config)
         finally:
             release_lock(lock_fd)
