@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from src.glucose_reader import read_all_patients
+from src.glucose_reader import _retry_with_backoff, read_all_patients
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -198,9 +198,16 @@ def test_per_patient_failure_does_not_abort_others():
 
     mock_client = MagicMock()
     mock_client.get_patients.return_value = [p1, p2]
-    mock_client.latest.side_effect = [Exception("network error"), latest_p2]
+    # p1 exhausts all retries (max_retries=2 → 3 attempts), p2 succeeds
+    mock_client.latest.side_effect = [
+        Exception("network error"),
+        Exception("network error"),
+        Exception("network error"),
+        latest_p2,
+    ]
 
-    with patch("src.glucose_reader.PyLibreLinkUp", return_value=mock_client):
+    with patch("src.glucose_reader.PyLibreLinkUp", return_value=mock_client), \
+         patch("src.glucose_reader.time.sleep"):
         readings = read_all_patients(_CONFIG)
 
     assert len(readings) == 1
@@ -215,9 +222,16 @@ def test_per_patient_failure_first_patient_still_reads_second():
 
     mock_client = MagicMock()
     mock_client.get_patients.return_value = [p1, p2]
-    mock_client.latest.side_effect = [RuntimeError("API error"), latest_p2]
+    # p1 exhausts all retries (max_retries=2 → 3 attempts), p2 succeeds
+    mock_client.latest.side_effect = [
+        RuntimeError("API error"),
+        RuntimeError("API error"),
+        RuntimeError("API error"),
+        latest_p2,
+    ]
 
-    with patch("src.glucose_reader.PyLibreLinkUp", return_value=mock_client):
+    with patch("src.glucose_reader.PyLibreLinkUp", return_value=mock_client), \
+         patch("src.glucose_reader.time.sleep"):
         readings = read_all_patients(_CONFIG)
 
     assert readings[0]["patient_name"] == "Good Patient"
@@ -232,7 +246,8 @@ def test_auth_failure_returns_empty_list():
     mock_client = MagicMock()
     mock_client.authenticate.side_effect = Exception("auth failed")
 
-    with patch("src.glucose_reader.PyLibreLinkUp", return_value=mock_client):
+    with patch("src.glucose_reader.PyLibreLinkUp", return_value=mock_client), \
+         patch("src.glucose_reader.time.sleep"):
         readings = read_all_patients(_CONFIG)
 
     assert readings == []
@@ -243,7 +258,125 @@ def test_get_patients_failure_returns_empty_list():
     mock_client = MagicMock()
     mock_client.get_patients.side_effect = Exception("connection refused")
 
-    with patch("src.glucose_reader.PyLibreLinkUp", return_value=mock_client):
+    with patch("src.glucose_reader.PyLibreLinkUp", return_value=mock_client), \
+         patch("src.glucose_reader.time.sleep"):
         readings = read_all_patients(_CONFIG)
 
     assert readings == []
+
+
+# ---------------------------------------------------------------------------
+# Retry / Exponential Backoff
+# ---------------------------------------------------------------------------
+
+def test_auth_retries_on_transient_failure():
+    """authenticate fails twice then succeeds; readings are returned."""
+    patient = _make_patient()
+    latest = _make_latest(value=130)
+
+    mock_client = MagicMock()
+    mock_client.authenticate.side_effect = [
+        Exception("timeout"),
+        Exception("timeout"),
+        None,  # success on 3rd attempt
+    ]
+    mock_client.get_patients.return_value = [patient]
+    mock_client.latest.return_value = latest
+
+    with patch("src.glucose_reader.PyLibreLinkUp", return_value=mock_client), \
+         patch("src.glucose_reader.time.sleep"):
+        readings = read_all_patients(_CONFIG)
+
+    assert len(readings) == 1
+    assert mock_client.authenticate.call_count == 3
+
+
+def test_auth_exhausts_retries_returns_empty():
+    """authenticate always fails; read_all_patients returns []."""
+    mock_client = MagicMock()
+    mock_client.authenticate.side_effect = Exception("auth failed")
+
+    with patch("src.glucose_reader.PyLibreLinkUp", return_value=mock_client), \
+         patch("src.glucose_reader.time.sleep"):
+        readings = read_all_patients(_CONFIG)
+
+    assert readings == []
+    assert mock_client.authenticate.call_count == 4  # 4 attempts total (max_retries=3)
+
+
+def test_get_patients_retries_on_failure():
+    """get_patients fails once then succeeds; readings are returned."""
+    patient = _make_patient()
+    latest = _make_latest(value=110)
+
+    mock_client = MagicMock()
+    mock_client.get_patients.side_effect = [Exception("network"), [patient]]
+    mock_client.latest.return_value = latest
+
+    with patch("src.glucose_reader.PyLibreLinkUp", return_value=mock_client), \
+         patch("src.glucose_reader.time.sleep"):
+        readings = read_all_patients(_CONFIG)
+
+    assert len(readings) == 1
+    assert mock_client.get_patients.call_count == 2
+
+
+def test_per_patient_latest_retries():
+    """latest fails once for a patient then succeeds; reading is returned."""
+    patient = _make_patient()
+    latest = _make_latest(value=95)
+
+    mock_client = MagicMock()
+    mock_client.get_patients.return_value = [patient]
+    mock_client.latest.side_effect = [Exception("timeout"), latest]
+
+    with patch("src.glucose_reader.PyLibreLinkUp", return_value=mock_client), \
+         patch("src.glucose_reader.time.sleep"):
+        readings = read_all_patients(_CONFIG)
+
+    assert len(readings) == 1
+    assert readings[0]["value"] == 95
+    assert mock_client.latest.call_count == 2
+
+
+def test_redirect_error_not_retried():
+    """RedirectError is propagated immediately from _retry_with_backoff (no retry)."""
+    from pylibrelinkup.api_url import APIUrl
+    from pylibrelinkup.exceptions import RedirectError
+
+    mock_func = MagicMock(side_effect=RedirectError(region=APIUrl.EU))
+
+    with patch("src.glucose_reader.time.sleep") as mock_sleep:
+        with pytest.raises(RedirectError):
+            _retry_with_backoff(
+                mock_func,
+                max_retries=3,
+                base_delay=1.0,
+                non_retryable_exceptions=(RedirectError,),
+            )
+
+    # Function called exactly once — no retries
+    assert mock_func.call_count == 1
+    mock_sleep.assert_not_called()
+
+
+def test_retry_backoff_sleeps():
+    """time.sleep is called with exponentially increasing delays between retries."""
+    call_count = 0
+
+    def flaky():
+        nonlocal call_count
+        call_count += 1
+        if call_count <= 3:
+            raise Exception("fail")
+        return "ok"
+
+    with patch("src.glucose_reader.time.sleep") as mock_sleep, \
+         patch("src.glucose_reader.random.uniform", return_value=1.0):
+        result = _retry_with_backoff(flaky, max_retries=3, base_delay=2.0, max_delay=60.0)
+
+    assert result == "ok"
+    assert mock_sleep.call_count == 3
+    # Delays should be base_delay * 2^attempt * jitter(1.0): 2, 4, 8
+    delays = [c.args[0] for c in mock_sleep.call_args_list]
+    assert delays == pytest.approx([2.0, 4.0, 8.0])
