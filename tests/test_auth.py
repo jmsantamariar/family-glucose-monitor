@@ -337,7 +337,7 @@ class TestSetupEndpoint:
         return {
             "email": "user@example.com",
             "password": "secret",
-            "dashboard_password": "dashpass",
+            "dashboard_password": "dashpass1",
             "low_threshold": 70,
             "high_threshold": 180,
             "cooldown_minutes": 30,
@@ -372,9 +372,9 @@ class TestSetupEndpoint:
         # Password must be stored as a hash, never plain text
         stored_hash = dash_auth.get("password_hash", "")
         assert stored_hash.startswith("pbkdf2:sha256:")
-        assert stored_hash != "dashpass"
+        assert stored_hash != "dashpass1"
         # Verify the hash validates correctly
-        assert check_password("dashpass", stored_hash)
+        assert check_password("dashpass1", stored_hash)
 
     def test_setup_librelinkup_password_not_used_as_dashboard_password(self, client, tmp_path):
         """LibreLinkUp password must not be used verbatim as the dashboard password."""
@@ -388,7 +388,7 @@ class TestSetupEndpoint:
         stored_hash = config["dashboard_auth"]["password_hash"]
         assert not check_password("secret", stored_hash)
         # Only the dedicated dashboard_password validates
-        assert check_password("dashpass", stored_hash)
+        assert check_password("dashpass1", stored_hash)
 
     def test_setup_with_telegram(self, client, tmp_path):
         payload = self._minimal_payload()
@@ -598,12 +598,8 @@ class TestLoginRateLimit:
     @pytest.fixture(autouse=True)
     def _reset_rate_limiter(self):
         """Clear any accumulated failed-login state before each test."""
-        import src.api as _api
-        with _api._login_failures_lock:
-            _api._login_failures.clear()
         yield
-        with _api._login_failures_lock:
-            _api._login_failures.clear()
+        session_manager.clear_all_login_attempts()
 
     def test_rate_limit_after_max_attempts(self, client, tmp_path):
         """After MAX failed attempts the next request must return 429."""
@@ -673,3 +669,190 @@ class TestLoginRateLimit:
                     json={"username": "user", "password": "wrong"},
                 )
                 assert resp.status_code == 401  # still within limit after reset
+
+
+# ── SessionManager login attempts (Issue 2.2) ─────────────────────────────────
+
+
+class TestLoginAttempts:
+    def test_record_and_count_failed_logins(self):
+        session_manager.clear_all_login_attempts()
+        session_manager.record_failed_login("192.168.1.1")
+        session_manager.record_failed_login("192.168.1.1")
+        count = session_manager.get_recent_failed_logins("192.168.1.1", window_seconds=600)
+        assert count == 2
+
+    def test_count_ignores_other_ips(self):
+        session_manager.clear_all_login_attempts()
+        session_manager.record_failed_login("10.0.0.1")
+        count = session_manager.get_recent_failed_logins("10.0.0.2", window_seconds=600)
+        assert count == 0
+
+    def test_clear_failed_logins(self):
+        session_manager.clear_all_login_attempts()
+        session_manager.record_failed_login("1.2.3.4")
+        session_manager.clear_failed_logins("1.2.3.4")
+        assert session_manager.get_recent_failed_logins("1.2.3.4", window_seconds=600) == 0
+
+    def test_cleanup_old_login_attempts(self):
+        import time as _time
+        session_manager.clear_all_login_attempts()
+        session_manager.record_failed_login("5.6.7.8")
+        # Cleanup with window of 0 seconds removes the just-inserted record
+        with patch("src.auth.time") as mock_time:
+            mock_time.time.return_value = _time.time() + 700
+            removed = session_manager.cleanup_old_login_attempts(window_seconds=600)
+        assert removed >= 1
+
+
+# ── Issue 1.1: Setup security — block reconfiguration without auth ─────────────
+
+
+class TestSetupSecurity:
+    @pytest.fixture
+    def client(self, tmp_path):
+        session_manager.clear_all()
+        with patch("src.api.PROJECT_ROOT", tmp_path):
+            yield TestClient(app)
+        session_manager.clear_all()
+
+    def _minimal_payload(self):
+        return {
+            "email": "user@example.com",
+            "password": "secret",
+            "dashboard_password": "dashpass1",
+            "low_threshold": 70,
+            "high_threshold": 180,
+            "cooldown_minutes": 30,
+            "max_reading_age_minutes": 15,
+            "notification_type": "none",
+        }
+
+    def test_first_setup_allowed_without_auth(self, client):
+        with patch("src.api.is_configured", return_value=False):
+            resp = client.post("/api/setup", json=self._minimal_payload())
+        assert resp.status_code == 200
+
+    def test_reconfiguration_blocked_without_session(self, client):
+        with patch("src.api.is_configured", return_value=True):
+            resp = client.post("/api/setup", json=self._minimal_payload())
+        assert resp.status_code == 403
+        assert "configurado" in resp.json()["detail"].lower()
+
+    def test_reconfiguration_allowed_with_valid_session(self, client, tmp_path):
+        token = session_manager.create_session()
+        client.cookies.set("session_token", token)
+        with patch("src.api.is_configured", return_value=True):
+            with patch("src.api.PROJECT_ROOT", tmp_path):
+                resp = client.post("/api/setup", json=self._minimal_payload())
+        assert resp.status_code == 200
+
+    def test_reconfiguration_blocked_with_invalid_session(self, client):
+        client.cookies.set("session_token", "invalid-garbage-token")
+        with patch("src.api.is_configured", return_value=True):
+            resp = client.post("/api/setup", json=self._minimal_payload())
+        assert resp.status_code == 403
+
+
+# ── Issue 2.3: Password length validation ─────────────────────────────────────
+
+
+class TestPasswordLengthValidation:
+    @pytest.fixture
+    def client(self, tmp_path):
+        with patch("src.api.PROJECT_ROOT", tmp_path):
+            yield TestClient(app)
+
+    def _payload_with_password(self, pwd: str):
+        return {
+            "email": "user@example.com",
+            "password": "librelinkuppass",
+            "dashboard_password": pwd,
+            "low_threshold": 70,
+            "high_threshold": 180,
+            "cooldown_minutes": 30,
+            "max_reading_age_minutes": 15,
+            "notification_type": "none",
+        }
+
+    def test_short_password_returns_422(self, client):
+        resp = client.post("/api/setup", json=self._payload_with_password("short1"))
+        assert resp.status_code == 422
+        assert "8 caracteres" in resp.json()["detail"]
+
+    def test_seven_char_password_returns_422(self, client):
+        resp = client.post("/api/setup", json=self._payload_with_password("1234567"))
+        assert resp.status_code == 422
+
+    def test_eight_char_password_accepted(self, client):
+        with patch("src.api.is_configured", return_value=False):
+            resp = client.post("/api/setup", json=self._payload_with_password("12345678"))
+        assert resp.status_code == 200
+
+    def test_long_password_accepted(self, client):
+        with patch("src.api.is_configured", return_value=False):
+            resp = client.post("/api/setup", json=self._payload_with_password("a-very-long-password-ok"))
+        assert resp.status_code == 200
+
+
+# ── Issue 2.4: Region selector ────────────────────────────────────────────────
+
+
+class TestRegionSelector:
+    @pytest.fixture
+    def client(self, tmp_path):
+        with patch("src.api.PROJECT_ROOT", tmp_path):
+            yield TestClient(app)
+
+    def _payload_with_region(self, region: str):
+        return {
+            "email": "user@example.com",
+            "password": "librelinkuppass",
+            "dashboard_password": "dashpass1",
+            "region": region,
+            "low_threshold": 70,
+            "high_threshold": 180,
+            "cooldown_minutes": 30,
+            "max_reading_age_minutes": 15,
+            "notification_type": "none",
+        }
+
+    def test_valid_region_eu_accepted(self, client):
+        with patch("src.api.is_configured", return_value=False):
+            resp = client.post("/api/setup", json=self._payload_with_region("EU"))
+        assert resp.status_code == 200
+
+    def test_valid_region_us_accepted(self, client, tmp_path):
+        with patch("src.api.is_configured", return_value=False):
+            with patch("src.api.PROJECT_ROOT", tmp_path):
+                resp = client.post("/api/setup", json=self._payload_with_region("US"))
+        assert resp.status_code == 200
+
+    def test_invalid_region_returns_422(self, client):
+        resp = client.post("/api/setup", json=self._payload_with_region("XX"))
+        assert resp.status_code == 422
+        assert "Región no válida" in resp.json()["detail"]
+
+    def test_region_saved_in_config(self, client, tmp_path):
+        with patch("src.api.is_configured", return_value=False):
+            with patch("src.api.PROJECT_ROOT", tmp_path):
+                client.post("/api/setup", json=self._payload_with_region("US"))
+        config = yaml.safe_load((tmp_path / "config.yaml").read_text())
+        assert config["librelinkup"]["region"] == "US"
+
+    def test_default_region_is_eu_when_not_provided(self, client, tmp_path):
+        payload = {
+            "email": "user@example.com",
+            "password": "librelinkuppass",
+            "dashboard_password": "dashpass1",
+            "low_threshold": 70,
+            "high_threshold": 180,
+            "cooldown_minutes": 30,
+            "max_reading_age_minutes": 15,
+            "notification_type": "none",
+        }
+        with patch("src.api.is_configured", return_value=False):
+            with patch("src.api.PROJECT_ROOT", tmp_path):
+                client.post("/api/setup", json=payload)
+        config = yaml.safe_load((tmp_path / "config.yaml").read_text())
+        assert config["librelinkup"]["region"] == "EU"

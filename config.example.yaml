@@ -72,6 +72,9 @@ api:
   host: "0.0.0.0"
   port: 8080
   cache_file: "readings_cache.json"
+  # Set the API_KEY environment variable to protect the external API with bearer token auth.
+  # Example: export API_KEY="your-secret-key"
+  # When API_KEY is set, all GET endpoints require: Authorization: Bearer <key>
 
 alert_history_db: "alert_history.db"
 alert_history_max_days: 7
