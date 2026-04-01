@@ -18,8 +18,16 @@ Para **familias** donde uno o varios miembros usan un sensor FreeStyle Libre y t
 ## ✨ Características
 
 - 📡 Lectura multi-paciente desde LibreLinkUp (todos los pacientes de la cuenta)
+- 🌍 Soporte de 12 regiones de LibreLinkUp con auto-redirect
 - ⚠️ Alertas configurables por umbral bajo/alto con cooldown anti-spam
+- 📈 Alertas por tendencia (subiendo rápido, bajando rápido, etc.)
 - 💬 Salidas: **Telegram**, **Webhook** (Pushover-compatible), **WhatsApp Cloud API**
+- 🖥️ Dashboard web autenticado con semáforo de colores y gráficos por paciente
+- 🔐 Autenticación con sesiones persistentes (SQLite) y contraseñas PBKDF2
+- 🔒 Credenciales de LibreLinkUp encriptadas en disco (Fernet/AES-128-CBC)
+- 📊 API REST externa para widgets, Home Assistant e integraciones locales
+- 📋 Historial de alertas persistente (SQLite) con limpieza automática
+- 🔄 Retry automático con exponential backoff para la API de LibreLinkUp
 - 🔄 Modos: **cron** (una lectura), **daemon** (bucle continuo), **dashboard** (panel web), **full** (monitoreo + dashboard)
 - 🗂️ Estado persistente por paciente con escritura atómica
 - ✅ Validación de configuración al inicio con mensajes claros
@@ -86,23 +94,61 @@ python -m src.main
 ## 🏗️ Arquitectura
 
 ```
-LibreLinkUp API
-      │
-      ▼
-glucose_reader.py ──── lee TODOS los pacientes
-      │
-      ▼
-alert_engine.py ─────── evalúa umbrales, cooldown, stale
-      │
-      ├──► outputs/telegram.py   ──► Bot de Telegram
-      ├──► outputs/webhook.py    ──► HTTP POST (Pushover)
-      └──► outputs/whatsapp.py   ──► WhatsApp Cloud API
-      │
-      ▼
-state.py ───────────── persiste estado por patient_id (state.json)
+LibreLinkUp API (Abbott)
+       │
+       ▼
+glucose_reader.py ──── lee TODOS los pacientes (con retry + backoff)
+       │
+       ▼
+main.py ─── run_once() ─── evalúa umbrales y tendencias
+       │                         │
+       ├──► outputs/telegram.py  ──► Bot de Telegram
+       ├──► outputs/webhook.py   ──► HTTP POST (Pushover)
+       └──► outputs/whatsapp.py  ──► WhatsApp Cloud API
+       │
+       ├──► readings_cache.json (fuente única de verdad)
+       │         │
+       │         ├──► api.py (dashboard :8080) ── lazy reload por mtime
+       │         └──► api_server.py (API externa :8081) ── lectura directa
+       │
+       └──► alert_history.db (SQLite)
+                 │
+                 └──► /api/alerts (ambos servidores)
+
+Seguridad:
+  config.yaml ──► credenciales LLU encriptadas (Fernet)
+  .secret_key ──► clave de encriptación (0600)
+  sessions.db ──► sesiones persistentes (SQLite)
+  dashboard_auth ──► contraseñas PBKDF2-HMAC-SHA256
 ```
 
 Para el diagrama completo y decisiones de diseño, consulta [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+### Modos de ejecución
+
+| Modo | Descripción | Polling | Dashboard |
+|------|-------------|---------|-----------|
+| `cron` | Una sola lectura y sale | ✅ (1 vez) | ❌ |
+| `daemon` | Bucle continuo con intervalo configurable | ✅ (loop) | ❌ |
+| `dashboard` | Solo panel web, sin alertas | ❌ | ✅ (:8080) |
+| `full` | Monitoreo completo + dashboard | ✅ (hilo daemon) | ✅ (:8080, main thread) |
+
+En modo `full`, Uvicorn se ejecuta en el hilo principal (manejo correcto de señales) y el polling corre en un hilo daemon en segundo plano. Solo hay **un** ciclo de polling activo.
+
+---
+
+## 🔐 Seguridad
+
+| Mecanismo | Descripción |
+|-----------|-------------|
+| **Encriptación de credenciales** | Contraseña de LibreLinkUp almacenada con Fernet (AES-128-CBC + HMAC-SHA256) en `config.yaml`. Backward compatible con texto plano. |
+| **Hashing de contraseñas** | Contraseña del dashboard hasheada con PBKDF2-HMAC-SHA256 (260,000 iteraciones). |
+| **Sesiones persistentes** | Tokens de sesión almacenados en SQLite (`sessions.db`) con TTL de 24 horas. |
+| **Permisos de archivos** | `config.yaml` y `.secret_key` con permisos `0600` (solo propietario). |
+| **CORS restringido** | API externa sin orígenes permitidos por defecto. Configurable via `CORS_ALLOWED_ORIGINS`. |
+| **Separación de credenciales** | Credenciales de LibreLinkUp independientes de las del dashboard. |
+
+> ⚠️ Para reportar vulnerabilidades, consulta [SECURITY.md](SECURITY.md).
 
 ### Estructura de archivos
 
