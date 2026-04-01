@@ -111,3 +111,13 @@ def test_decrypt_with_wrong_key_raises(tmp_path):
     with patch.object(crypto_module, "_SECRET_KEY_FILE", key_file_b):
         with pytest.raises(InvalidToken):
             decrypt_value(encrypted)
+
+
+def test_hkdf_round_trip(tmp_path):
+    """Encrypting and decrypting with the same HKDF-derived key must yield the original value."""
+    with _patch_key_file(tmp_path):
+        plaintext = "sensitive-config-value"
+        encrypted = encrypt_value(plaintext)
+        assert is_encrypted(encrypted)
+        result = decrypt_value(encrypted)
+    assert result == plaintext

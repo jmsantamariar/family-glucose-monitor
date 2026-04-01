@@ -4,15 +4,20 @@ Uses Fernet (AES-128-CBC + HMAC-SHA256) from the ``cryptography`` library.
 The encryption key is derived from a master secret stored in ``.secret_key``
 at the project root.  This file is created automatically on first use with
 restricted permissions (0600).
+
+.. warning::
+   Losing ``.secret_key`` means any ``encrypted:`` values in ``config.yaml``
+   become unreadable.  Re-run the setup wizard to reconfigure.
 """
 import base64
-import hashlib
 import logging
 import os
 import stat
 from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +46,13 @@ def _get_or_create_key() -> bytes:
             logger.warning("Could not set permissions on %s", _SECRET_KEY_FILE)
         logger.info("Created new encryption key at %s", _SECRET_KEY_FILE)
 
-    # Derive a Fernet-compatible 32-byte key via SHA-256
-    derived = hashlib.sha256(raw).digest()
+    # Derive a Fernet-compatible 32-byte key via HKDF-SHA256
+    derived = HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=None,
+        info=b"family-glucose-monitor-fernet-key",
+    ).derive(raw)
     return base64.urlsafe_b64encode(derived)
 
 
