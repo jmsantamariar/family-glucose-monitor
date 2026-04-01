@@ -81,10 +81,6 @@ Dataclasses que definen contratos explícitos para los tipos de datos del domini
 - `AlertsConfig` — sección `alerts` validada de `config.yaml`
 - `PatientState` — estado de alertas por paciente
 
-### `src/config_schema.py` — Validación de configuración
-
-Valida el diccionario de configuración antes de ejecutar cualquier lógica. Devuelve una lista de errores claros, nunca lanza excepciones silenciosas.
-
 ### `src/glucose_reader.py` — Lector de glucosa
 
 Se conecta a la API de LibreLinkUp usando `pylibrelinkup` y devuelve las lecturas de **todos** los pacientes vinculados a la cuenta. Normaliza el resultado en una lista de dicts con las claves: `patient_id`, `patient_name`, `value`, `timestamp`, `trend_arrow`.
@@ -117,6 +113,51 @@ Cifra y descifra valores sensibles (contraseña de LibreLinkUp) mediante Fernet 
 
 1. **Variable de entorno `FGM_MASTER_KEY`** — hex de 64 caracteres (32 bytes). Recomendado en producción.
 2. **Archivo `.secret_key`** en la raíz del proyecto — generado automáticamente si no existe.
+
+---
+
+## Gestión de secretos y variables de entorno
+
+La resolución de secretos sigue una jerarquía de prioridad:
+
+```
+Variable de entorno  >  config.yaml  >  valor por defecto / error
+```
+
+### Secretos críticos
+
+| Variable | Descripción | Obligatorio en producción |
+|----------|-------------|--------------------------|
+| `FGM_MASTER_KEY` | Clave maestra Fernet (64 hex chars = 32 bytes) | Sí |
+| `API_KEY` | Clave de la API REST externa (`api_server.py`) | Sí |
+| `LIBRELINKUP_EMAIL` | Email de LibreLinkUp (sobreescribe `config.yaml`) | Opcional |
+| `LIBRELINKUP_PASSWORD` | Contraseña de LibreLinkUp (sobreescribe `config.yaml`) | Opcional |
+| `WHATSAPP_ACCESS_TOKEN` | Token de WhatsApp Cloud API | Si usa WhatsApp |
+
+### Variables de configuración opcionales
+
+| Variable | Descripción | Por defecto |
+|----------|-------------|-------------|
+| `APP_ENV` | Entorno (`production`, `development`) | `development` |
+| `ALERT_HISTORY_DB` | Ruta a la base de datos SQLite de historial | `<project_root>/alert_history.db` |
+| `CORS_ALLOWED_ORIGINS` | Orígenes CORS permitidos para la API externa | `*` (localhost) |
+| `ALLOW_INSECURE_LOCAL_API` | `1` para deshabilitar auth en la API externa (dev only) | No |
+| `AUTH_DISABLED` | `1` para deshabilitar auth del dashboard (tests only) | No |
+
+### Flujo de secretos en producción
+
+```
+Docker secrets / Kubernetes secrets / Vault
+        │
+        ▼
+Variables de entorno inyectadas en el contenedor
+        │
+        ├─→ FGM_MASTER_KEY → src/crypto.py → descifra credenciales en config.yaml
+        ├─→ API_KEY → src/api_server.py → valida Bearer token
+        └─→ LIBRELINKUP_* → src/config_schema.py → sobreescribe config.yaml
+```
+
+Consulta `.env.example` para la lista completa y ejemplos de generación.
 
 ---
 

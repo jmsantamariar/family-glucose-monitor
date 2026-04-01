@@ -1,6 +1,7 @@
 config.yaml
 state.json
-*.lock
+# Exclude generic lockfiles but keep poetry.lock (it must be committed)
+!poetry.lock
 __pycache__/
 .venv/
 *.pyc
