@@ -23,11 +23,13 @@ port (configurable), has no authentication, and reads data from the
 ``timestamp``).  Both modules now share ``readings_cache.json`` as the single
 source of truth.
 """
+import collections
 import json
 import logging
 import os
 import stat
 import threading
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,6 +38,7 @@ from typing import Optional
 import yaml
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi import Query
 
 from src import alert_engine
 from src.alert_history import get_alerts
@@ -94,7 +97,7 @@ def update_readings_cache(payload: list | None = None) -> None:
         _last_mtime = 0.0
     logger.debug("Dashboard cache invalidated; will reload from file on next request")
 
-APP_ENV = os.environ.get("APP_ENV") or os.environ.get("ENV") or "dev"
+APP_ENV = os.environ.get("APP_ENV") or os.environ.get("ENV") or "production"
 _ALLOW_AUTH_DISABLED = (
     os.environ.get("AUTH_DISABLED") == "1"
     and APP_ENV.lower() in {"dev", "development", "local", "test"}
@@ -109,6 +112,42 @@ def load_config(path: str = "config.yaml") -> dict:
     with open(path) as f:
         return yaml.safe_load(f)
 
+# ── Login rate limiter ────────────────────────────────────────────────────────
+
+_LOGIN_MAX_ATTEMPTS = 10
+_LOGIN_WINDOW_SECONDS = 600  # 10 minutes
+
+# Maps client IP → deque of timestamps of failed login attempts
+_login_failures: dict[str, collections.deque] = collections.defaultdict(
+    lambda: collections.deque()
+)
+_login_failures_lock = threading.Lock()
+
+
+def _check_rate_limit(ip: str) -> bool:
+    """Return True if the IP is allowed to attempt login, False if rate-limited."""
+    now = time.time()
+    cutoff = now - _LOGIN_WINDOW_SECONDS
+    with _login_failures_lock:
+        dq = _login_failures[ip]
+        # Purge timestamps outside the sliding window
+        while dq and dq[0] < cutoff:
+            dq.popleft()
+        return len(dq) < _LOGIN_MAX_ATTEMPTS
+
+
+def _record_failed_login(ip: str) -> None:
+    """Record a failed login attempt for the given IP."""
+    now = time.time()
+    with _login_failures_lock:
+        _login_failures[ip].append(now)
+
+
+def _reset_login_failures(ip: str) -> None:
+    """Clear failed login counter for the given IP on successful login."""
+    with _login_failures_lock:
+        _login_failures.pop(ip, None)
+
 @asynccontextmanager
 async def lifespan(application: "FastAPI"):
     global _config
@@ -116,6 +155,19 @@ async def lifespan(application: "FastAPI"):
         _config = load_config()
     except FileNotFoundError:
         logger.warning("config.yaml not found, dashboard will start without active config")
+
+    def _session_cleanup_loop():
+        while True:
+            time.sleep(3600)
+            try:
+                removed = session_manager.cleanup_expired()
+                if removed:
+                    logger.debug("Cleaned up %d expired session(s)", removed)
+            except Exception as exc:
+                logger.warning("Session cleanup failed: %s", exc)
+
+    cleanup_thread = threading.Thread(target=_session_cleanup_loop, daemon=True)
+    cleanup_thread.start()
     yield
 
 app = FastAPI(title="Family Glucose Monitor", version="1.0.0", lifespan=lifespan)
@@ -147,6 +199,16 @@ async def auth_middleware(request: Request, call_next):
     if is_configured():
         return RedirectResponse(url="/login", status_code=302)
     return RedirectResponse(url="/setup", status_code=302)
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    """Add HTTP security headers to every response."""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
 
 
 def _get_cache_path() -> str:
@@ -281,7 +343,7 @@ def health_check():
     }
 
 @app.get("/api/alerts", response_class=JSONResponse)
-def get_alert_history(patient_id: Optional[str] = None, hours: int = 24):
+def get_alert_history(patient_id: Optional[str] = None, hours: int = Query(default=24, ge=1, le=8760)):
     """Return alert history for the last *hours* hours.
 
     Optionally filter by *patient_id*.  Returns an empty list when there are no
@@ -334,6 +396,14 @@ async def api_login(request: Request, response: Response):
     ``password``.  Credentials are verified against the ``dashboard_auth``
     section — **not** the LibreLinkUp credentials.
     """    
+    client_ip = request.client.host if request.client else "unknown"
+
+    if not _check_rate_limit(client_ip):
+        raise HTTPException(
+            status_code=429,
+            detail="Demasiados intentos. Intenta de nuevo más tarde.",
+        )
+
     try:
         data = await request.json()
     except Exception:
@@ -344,13 +414,16 @@ async def api_login(request: Request, response: Response):
     password = str(data.get("password", ""))
 
     if not verify_credentials(username, password):
+        _record_failed_login(client_ip)
         raise HTTPException(status_code=401, detail="Credenciales incorrectas")
 
+    _reset_login_failures(client_ip)
     token = session_manager.create_session()
     response.set_cookie(
         key="session_token",
         value=token,
         httponly=True,
+        secure=True,
         max_age=86400,
         samesite="lax",
     )
@@ -529,6 +602,7 @@ async def api_setup(request: Request, response: Response):
         key="session_token",
         value=token,
         httponly=True,
+        secure=True,
         max_age=86400,
         samesite="lax",
     )
