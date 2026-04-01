@@ -24,6 +24,7 @@ port (configurable), has no authentication, and reads data from the
 """
 import logging
 import os
+import stat
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -38,6 +39,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from src import alert_engine
 from src.alert_history import get_alerts
 from src.auth import hash_password, is_configured, session_manager, verify_credentials
+from src.crypto import encrypt_value
 from src.glucose_reader import read_all_patients
 
 logger = logging.getLogger(__name__)
@@ -358,7 +360,7 @@ async def api_setup(request: Request, response: Response):
     config_dict = {
         "librelinkup": {
             "email": email,
-            "password": password,
+            "password": encrypt_value(password),
             "region": "EU",
         },
         "dashboard_auth": {
@@ -409,6 +411,12 @@ async def api_setup(request: Request, response: Response):
     config_path = PROJECT_ROOT / "config.yaml"
     with open(config_path, "w", encoding="utf-8") as f:
         yaml.dump(config_dict, f, allow_unicode=True, default_flow_style=False)
+
+    # Restrict file permissions: owner read/write only (0600)
+    try:
+        os.chmod(config_path, stat.S_IRUSR | stat.S_IWUSR)
+    except OSError as e:
+        logger.warning("Could not restrict config.yaml permissions: %s", e)
 
     # Reload internal config
     _config = config_dict
