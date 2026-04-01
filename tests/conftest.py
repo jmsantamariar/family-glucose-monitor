@@ -1,15 +1,19 @@
 """Shared pytest fixtures.
 
-Authentication is disabled by default for all tests so that the existing
-test suite for api.py and api_server.py continues to pass without changes.
-Tests that need the auth middleware enabled (e.g. test_auth.py) should
-override this by calling ``monkeypatch.delenv("AUTH_DISABLED", raising=False)``
-inside their own fixtures.
+Authentication and CSRF are disabled by default for all tests so that the
+existing test suite for api.py and api_server.py continues to pass without
+changes.  Tests that specifically exercise security paths should override these
+by patching the module flags directly inside their own fixtures.
 """
 import pytest
 
 
 @pytest.fixture(autouse=True)
 def disable_auth_for_tests(monkeypatch):
-    """Set AUTH_DISABLED=1 so the auth middleware is bypassed by default."""
+    """Bypass auth middleware and CSRF validation by default in all tests."""
     monkeypatch.setenv("AUTH_DISABLED", "1")
+    # Patch the pre-computed module-level flag so auth middleware AND CSRF
+    # validation are both skipped.  test_auth.py tests that need real auth
+    # will patch these flags to False in their own fixtures.
+    import src.api as _api_module
+    monkeypatch.setattr(_api_module, "_ALLOW_AUTH_DISABLED", True)

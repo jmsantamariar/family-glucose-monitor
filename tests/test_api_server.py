@@ -6,7 +6,14 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
+import src.api_server as _api_server_module
 from src.api_server import CACHE_FILE, app
+
+# Bypass authentication for tests that do not specifically test auth behaviour.
+# The module-level client assumes ALLOW_INSECURE_LOCAL_API=True so existing
+# tests remain unaffected.  Auth-specific tests reload the module with the
+# appropriate env vars set.
+_api_server_module.ALLOW_INSECURE_LOCAL_API = True
 
 client = TestClient(app)
 
@@ -227,10 +234,31 @@ def test_cors_allowed_origin_via_env(tmp_path, monkeypatch):
 # API key authentication
 # ---------------------------------------------------------------------------
 
-def test_no_api_key_set_allows_unauthenticated(tmp_path, monkeypatch):
-    """When API_KEY env var is not set, endpoints are publicly accessible."""
+def test_no_api_key_no_allow_insecure_blocks_all(tmp_path, monkeypatch):
+    """When API_KEY is not set and ALLOW_INSECURE_LOCAL_API is not set, all requests return 401.
+
+    This is the secure-by-default behaviour introduced in Iteration 1.
+    """
     import importlib
     monkeypatch.delenv("API_KEY", raising=False)
+    monkeypatch.delenv("ALLOW_INSECURE_LOCAL_API", raising=False)
+    import src.api_server as api_server_module
+    importlib.reload(api_server_module)
+    cache_file = tmp_path / "readings_cache.json"
+    cache_file.write_text(json.dumps(SAMPLE_CACHE))
+    test_client = TestClient(api_server_module.app)
+    with patch.object(api_server_module, "CACHE_FILE", cache_file):
+        response = test_client.get("/api/readings")
+    assert response.status_code == 401
+    monkeypatch.delenv("ALLOW_INSECURE_LOCAL_API", raising=False)
+    importlib.reload(api_server_module)
+
+
+def test_allow_insecure_local_api_bypasses_auth(tmp_path, monkeypatch):
+    """ALLOW_INSECURE_LOCAL_API=1 without API_KEY allows unauthenticated access (dev only)."""
+    import importlib
+    monkeypatch.delenv("API_KEY", raising=False)
+    monkeypatch.setenv("ALLOW_INSECURE_LOCAL_API", "1")
     import src.api_server as api_server_module
     importlib.reload(api_server_module)
     cache_file = tmp_path / "readings_cache.json"
@@ -239,6 +267,7 @@ def test_no_api_key_set_allows_unauthenticated(tmp_path, monkeypatch):
     with patch.object(api_server_module, "CACHE_FILE", cache_file):
         response = test_client.get("/api/readings")
     assert response.status_code == 200
+    monkeypatch.delenv("ALLOW_INSECURE_LOCAL_API", raising=False)
     importlib.reload(api_server_module)
 
 
@@ -299,6 +328,7 @@ def test_api_key_set_blocks_wrong_key(tmp_path, monkeypatch):
 def test_alerts_hours_max_is_168(monkeypatch):
     """The /api/alerts endpoint must reject hours > 168."""
     import importlib
+    monkeypatch.setenv("ALLOW_INSECURE_LOCAL_API", "1")
     monkeypatch.delenv("API_KEY", raising=False)
     import src.api_server as api_server_module
     importlib.reload(api_server_module)
@@ -306,4 +336,5 @@ def test_alerts_hours_max_is_168(monkeypatch):
     with patch("src.alert_history.get_alerts", return_value=[]):
         response = test_client.get("/api/alerts?hours=200")
     assert response.status_code == 422  # Exceeds le=168 constraint
+    monkeypatch.delenv("ALLOW_INSECURE_LOCAL_API", raising=False)
     importlib.reload(api_server_module)

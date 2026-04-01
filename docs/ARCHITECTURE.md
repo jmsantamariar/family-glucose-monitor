@@ -42,22 +42,44 @@ Servidor FastAPI del panel de control. Responsabilidades:
 - Gestionar el flujo de configuración inicial (`/setup`) y login (`/login`)
 - Se inicia automáticamente con `monitoring.mode: dashboard` o `full`
 
-### `src/api_server.py` — API REST externa (solo lectura)
+### `src/api_server.py` — API REST externa (solo lectura, autenticada)
 
 Servidor FastAPI ligero para consumo externo (widgets, apps móviles, watchfaces). Responsabilidades:
 - Leer `readings_cache.json` que `src/main.py` actualiza en cada ciclo
-- Exponer endpoints sin autenticación: `/api/readings`, `/api/health`, `/api/alerts`
+- Exponer endpoints autenticados: `/api/readings`, `/api/health`, `/api/alerts`
 - Configurar CORS para permitir acceso desde distintos orígenes
 - Se inicia manualmente con `uvicorn src.api_server:app`
 
-> **Distinción clave:** `src/api.py` es el backend del dashboard (auth requerida, datos en memoria). `src/api_server.py` es la API pública (sin auth, datos del archivo cache).
+**Autenticación** (segura por defecto):
+- Cuando `API_KEY` está configurada: requiere `Authorization: Bearer <key>`.
+- Cuando `API_KEY` no está configurada y `ALLOW_INSECURE_LOCAL_API=1`: acceso sin auth (solo desarrollo local).
+- Sin ninguno de los dos: todas las peticiones son rechazadas con 401.
+
+> **Distinción clave:** `src/api.py` es el backend del dashboard (auth requerida, datos en memoria). `src/api_server.py` es la **API pública protegida** (requiere `API_KEY` o `ALLOW_INSECURE_LOCAL_API=1`, datos del archivo cache).
 
 ### `src/auth.py` — Gestión de sesiones y credenciales
 
 Gestiona la autenticación del dashboard web. Responsabilidades:
 - Verificar credenciales contra `config.yaml`
-- Crear y validar tokens de sesión (almacenados en memoria, TTL de 24 horas)
+- Crear y validar tokens de sesión (almacenados en **SQLite** `sessions.db`, TTL de 24 horas)
+- Rate limiting de intentos fallidos de login (también en SQLite)
 - Detectar si el sistema ya ha sido configurado (`is_configured()`)
+
+### `src/db.py` — Conexión centralizada a SQLite
+
+Fábrica de conexiones SQLite compartida por `src/auth.py` y `src/alert_history.py`.
+Aplica `PRAGMA journal_mode=WAL` y `PRAGMA foreign_keys=ON` de forma consistente.
+
+### `src/config_schema.py` — Validación de configuración
+
+Valida el diccionario de configuración antes de ejecutar cualquier lógica. Devuelve una lista de errores claros, nunca lanza excepciones silenciosas.
+
+### `src/models/__init__.py` — Modelos tipados
+
+Dataclasses que definen contratos explícitos para los tipos de datos del dominio:
+- `GlucoseReading` — lectura de glucosa de un paciente
+- `AlertsConfig` — sección `alerts` validada de `config.yaml`
+- `PatientState` — estado de alertas por paciente
 
 ### `src/config_schema.py` — Validación de configuración
 
@@ -89,9 +111,14 @@ Patrón Strategy con clase base abstracta `BaseOutput`. El módulo `src/outputs/
 | `WebhookOutput` | HTTP POST compatible con Pushover |
 | `WhatsAppOutput` | WhatsApp Cloud API (Meta) |
 
----
+### `src/crypto.py` — Cifrado de credenciales
 
-## Decisiones de diseño
+Cifra y descifra valores sensibles (contraseña de LibreLinkUp) mediante Fernet (AES-128-CBC + HMAC-SHA256). El secreto maestro se puede configurar en orden de prioridad:
+
+1. **Variable de entorno `FGM_MASTER_KEY`** — hex de 64 caracteres (32 bytes). Recomendado en producción.
+2. **Archivo `.secret_key`** en la raíz del proyecto — generado automáticamente si no existe.
+
+---
 
 ### ¿Por qué iterar TODOS los pacientes?
 

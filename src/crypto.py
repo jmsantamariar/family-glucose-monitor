@@ -1,13 +1,21 @@
 """Symmetric encryption helpers for sensitive configuration values.
 
 Uses Fernet (AES-128-CBC + HMAC-SHA256) from the ``cryptography`` library.
-The encryption key is derived from a master secret stored in ``.secret_key``
-at the project root.  This file is created automatically on first use with
-restricted permissions (0600).
+The master secret used to derive the Fernet key can be supplied in three ways,
+in order of precedence:
+
+1. **Environment variable** ``FGM_MASTER_KEY`` — a 64-character hex string
+   representing 32 raw bytes.  Recommended for production deployments (Docker
+   secrets, Kubernetes secrets, etc.).
+2. **``.secret_key`` file** at the project root — created automatically on
+   first use with restricted permissions (0600).  Convenient for local/dev use.
 
 .. warning::
-   Losing ``.secret_key`` means any ``encrypted:`` values in ``config.yaml``
+   Losing the master secret means any ``encrypted:`` values in ``config.yaml``
    become unreadable.  Re-run the setup wizard to reconfigure.
+
+   If ``FGM_MASTER_KEY`` is used in production, store it in a secrets manager
+   or inject it as a Docker secret — do **not** hard-code it in source.
 """
 import base64
 import logging
@@ -28,13 +36,26 @@ _ENCRYPTED_PREFIX = "encrypted:"
 
 
 def _get_or_create_key() -> bytes:
-    """Return the Fernet key, creating .secret_key if it does not exist.
+    """Return the Fernet key, using the configured master secret source.
 
-    The raw secret is 32 random bytes.  A deterministic Fernet-compatible
-    key is derived via SHA-256 and base64url encoding so the file content
-    is human-safe (no binary).
+    Precedence:
+    1. ``FGM_MASTER_KEY`` environment variable (32 bytes as 64 hex chars).
+    2. ``.secret_key`` file at project root (created if absent).
     """
-    if _SECRET_KEY_FILE.exists():
+    env_secret = os.environ.get("FGM_MASTER_KEY", "").strip()
+    if env_secret:
+        try:
+            raw = bytes.fromhex(env_secret)
+        except ValueError:
+            raise ValueError(
+                "FGM_MASTER_KEY must be a 64-character hex string (32 bytes). "
+                "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
+        if len(raw) != 32:
+            raise ValueError(
+                f"FGM_MASTER_KEY decoded to {len(raw)} bytes; exactly 32 are required."
+            )
+    elif _SECRET_KEY_FILE.exists():
         raw = bytes.fromhex(_SECRET_KEY_FILE.read_text().strip())
     else:
         raw = os.urandom(32)
