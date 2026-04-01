@@ -105,7 +105,7 @@ def run_once(config: dict) -> None:
     _save_readings_cache(readings, config)
     # Update in-memory dashboard cache if running in full mode
     try:
-        from src.api import update_readings_cache
+        from src.api import set_external_polling, update_readings_cache
         update_readings_cache(readings, config)
     except ImportError:
         pass
@@ -233,21 +233,22 @@ def main() -> None:
         _start_dashboard(config)
         return
 
-    if mode == "full":
-        from src.api import set_external_polling
-        set_external_polling(True)
+if mode == "full":
+    dashboard_thread = threading.Thread(target=run_dashboard, daemon=True)
+    dashboard_thread.start()
 
-        interval = config.get("monitoring", {}).get("interval_seconds", 300)
-        lock_fd = acquire_lock(lock_path)
+    set_external_polling(True)
 
-        def _polling_loop():
-            logger.info("Starting polling loop in background (interval: %ds)", interval)
-            while True:
-                try:
-                    run_once(config)
-                except Exception as e:
-                    logger.error("Error in monitoring cycle: %s: %s", type(e).__name__, e)
-                time.sleep(interval)
+    interval = config.get("monitoring", {}).get("interval_seconds", 300)
+    logger.info("Starting polling loop in foreground (interval: %ds)", interval)
+
+    while True:
+        try:
+            result = run_once(config)
+            update_readings_cache(result)  # o sin argumento si esa es la firma real
+        except Exception as e:
+            logger.error("Error in monitoring cycle: %s: %s", type(e).__name__, e)
+        time.sleep(interval)
 
         import threading as _threading
         poll_thread = _threading.Thread(target=_polling_loop, daemon=True)
