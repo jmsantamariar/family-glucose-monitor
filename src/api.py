@@ -7,8 +7,8 @@ Responsibilities
 ----------------
 * Serve the dashboard UI (``/``, ``/login``, ``/setup``).
 * Handle authentication: setup wizard, login, logout.
-* Maintain an in-memory cache of the latest patient readings updated by a
-  background polling thread.
+* Maintain an in-memory cache of the latest patient readings, reloaded from
+  ``readings_cache.json`` on demand whenever the file changes (mtime-based).
 * Expose internal API routes: ``/api/patients``, ``/api/health``,
   ``/api/alerts``.
 
@@ -20,12 +20,13 @@ port (configurable), has no authentication, and reads data from the
 ``readings_cache.json`` file written by the main polling daemon.  Its
 ``/api/health`` response schema differs (``patient_count`` / ``updated_at`` /
 ``cache_age_seconds``) from this module's schema (``patients_monitored`` /
-``timestamp``).  The two modules are **intentionally separate**.
+``timestamp``).  Both modules now share ``readings_cache.json`` as the single
+source of truth.
 """
+import json
 import logging
 import os
 import threading
-import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,16 +39,16 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from src import alert_engine
 from src.alert_history import get_alerts
 from src.auth import hash_password, is_configured, session_manager, verify_credentials
-from src.glucose_reader import read_all_patients
 
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-# In-memory cache of latest readings per patient
+# In-memory cache of latest readings per patient (keyed by patient_id)
 _readings_cache: dict = {}
 _cache_lock = threading.Lock()
 _config: dict = {}
+_last_mtime: float = 0.0
 
 # When True, main.py drives the polling loop and api.py must NOT start its own.
 _external_polling: bool = False
@@ -116,17 +117,9 @@ async def lifespan(application: "FastAPI"):
     try:
         _config = load_config()
     except FileNotFoundError:
-        logger.warning("config.yaml not found, dashboard will start without polling")
-    else:
-        if _external_polling:
-            logger.info(
-                "External polling is active; skipping internal _poll_loop to avoid duplicate API calls"
-            )
-        else:
-            interval = _config.get("monitoring", {}).get("interval_seconds", 300)
-            thread = threading.Thread(target=_poll_loop, args=(interval,), daemon=True)
-            thread.start()
-            logger.info("Background polling started every %d seconds", interval)
+
+        logger.warning("config.yaml not found, dashboard will start without active config")
+ main
     yield
 
 app = FastAPI(title="Family Glucose Monitor", version="1.0.0", lifespan=lifespan)
@@ -159,36 +152,81 @@ async def auth_middleware(request: Request, call_next):
         return RedirectResponse(url="/login", status_code=302)
     return RedirectResponse(url="/setup", status_code=302)
 
-def _poll_loop(interval: int):
-    """Background thread that polls LibreLinkUp and updates the cache.
+def _get_cache_path() -> str:
+    """Return the absolute path to the readings cache file."""
+    cache_path = _config.get("api", {}).get("cache_file", "readings_cache.json")
+    if not os.path.isabs(cache_path):
+        cache_path = str(PROJECT_ROOT / cache_path)
+    return cache_path
 
-    The in-memory cache is **replaced atomically** on every cycle so that
-    patients who are no longer returned by the API are removed immediately
-    instead of remaining as stale ghost entries.
+
+def _load_and_enrich_cache() -> None:
+    """Reload readings from ``readings_cache.json`` if the file has changed.
+
+    Uses ``os.path.getmtime()`` to detect modifications so that the
+    in-memory cache is only rebuilt when the underlying file is newer than
+    the last load.  If the file does not exist or contains invalid JSON the
+    cache is cleared and the mtime marker is updated so we do not spam the
+    log on every request.
     """
-    while True:
+    global _last_mtime
+
+    cache_path = _get_cache_path()
+
+    try:
+        mtime = os.path.getmtime(cache_path)
+    except OSError:
+        # File does not exist — clear cache and reset mtime so that when the
+        # file is re-created (even with a previously-seen mtime) we always
+        # detect it as new.
+        with _cache_lock:
+            _readings_cache.clear()
+            _last_mtime = 0.0
+        return
+
+    with _cache_lock:
+        if mtime == _last_mtime:
+            return  # File unchanged; nothing to do
+
+    try:
+        with open(cache_path) as f:
+            payload = json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Failed to read readings_cache.json: %s", exc)
+        with _cache_lock:
+            _readings_cache.clear()
+            _last_mtime = mtime
+        return
+
+    readings = payload.get("readings", [])
+    new_cache: dict = {}
+    for r in readings:
+        pid = r.get("patient_id")
+        if not pid:
+            continue
+        glucose = r.get("value", 0)
+        trend_arrow = r.get("trend_arrow", "")
         try:
-            readings = read_all_patients(_config)
-            new_cache: dict = {}
-            for r in readings:
-                pid = r["patient_id"]
-                glucose = r["value"]
-                trend_arrow = r.get("trend_arrow", "")
-                level = alert_engine.evaluate(glucose, _config)
-                trend_alert = alert_engine.evaluate_trend(glucose, trend_arrow, _config)
-                r["glucose_value"] = glucose
-                r["level"] = level
-                r["trend_alert"] = trend_alert
-                r["color"] = _get_color(level, trend_alert)
-                r["fetched_at"] = datetime.now(timezone.utc).isoformat()
-                new_cache[pid] = r
-            with _cache_lock:
-                _readings_cache.clear()
-                _readings_cache.update(new_cache)
-            logger.info("Polled %d patients successfully", len(readings))
-        except Exception as e:
-            logger.error("Polling error: %s", e)
-        time.sleep(interval)
+            level = alert_engine.evaluate(glucose, _config)
+        except (KeyError, TypeError):
+            level = "normal"
+        try:
+            trend_alert = alert_engine.evaluate_trend(glucose, trend_arrow, _config)
+        except (KeyError, TypeError):
+            trend_alert = "normal"
+        r["glucose_value"] = glucose
+        r["level"] = level
+        r["trend_alert"] = trend_alert
+        r["color"] = _get_color(level, trend_alert)
+        r["fetched_at"] = datetime.now(timezone.utc).isoformat()
+        new_cache[pid] = r
+
+    with _cache_lock:
+        if mtime > _last_mtime:
+            _readings_cache.clear()
+            _readings_cache.update(new_cache)
+            _last_mtime = mtime
+    logger.debug("Loaded %d readings from cache file", len(new_cache))
 
 
 def _get_color(level: str, trend_alert: str) -> str:
@@ -202,6 +240,7 @@ def _get_color(level: str, trend_alert: str) -> str:
 @app.get("/api/patients", response_class=JSONResponse)
 def get_patients():
     """Return all patients with their latest readings."""
+    _load_and_enrich_cache()
     with _cache_lock:
         patients = list(_readings_cache.values())
     return {"patients": patients, "count": len(patients)}
@@ -209,6 +248,7 @@ def get_patients():
 @app.get("/api/patients/{patient_id}", response_class=JSONResponse)
 def get_patient(patient_id: str):
     """Return a specific patient's latest reading."""
+    _load_and_enrich_cache()
     with _cache_lock:
         reading = _readings_cache.get(patient_id)
     if not reading:
@@ -218,6 +258,7 @@ def get_patient(patient_id: str):
 @app.get("/api/health", response_class=JSONResponse)
 def health_check():
     """Health check endpoint."""
+    _load_and_enrich_cache()
     with _cache_lock:
         patient_count = len(_readings_cache)
     return {
