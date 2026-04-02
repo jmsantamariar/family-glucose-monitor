@@ -20,6 +20,7 @@ from src.glucose_reader import read_all_patients
 from src.outputs import build_outputs
 from src.outputs.base import Notifier
 from src.outputs.multi_notifier import MultiNotifier
+from src.setup_status import check_setup
 from src.state import (
     clear_patient_state,
     get_patient_state,
@@ -215,18 +216,28 @@ def _start_dashboard(config: dict) -> None:
 
 def main() -> None:
     config_path = PROJECT_ROOT / "config.yaml"
-    try:
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-    except FileNotFoundError:
-        print(
-            f"ERROR: {config_path} not found. Copy config.example.yaml to config.yaml",
-            file=sys.stderr,
+
+    status = check_setup(config_path)
+    if not status.complete:
+        # No valid config — start in setup-only mode so the user can configure
+        # the application through the web wizard at /setup.
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         )
-        sys.exit(1)
-    if config is None:
-        print("ERROR: config.yaml is empty", file=sys.stderr)
-        sys.exit(1)
+        for reason in status.errors:
+            logger.warning("Setup required: %s", reason)
+        logger.info(
+            "Starting in setup-only mode. "
+            "Visit http://0.0.0.0:8080/setup to complete configuration."
+        )
+        _start_dashboard({})
+        return
+
+    # Setup is complete — load the already-validated config.
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+
     configure_logging(config)
     # Ensure config.yaml permissions are restrictive (owner read/write only)
     try:
@@ -236,12 +247,6 @@ def main() -> None:
             logger.info("Restricted config.yaml permissions to 0600")
     except OSError:
         pass  # Windows or other OS without Unix permissions
-    errors = schema_validate_config(config)
-    if errors:
-        for err in errors:
-            logger.error("Config validation error: %s", err)
-        logger.error("Config validation failed with %d error(s). Exiting.", len(errors))
-        sys.exit(1)
     logger.info("Config validation passed")
     lock_path = config.get("lock_file", "/tmp/family-glucose-monitor.lock")
     if not os.path.isabs(lock_path):
