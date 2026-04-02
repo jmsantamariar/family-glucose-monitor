@@ -374,14 +374,28 @@ def get_patient(patient_id: str):
 
 @app.get("/api/health", response_class=JSONResponse)
 def health_check():
-    """Health check endpoint."""
+    """Health check endpoint.
+
+    Returns a unified schema consistent with ``src/api_server.py``::
+
+        {
+            "status": "ok",
+            "patient_count": <int>,
+            "updated_at": "<ISO-8601 UTC>",
+            "cache_age_seconds": null
+        }
+
+    ``cache_age_seconds`` is always ``null`` for the dashboard API because
+    readings are kept in-memory and there is no cache-file mtime to compare.
+    """
     _load_and_enrich_cache()
     with _cache_lock:
         patient_count = len(_readings_cache)
     return {
         "status": "ok",
-        "patients_monitored": patient_count,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "patient_count": patient_count,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "cache_age_seconds": None,
     }
 
 @app.get("/api/alerts", response_class=JSONResponse)

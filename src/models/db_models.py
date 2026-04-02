@@ -1,19 +1,18 @@
 """SQLAlchemy ORM models for family-glucose-monitor.
 
-.. warning:: **This module is preparatory / Iteration 2.**
+These models mirror the existing SQLite schemas and are used by
+``src/alert_history.py`` and ``src/auth.py`` for all DML operations.
+DDL (table/index creation) is still performed via raw SQL with
+``IF NOT EXISTS`` guards so that existing databases are never altered.
 
-   The models defined here mirror the existing SQLite schema but are **not
-   yet wired into the application**.  All live code still uses the raw
-   ``sqlite3`` helpers in ``src/auth.py``, ``src/alert_history.py``, and
-   ``src/db.py``.
+Databases
+---------
+* ``sessions.db`` — ``sessions`` and ``login_attempts`` tables, managed by
+  :mod:`src.auth`.
+* ``alert_history.db`` — ``alerts`` table, managed by
+  :mod:`src.alert_history`.
 
-   The intention is to introduce the ORM incrementally, table by table,
-   in future iterations without breaking the existing schema.  Migration
-   will be non-destructive: ``Base.metadata.create_all(bind=engine)`` only
-   creates tables that do not already exist; it does not alter or drop
-   existing ones.
-
-Existing SQLite tables (raw schema reference):
+Physical table schemas (raw reference — not changed by this module):
 
 ``sessions`` (sessions.db)
   - token TEXT PRIMARY KEY
@@ -22,6 +21,7 @@ Existing SQLite tables (raw schema reference):
 ``login_attempts`` (sessions.db)
   - ip TEXT NOT NULL
   - timestamp REAL NOT NULL
+  *(no primary key in the physical schema; accessed via SQLAlchemy text())*
 
 ``alerts`` (alert_history.db)
   - id INTEGER PRIMARY KEY AUTOINCREMENT
@@ -33,15 +33,13 @@ Existing SQLite tables (raw schema reference):
   - trend_arrow TEXT NOT NULL DEFAULT ''
   - message TEXT NOT NULL DEFAULT ''
 
-TODO (Iteration 3):
-  - Replace src/alert_history.py raw SQL with ORM calls.
-  - Replace src/auth.py SessionManager with ORM-backed session management.
-  - Add Alembic for schema migrations (non-destructive).
+TODO (Iteration 4 / ongoing):
+  - Migrate ``login_attempts`` to full ORM once a PK column is added.
 """
 from __future__ import annotations
 
-from sqlalchemy import Column, Float, Integer, String, Text, create_engine
-from sqlalchemy.orm import DeclarativeBase, Session
+from sqlalchemy import Column, Float, Index, Integer, String, Text, create_engine
+from sqlalchemy.orm import DeclarativeBase, Session  # noqa: F401 – re-exported for callers
 
 
 class Base(DeclarativeBase):
@@ -55,9 +53,13 @@ class SessionToken(Base):
     """
 
     __tablename__ = "sessions"
+    __table_args__ = (
+        # Match the index name created by the raw-SQL init in src/auth.py.
+        Index("idx_sessions_expires", "expires_at"),
+    )
 
     token = Column(String, primary_key=True, nullable=False)
-    expires_at = Column(Float, nullable=False, index=True)
+    expires_at = Column(Float, nullable=False)
 
     def __repr__(self) -> str:
         return f"<SessionToken token=...{self.token[-8:]} expires_at={self.expires_at}>"
@@ -67,16 +69,23 @@ class LoginAttempt(Base):
     """Rate-limiting log of failed login attempts.
 
     Mirrors the ``login_attempts`` table in ``sessions.db``.
-    The table has no primary key in the raw schema; SQLAlchemy requires one,
-    so we use a surrogate autoincrement id (non-destructive: added as a new
-    column only if the table is freshly created via ORM).
+
+    .. note::
+       The physical table has **no primary key**.  SQLAlchemy requires a PK
+       for ORM-mapped classes, so a composite ``(ip, timestamp)`` PK is
+       declared here for metadata purposes only.  All DML against this table
+       is executed via ``session.execute(text(...))`` in :mod:`src.auth` to
+       avoid PK-enforcement issues on rapid inserts.
     """
 
     __tablename__ = "login_attempts"
+    __table_args__ = (
+        # Match the composite index created by the raw-SQL init in src/auth.py.
+        Index("idx_login_attempts_ip_ts", "ip", "timestamp"),
+    )
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    ip = Column(String, nullable=False, index=True)
-    timestamp = Column(Float, nullable=False, index=True)
+    ip = Column(String, primary_key=True, nullable=False)
+    timestamp = Column(Float, primary_key=True, nullable=False)
 
     def __repr__(self) -> str:
         return f"<LoginAttempt ip={self.ip!r} timestamp={self.timestamp}>"
@@ -89,10 +98,15 @@ class AlertHistory(Base):
     """
 
     __tablename__ = "alerts"
+    __table_args__ = (
+        # Match the index names created by the raw-SQL init in src/alert_history.py.
+        Index("idx_alerts_timestamp", "timestamp"),
+        Index("idx_alerts_patient_timestamp", "patient_id", "timestamp"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    timestamp = Column(Text, nullable=False, index=True)
-    patient_id = Column(Text, nullable=False, index=True)
+    timestamp = Column(Text, nullable=False)
+    patient_id = Column(Text, nullable=False)
     patient_name = Column(Text, nullable=False)
     glucose_value = Column(Integer, nullable=False)
     level = Column(Text, nullable=False)
@@ -110,7 +124,7 @@ def get_engine(db_url: str):
     """Return a SQLAlchemy engine for the given database URL.
 
     Uses ``check_same_thread=False`` for SQLite so the engine can be shared
-    across threads (as in the existing raw-sqlite usage pattern).
+    across threads (consistent with the existing raw-sqlite usage pattern).
     """
     connect_args = {}
     if db_url.startswith("sqlite"):
