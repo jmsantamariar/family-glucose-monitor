@@ -235,8 +235,23 @@ def main() -> None:
         return
 
     # Setup is complete — load the already-validated config.
-    with open(config_path) as f:
-        config = yaml.safe_load(f)
+    try:
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+    except (OSError, yaml.YAMLError) as e:
+        # If the config file became unreadable or invalid after setup check,
+        # fall back to setup-only mode instead of crashing.
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        )
+        logger.warning("Failed to load config after setup validation: %s", e)
+        logger.info(
+            "Starting in setup-only mode due to config load failure. "
+            "Visit http://0.0.0.0:8080/setup to complete configuration."
+        )
+        _start_dashboard({})
+        return
 
     configure_logging(config)
     # Ensure config.yaml permissions are restrictive (owner read/write only)
