@@ -125,20 +125,19 @@ API_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')
 
 ## Migraciones de Base de Datos
 
-El esquema de `alert_history.db` se gestiona con Alembic. En un despliegue nuevo (o al actualizar a una versión que incluya cambios de schema), ejecuta las migraciones antes de arrancar la aplicación:
+El esquema de `alert_history.db` se gestiona con Alembic. Las migraciones **no se aplican automáticamente** en runtime; deben ejecutarse manualmente antes del primer arranque o al actualizar a una versión que incluya cambios de schema.
+
+> **Nota:** La imagen Docker de producción instala solo dependencias `main` y no incluye Alembic ni los archivos de migración. Las migraciones deben ejecutarse desde un clone del repositorio con las dependencias de desarrollo instaladas.
 
 ```bash
-# Dentro del contenedor o en el entorno con las dependencias instaladas:
-alembic upgrade head
+# Desde el directorio raíz del repositorio (requiere dependencias de desarrollo):
+poetry run alembic upgrade head
 ```
 
-En Docker Compose, puedes añadir un servicio de inicialización o ejecutarlo manualmente antes del primer arranque:
+Pasa la ruta al archivo de base de datos si no está en la ruta por defecto:
 
 ```bash
-docker run --rm \
-  -v $(pwd)/alert_history.db:/app/alert_history.db \
-  family-glucose-monitor \
-  alembic upgrade head
+ALERT_HISTORY_DB=/ruta/a/alert_history.db poetry run alembic upgrade head
 ```
 
 > **Nota:** `sessions.db` no usa Alembic. Su esquema lo crea `src/auth.py` con DDL raw al arrancar. Si el archivo no existe, se crea automáticamente.

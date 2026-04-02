@@ -22,7 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **Migraciones de Base de Datos con Alembic** — Schema management automático para `alert_history.db`. Ejecuta `alembic upgrade head` para aplicar migraciones pendientes. `sessions.db` sigue usando DDL raw con `IF NOT EXISTS`.
+- **Migraciones de Base de Datos con Alembic** — Schema management para `alert_history.db`. Las migraciones no se aplican automáticamente; ejecuta `poetry run alembic upgrade head` desde el repo. `sessions.db` sigue usando DDL raw con `IF NOT EXISTS`.
 - **`pyproject.toml` y `poetry.lock`** — Poetry es ahora el gestor de dependencias estándar del repositorio. `requirements.txt` y `requirements-dev.txt` se mantienen para compatibilidad con pip.
 - **`.env.example`** — Plantilla documentada de todas las variables de entorno disponibles, con explicación de cada una y ejemplos de generación de secretos.
 - **`src/setup_status.py`** — Módulo que determina si el setup está completo antes de arrancar. Expone `check_setup() → SetupStatus` e `is_setup_complete() → bool`. Usado por `main.py` para decidir entre modo normal y modo setup-only, y por `api.py` para redirigir al wizard.

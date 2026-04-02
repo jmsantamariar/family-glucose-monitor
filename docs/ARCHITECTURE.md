@@ -207,8 +207,8 @@ El sistema usa dos bases de datos SQLite independientes:
 | `alert_history.db` | `src/alert_history.py` | Historial de alertas enviadas (tabla `alerts`) |
 | `sessions.db` | `src/auth.py` | Sesiones de dashboard (tabla `sessions`) y log de intentos de login fallidos (tabla `login_attempts`) |
 
-Los esquemas se crean con `IF NOT EXISTS` al arrancar; las bases de datos existentes nunca se alteran.
-Las migraciones de schema de `alert_history.db` se gestionan con Alembic (`alembic.ini`, directorio `migrations/`). Para aplicar migraciones pendientes ejecuta `alembic upgrade head`. `sessions.db` no usa Alembic: su DDL lo gestiona `src/auth.py` directamente.
+El arranque normal crea las tablas base con `IF NOT EXISTS` sin alterar bases de datos existentes.
+Los cambios de schema entre versiones de `alert_history.db` se gestionan con Alembic (`alembic.ini`, directorio `migrations/`) y deben aplicarse manualmente con `poetry run alembic upgrade head`. `sessions.db` no usa Alembic: su DDL lo gestiona `src/auth.py` directamente.
 
 ---
 
