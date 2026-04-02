@@ -425,7 +425,7 @@ def dashboard():
 @app.get("/login", response_class=HTMLResponse)
 def login_page():
     """Serve the login page. Redirects to /setup if not yet configured."""
-    if not is_setup_complete():
+    if not is_configured():
         return RedirectResponse(url="/setup", status_code=302)
     html_path = Path(__file__).parent / "dashboard" / "login.html"
     if not html_path.exists():
