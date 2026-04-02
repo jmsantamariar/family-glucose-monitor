@@ -239,8 +239,11 @@ async def auth_middleware(request: Request, call_next):
     if session_manager.is_valid(token):
         return await call_next(request)
 
-    if is_setup_complete():
+    # If setup is complete, or a config file already exists, direct users to login
+    # so they can authenticate and recover from a broken/partial setup.
+    if is_setup_complete() or is_configured():
         return RedirectResponse(url="/login", status_code=302)
+    # Fresh install with no existing config: send users to the setup wizard.
     return RedirectResponse(url="/setup", status_code=302)
 
 
