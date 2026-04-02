@@ -206,7 +206,7 @@ class TestSetupStatus:
         assert resp.json() == {"configured": False}
 
     def test_returns_true_when_configured(self, client):
-        with patch("src.api.is_configured", return_value=True):
+        with patch("src.api.is_setup_complete", return_value=True):
             resp = client.get("/api/setup/status")
         assert resp.status_code == 200
         assert resp.json() == {"configured": True}
@@ -519,7 +519,7 @@ class TestAuthMiddleware:
     def test_unauthenticated_request_redirects_to_login_when_configured(
         self, auth_client
     ):
-        with patch("src.api.is_configured", return_value=True):
+        with patch("src.api.is_setup_complete", return_value=True):
             resp = auth_client.get("/")
         assert resp.status_code == 302
         assert resp.headers["location"] == "/login"
@@ -550,7 +550,7 @@ class TestAuthMiddleware:
         assert resp.status_code == 200
 
     def test_exempt_login_route_accessible_without_auth(self, auth_client):
-        with patch("src.api.is_configured", return_value=True):
+        with patch("src.api.is_setup_complete", return_value=True):
             resp = auth_client.get("/login")
         assert resp.status_code == 200
 
@@ -574,7 +574,7 @@ class TestPageRoutes:
         assert resp.headers["location"] == "/setup"
 
     def test_login_page_returns_html_when_configured(self, client):
-        with patch("src.api.is_configured", return_value=True):
+        with patch("src.api.is_setup_complete", return_value=True):
             resp = client.get("/login")
         assert resp.status_code == 200
         assert "text/html" in resp.headers["content-type"]

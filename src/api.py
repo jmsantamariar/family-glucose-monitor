@@ -45,6 +45,7 @@ from src.alert_history import get_alerts
 from src.auth import hash_password, is_configured, session_manager, verify_credentials
 from src.config_schema import validate_config as schema_validate_config
 from src.crypto import encrypt_value
+from src.setup_status import is_setup_complete
 
 logger = logging.getLogger(__name__)
 
@@ -238,7 +239,7 @@ async def auth_middleware(request: Request, call_next):
     if session_manager.is_valid(token):
         return await call_next(request)
 
-    if is_configured():
+    if is_setup_complete():
         return RedirectResponse(url="/login", status_code=302)
     return RedirectResponse(url="/setup", status_code=302)
 
@@ -424,7 +425,7 @@ def dashboard():
 @app.get("/login", response_class=HTMLResponse)
 def login_page():
     """Serve the login page. Redirects to /setup if not yet configured."""
-    if not is_configured():
+    if not is_setup_complete():
         return RedirectResponse(url="/setup", status_code=302)
     html_path = Path(__file__).parent / "dashboard" / "login.html"
     if not html_path.exists():
@@ -442,7 +443,7 @@ def setup_page():
 @app.get("/api/setup/status", response_class=JSONResponse)
 def setup_status():
     """Return whether the system has already been configured."""
-    return {"configured": is_configured()}
+    return {"configured": is_setup_complete()}
 
 @app.post("/api/login", response_class=JSONResponse)
 async def api_login(request: Request, response: Response):
