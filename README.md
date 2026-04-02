@@ -60,7 +60,7 @@ pip install -r requirements.txt
 pip install -r requirements-dev.txt   # incluye sqlalchemy, alembic y utilidades de test
 ```
 
-> **Nota pip:** `sqlalchemy` es una dependencia de producción gestionada por Poetry. Si instalas solo con `pip install -r requirements.txt` sin el archivo dev, el sistema fallará en runtime. Se recomienda instalar también `requirements-dev.txt` o migrar a Poetry.
+> **Nota pip:** `requirements.txt` usa `sqlalchemy>=2.0` (sin pinear) mientras que `requirements-dev.txt` instala `sqlalchemy==2.0.48` (versión fijada). **No mezcles pip y Poetry en el mismo entorno**: pueden producirse conflictos de versiones. Usa uno de los dos métodos de instalación de forma exclusiva.
 
 ### 2. Configurar variables de entorno (recomendado en producción)
 
@@ -167,7 +167,7 @@ En modo `full`, Uvicorn se ejecuta en el hilo principal (manejo correcto de señ
 
 | Mecanismo | Descripción |
 |-----------|-------------|
-| **Encriptación de credenciales** | Contraseña de LibreLinkUp almacenada con Fernet (AES-128-CBC + HMAC-SHA256, derivación HKDF-SHA256) en `config.yaml`. Backward compatible con texto plano. |
+| **Encriptación de credenciales** | Contraseña de LibreLinkUp almacenada con Fernet (AES-128-CBC + HMAC-SHA256); clave maestra derivada con HKDF-SHA256. Almacenada en `config.yaml`. Backward compatible con texto plano. |
 | **Hashing de contraseñas** | Contraseña del dashboard hasheada con PBKDF2-HMAC-SHA256 (260,000 iteraciones). |
 | **Sesiones persistentes** | Tokens de sesión almacenados en SQLite (`sessions.db`) con TTL de 24 horas. |
 | **Permisos de archivos** | `config.yaml` y `.secret_key` con permisos `0600` (solo propietario). |
@@ -371,6 +371,7 @@ docker run --rm \
   -v $(pwd)/config.yaml:/app/config.yaml:ro \
   -v $(pwd)/state.json:/app/state.json \
   -v $(pwd)/alert_history.db:/app/alert_history.db \
+  -v $(pwd)/sessions.db:/app/sessions.db \
   -v $(pwd)/readings_cache.json:/app/readings_cache.json \
   -p 8080:8080 \
   family-glucose-monitor
@@ -439,7 +440,6 @@ Todos los endpoints requieren `Authorization: Bearer <API_KEY>`.
       "patient_name": "Juan García",
       "value": 120,
       "timestamp": "2026-01-01T10:00:00+00:00",
-      "trend_name": "Flat",
       "trend_arrow": "→",
       "is_high": false,
       "is_low": false
@@ -529,6 +529,25 @@ pip install -r requirements.txt
 pip install -r requirements-dev.txt
 pytest tests/ -v --cov=src
 ```
+
+---
+
+## 🗄️ Migraciones de Base de Datos
+
+El sistema usa [Alembic](https://alembic.sqlalchemy.org/) para gestionar el esquema de `alert_history.db`. Las migraciones se aplican automáticamente al arrancar la aplicación en condiciones normales, pero en despliegues donde el contenedor no tiene acceso de escritura al directorio de datos hasta que se monten los volúmenes, puede ser necesario ejecutarlas manualmente:
+
+```bash
+# Aplicar todas las migraciones pendientes
+alembic upgrade head
+
+# Ver el estado actual de la base de datos
+alembic current
+
+# Ver el historial de migraciones
+alembic history
+```
+
+> **Nota:** `sessions.db` no está gestionada por Alembic. Su esquema se crea con DDL raw (`IF NOT EXISTS`) al arrancar `src/auth.py`. Si necesitas regenerarlo, borra el archivo y reinicia la aplicación.
 
 ---
 

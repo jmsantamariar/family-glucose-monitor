@@ -123,6 +123,28 @@ API_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')
 
 ---
 
+## Migraciones de Base de Datos
+
+El esquema de `alert_history.db` se gestiona con Alembic. En un despliegue nuevo (o al actualizar a una versión que incluya cambios de schema), ejecuta las migraciones antes de arrancar la aplicación:
+
+```bash
+# Dentro del contenedor o en el entorno con las dependencias instaladas:
+alembic upgrade head
+```
+
+En Docker Compose, puedes añadir un servicio de inicialización o ejecutarlo manualmente antes del primer arranque:
+
+```bash
+docker run --rm \
+  -v $(pwd)/alert_history.db:/app/alert_history.db \
+  family-glucose-monitor \
+  alembic upgrade head
+```
+
+> **Nota:** `sessions.db` no usa Alembic. Su esquema lo crea `src/auth.py` con DDL raw al arrancar. Si el archivo no existe, se crea automáticamente.
+
+---
+
 ## Configurar HTTPS con reverse proxy (recomendado en producción)
 
 No expongas el dashboard ni la API sin HTTPS en producción. Ejemplo con **Caddy**:
@@ -168,6 +190,7 @@ server {
 - [ ] Asegurarse de que `AUTH_DISABLED` **no** esté definido en producción (es ignorado automáticamente si `APP_ENV=production`, pero no definirlo es más seguro).
 - [ ] Asegurarse de que `ALLOW_INSECURE_LOCAL_API` **no** esté definido en producción.
 - [ ] Montar `alert_history.db`, `sessions.db`, `state.json` y `readings_cache.json` como volúmenes persistentes en Docker.
+- [ ] Ejecutar `alembic upgrade head` antes del primer arranque (o tras actualizaciones con cambios de schema en `alert_history.db`).
 - [ ] Configurar un reverse proxy con HTTPS (Caddy, nginx, Traefik) delante del dashboard y la API.
 - [ ] Revisar que la contraseña del panel de control tenga al menos 8 caracteres.
 - [ ] Verificar que `APP_ENV` sea `production` (o no esté definida) para que las cookies usen `Secure=True`.
