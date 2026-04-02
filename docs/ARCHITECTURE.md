@@ -69,9 +69,12 @@ Servidor FastAPI ligero para consumo externo (widgets, apps móviles, watchfaces
 - Se inicia manualmente con `uvicorn src.api_server:app`
 
 **Autenticación (segura por defecto):**
-- `API_KEY` configurada → requiere `Authorization: Bearer <key>`. Petición sin key válida → 401.
-- `API_KEY` no configurada + `ALLOW_INSECURE_LOCAL_API=1` → acceso sin auth (solo dev local).
-- `API_KEY` no configurada + sin flag → todas las peticiones rechazadas con 401.
+
+| Escenario | Comportamiento |
+|-----------|---------------|
+| `API_KEY` configurada | Requiere `Authorization: Bearer <API_KEY>` en cada petición. Sin header válido → 401. |
+| `API_KEY` no configurada + `ALLOW_INSECURE_LOCAL_API=1` | Acceso sin autenticación. Log de advertencia al arrancar. Solo para dev/local. |
+| `API_KEY` no configurada + sin `ALLOW_INSECURE_LOCAL_API` | Todas las peticiones rechazadas con 401. |
 
 > **Distinción clave:** `src/api.py` es el backend del dashboard (sesión requerida, caché en memoria enriquecida). `src/api_server.py` es la API pública protegida (API key, lectura directa de archivo).
 
@@ -204,8 +207,8 @@ El sistema usa dos bases de datos SQLite independientes:
 | `alert_history.db` | `src/alert_history.py` | Historial de alertas enviadas (tabla `alerts`) |
 | `sessions.db` | `src/auth.py` | Sesiones de dashboard (tabla `sessions`) y log de intentos de login fallidos (tabla `login_attempts`) |
 
-Los esquemas se crean con `IF NOT EXISTS` al arrancar; las bases de datos existentes nunca se alteran.
-Las migraciones de schema se gestionan con Alembic (`alembic.ini`, directorio `migrations/`).
+El arranque normal crea las tablas base con `IF NOT EXISTS` sin alterar bases de datos existentes.
+Los cambios de schema entre versiones de `alert_history.db` se gestionan con Alembic (`alembic.ini`, directorio `migrations/`) y deben aplicarse manualmente con `poetry run alembic upgrade head`. `sessions.db` no usa Alembic: su DDL lo gestiona `src/auth.py` directamente.
 
 ---
 

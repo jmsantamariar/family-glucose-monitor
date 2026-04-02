@@ -123,6 +123,27 @@ API_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')
 
 ---
 
+## Migraciones de Base de Datos
+
+El esquema de `alert_history.db` se gestiona con Alembic. Las migraciones **no se aplican automáticamente** en runtime; deben ejecutarse manualmente antes del primer arranque o al actualizar a una versión que incluya cambios de schema.
+
+> **Nota:** La imagen Docker de producción instala solo dependencias `main` y no incluye Alembic ni los archivos de migración. Las migraciones deben ejecutarse desde un clone del repositorio con las dependencias de desarrollo instaladas.
+
+```bash
+# Desde el directorio raíz del repositorio (requiere dependencias de desarrollo):
+poetry run alembic upgrade head
+```
+
+Pasa la ruta al archivo de base de datos si no está en la ruta por defecto:
+
+```bash
+ALERT_HISTORY_DB=/ruta/a/alert_history.db poetry run alembic upgrade head
+```
+
+> **Nota:** `sessions.db` no usa Alembic. Su esquema lo crea `src/auth.py` con DDL raw al arrancar. Si el archivo no existe, se crea automáticamente.
+
+---
+
 ## Configurar HTTPS con reverse proxy (recomendado en producción)
 
 No expongas el dashboard ni la API sin HTTPS en producción. Ejemplo con **Caddy**:
@@ -168,6 +189,7 @@ server {
 - [ ] Asegurarse de que `AUTH_DISABLED` **no** esté definido en producción (es ignorado automáticamente si `APP_ENV=production`, pero no definirlo es más seguro).
 - [ ] Asegurarse de que `ALLOW_INSECURE_LOCAL_API` **no** esté definido en producción.
 - [ ] Montar `alert_history.db`, `sessions.db`, `state.json` y `readings_cache.json` como volúmenes persistentes en Docker.
+- [ ] Ejecutar las migraciones de base de datos hasta `head` antes del primer arranque (o tras actualizaciones con cambios de schema en `alert_history.db`), usando el método soportado por el proyecto (por ejemplo, `poetry run alembic upgrade head` en un entorno con dependencias de desarrollo, o el job/imagen específica de migraciones definida en la infraestructura).
 - [ ] Configurar un reverse proxy con HTTPS (Caddy, nginx, Traefik) delante del dashboard y la API.
 - [ ] Revisar que la contraseña del panel de control tenga al menos 8 caracteres.
 - [ ] Verificar que `APP_ENV` sea `production` (o no esté definida) para que las cookies usen `Secure=True`.
