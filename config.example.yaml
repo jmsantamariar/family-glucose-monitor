@@ -12,7 +12,7 @@ librelinkup:
 #   python -c "from src.auth import hash_password; print(hash_password('your-password'))"
 dashboard_auth:
   username: "your-email@example.com"
-  password_hash: "pbkdf2:sha256:260000:78cbb776ba2e8ee86972321678cc9b95:252bb819f5ef2a13db52f6b09f783e81bb990e979feba565f0af7da26929acd8"  # example hash for password 'changeme'; replace with output of the command above
+  password_hash: "pbkdf2:sha256:260000:78cbb776ba2e8ee86972321678cc9b95:252bb819f5ef2a13db52f6b09f783e81bb990e979feba565f0af7da26929acd8"  # example hash for password 'changeme'; replace with output of hash_password()
 
 alerts:
   low_threshold: 70
@@ -70,11 +70,12 @@ lock_file: "/tmp/family-glucose-monitor.lock"
 api:
   enabled: false
   host: "0.0.0.0"
-  port: 8080
+  port: 8081              # External API — different port from dashboard (8080)
   cache_file: "readings_cache.json"
   # Set the API_KEY environment variable to protect the external API with bearer token auth.
   # Example: export API_KEY="your-secret-key"
   # When API_KEY is set, all GET endpoints require: Authorization: Bearer <key>
+  # Without API_KEY (and without ALLOW_INSECURE_LOCAL_API=1), all requests return 401.
 
 alert_history_db: "alert_history.db"
 alert_history_max_days: 7
