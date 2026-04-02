@@ -190,7 +190,7 @@ server {
 - [ ] Asegurarse de que `AUTH_DISABLED` **no** esté definido en producción (es ignorado automáticamente si `APP_ENV=production`, pero no definirlo es más seguro).
 - [ ] Asegurarse de que `ALLOW_INSECURE_LOCAL_API` **no** esté definido en producción.
 - [ ] Montar `alert_history.db`, `sessions.db`, `state.json` y `readings_cache.json` como volúmenes persistentes en Docker.
-- [ ] Ejecutar `alembic upgrade head` antes del primer arranque (o tras actualizaciones con cambios de schema en `alert_history.db`).
+- [ ] Ejecutar las migraciones de base de datos hasta `head` antes del primer arranque (o tras actualizaciones con cambios de schema en `alert_history.db`), usando el método soportado por el proyecto (por ejemplo, `poetry run alembic upgrade head` en un entorno con dependencias de desarrollo, o el job/imagen específica de migraciones definida en la infraestructura).
 - [ ] Configurar un reverse proxy con HTTPS (Caddy, nginx, Traefik) delante del dashboard y la API.
 - [ ] Revisar que la contraseña del panel de control tenga al menos 8 caracteres.
 - [ ] Verificar que `APP_ENV` sea `production` (o no esté definida) para que las cookies usen `Secure=True`.
