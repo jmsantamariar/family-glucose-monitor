@@ -137,9 +137,10 @@ def get_engine(db_url: str):
 
 
 def create_tables(engine) -> None:
-    """Create all ORM-mapped tables that do not already exist.
+    """Create the ``alerts`` table if it does not already exist.
 
-    This operation is **non-destructive**: existing tables and their data
-    are never altered or dropped.
+    This helper is intended for ``alert_history.db`` only. It is
+    **non-destructive**: existing tables and their data are never altered
+    or dropped.
     """
-    Base.metadata.create_all(bind=engine)
+    AlertHistory.__table__.create(bind=engine, checkfirst=True)
