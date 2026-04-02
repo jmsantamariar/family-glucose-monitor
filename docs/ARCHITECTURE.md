@@ -138,9 +138,9 @@ Variable de entorno  >  config.yaml  >  valor por defecto / error
 
 | Variable | Descripción | Por defecto |
 |----------|-------------|-------------|
-| `APP_ENV` | Entorno (`production`, `development`) | `development` |
+| `APP_ENV` | Entorno (`production`, `development`) | `production` |
 | `ALERT_HISTORY_DB` | Ruta a la base de datos SQLite de historial | `<project_root>/alert_history.db` |
-| `CORS_ALLOWED_ORIGINS` | Orígenes CORS permitidos para la API externa | `*` (localhost) |
+| `CORS_ALLOWED_ORIGINS` | Orígenes CORS permitidos para la API externa | `""` (sin CORS por defecto) |
 | `ALLOW_INSECURE_LOCAL_API` | `1` para deshabilitar auth en la API externa (dev only) | No |
 | `AUTH_DISABLED` | `1` para deshabilitar auth del dashboard (tests only) | No |
 
