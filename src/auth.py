@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Optional
 
 import yaml
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, text
 from sqlalchemy.orm import Session
 
 from src.models.db_models import SessionToken, get_engine
