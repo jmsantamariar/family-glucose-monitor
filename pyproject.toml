@@ -1,0 +1,37 @@
+[tool.poetry]
+name = "family-glucose-monitor"
+version = "0.1.0"
+description = "Monitor de glucosa familiar para cuidadores de pacientes con FreeStyle Libre y LibreLinkUp"
+authors = []
+readme = "README.md"
+license = "MIT"
+packages = [{ include = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+pylibrelinkup = "0.10.0"
+PyYAML = "6.0.1"
+requests = "2.32.3"
+fastapi = "0.115.12"
+uvicorn = { version = "0.34.0", extras = ["standard"] }
+cryptography = "46.0.5"
+sqlalchemy = "2.0.48"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "9.0.2"
+pytest-cov = "7.1.0"
+coverage = "7.13.5"
+httpx = "0.28.1"
+alembic = "1.18.0"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["tests/*"]
+
+[build-system]
+requires = ["poetry-core>=2.0.0"]
+build-backend = "poetry.core.masonry.api"

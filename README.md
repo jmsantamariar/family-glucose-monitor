@@ -40,6 +40,17 @@ Para **familias** donde uno o varios miembros usan un sensor FreeStyle Libre y t
 
 ### 1. Clonar e instalar
 
+#### Con Poetry (recomendado)
+
+```bash
+git clone https://github.com/jmsantamariar/family-glucose-monitor.git
+cd family-glucose-monitor
+pip install poetry          # instalar Poetry si no está disponible
+poetry install              # instala dependencias de producción y desarrollo
+```
+
+#### Con pip (compatibilidad)
+
 ```bash
 git clone https://github.com/jmsantamariar/family-glucose-monitor.git
 cd family-glucose-monitor
@@ -48,7 +59,19 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 2. Copiar y editar la configuración
+### 2. Configurar variables de entorno (opcional pero recomendado en producción)
+
+```bash
+cp .env.example .env
+chmod 600 .env
+# Edita .env con tus secretos (API_KEY, FGM_MASTER_KEY, etc.)
+```
+
+Las variables de entorno tienen **prioridad** sobre `config.yaml`. En producción se recomienda
+inyectar los secretos críticos (`API_KEY`, `FGM_MASTER_KEY`) por variable de entorno o Docker secrets.
+Consulta `.env.example` para la lista completa de variables disponibles.
+
+### 3. Copiar y editar la configuración
 
 ```bash
 cp config.example.yaml config.yaml
@@ -76,14 +99,14 @@ outputs:
     chat_id: "-100123456789"
 ```
 
-### 3. Validar la conexión
+### 4. Validar la conexión
 
 ```bash
 python validate_connection.py
 python validate_telegram.py   # si usas Telegram
 ```
 
-### 4. Ejecutar
+### 5. Ejecutar
 
 ```bash
 python -m src.main
@@ -206,10 +229,20 @@ Los mensajes incluyen el nombre del paciente, el valor, la flecha de tendencia y
 
 ### Variables de entorno (recomendado para producción/Docker)
 
+Copia `.env.example` a `.env` y ajusta los valores. Consulta ese archivo para la lista completa.
+Las variables de entorno tienen **prioridad sobre `config.yaml`** — úsalas para secretos críticos en producción.
+
 ```bash
+# Secretos de producción (requeridos en producción)
+export FGM_MASTER_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+export API_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+
+# Credenciales LibreLinkUp (alternativa a config.yaml)
 export LIBRELINKUP_EMAIL="tu-email@ejemplo.com"
 export LIBRELINKUP_PASSWORD="tu-contraseña"
-export WHATSAPP_ACCESS_TOKEN="token_whatsapp"  # opcional
+
+# Opcional
+export WHATSAPP_ACCESS_TOKEN="token_whatsapp"
 ```
 
 ### Telegram — configuración del bot
@@ -305,6 +338,7 @@ python -m src.main
 ```bash
 docker build -t family-glucose-monitor .
 docker run --rm \
+  -e FGM_MASTER_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')" \
   -v $(pwd)/config.yaml:/app/config.yaml:ro \
   -v $(pwd)/state.json:/app/state.json \
   family-glucose-monitor
@@ -316,7 +350,9 @@ docker run --rm \
 
 El sistema incluye un servidor de API ligero (`src/api_server.py`) para que clientes externos (widgets Android, complicaciones de Apple Watch, dashboards remotos) consuman las últimas lecturas de glucosa **sin autenticación**.
 
-> **Distinción importante:** `src/api.py` es el backend del dashboard web (requiere login). `src/api_server.py` es la API externa de solo lectura (sin auth, CORS habilitado). Son dos servidores independientes con propósitos distintos.
+> **Distinción importante:** `src/api.py` es el backend del dashboard web (requiere login). `src/api_server.py` es la API externa de solo lectura. Son dos servidores independientes con propósitos distintos.
+
+> **Seguridad por defecto:** La API externa requiere autenticación con `Authorization: Bearer <API_KEY>`. Para entornos locales/dev sin autenticación, establece `ALLOW_INSECURE_LOCAL_API=1` (nunca en producción).
 
 ### Cómo funciona
 
@@ -447,6 +483,11 @@ El dashboard estará disponible en `http://localhost:8080` por defecto.
 ## 🧪 Tests
 
 ```bash
+# Con Poetry (recomendado)
+poetry install   # instala también dependencias de desarrollo
+poetry run pytest tests/ -v --cov=src
+
+# Con pip
 pip install -r requirements-dev.txt
 pytest tests/ -v --cov=src
 ```

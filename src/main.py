@@ -18,6 +18,8 @@ from src.alert_history import cleanup_old_alerts, init_db, log_alert
 from src.config_schema import validate_config as schema_validate_config
 from src.glucose_reader import read_all_patients
 from src.outputs import build_outputs
+from src.outputs.base import Notifier
+from src.outputs.multi_notifier import MultiNotifier
 from src.state import (
     clear_patient_state,
     get_patient_state,
@@ -89,13 +91,29 @@ def _save_readings_cache(readings: list[dict], config: dict) -> None:
         logger.error("Failed to save readings cache: %s", e)
 
 
-def run_once(config: dict, outputs: list | None = None) -> None:
+def run_once(
+    config: dict,
+    outputs: list | None = None,
+    notifier: Notifier | None = None,
+) -> None:
     """Execute one monitoring cycle: read → evaluate → alert → persist.
 
-    *outputs* is optional.  When provided (e.g. from a long-running daemon
-    that pre-builds outputs once), it is used directly and no new instances are
-    created.  When *None* (default, e.g. cron mode), outputs are built fresh
-    from the current config for this single invocation.
+    Parameters
+    ----------
+    config:
+        Validated application configuration dictionary.
+    outputs:
+        *Deprecated convenience parameter.*  When supplied, the list is
+        wrapped in a :class:`~src.outputs.multi_notifier.MultiNotifier` and
+        used as the notifier.  Ignored when *notifier* is also provided.
+    notifier:
+        A :class:`~src.outputs.base.Notifier` instance responsible for
+        dispatching alerts.  When *None* (default), one is built from the
+        enabled outputs in *config* (or from *outputs* if supplied).
+
+    Passing a pre-built *notifier* (or the legacy *outputs* list) allows
+    long-running modes (``daemon``, ``full``) to construct the outputs once
+    and reuse them across every polling cycle without re-reading config.
     """
     state_path = config.get("state_file", "state.json")
     if not os.path.isabs(state_path):
@@ -114,10 +132,14 @@ def run_once(config: dict, outputs: list | None = None) -> None:
     _save_readings_cache(readings, config)
     max_age = config["alerts"]["max_reading_age_minutes"]
     cooldown = config["alerts"]["cooldown_minutes"]
-    if outputs is None:
-        outputs = build_outputs(config)
-    if not outputs:
+
+    # Resolve the notifier to use for this cycle.
+    if notifier is None:
+        _raw_outputs = outputs if outputs is not None else build_outputs(config)
+        notifier = MultiNotifier(_raw_outputs)
+    if not notifier:
         logger.warning("No outputs enabled, cannot send alerts")
+
     state_changed = False
     for reading in readings:
         patient_id = reading["patient_id"]
@@ -140,21 +162,14 @@ def run_once(config: dict, outputs: list | None = None) -> None:
             else:
                 logger.info("  %s normal", patient_name)
             continue
-        if not outputs:
+        if not notifier:
             continue
         if not should_alert(level, patient_state, cooldown, trend_alert):
             logger.info("  %s alert suppressed by cooldown", patient_name)
             continue
         message = build_message(glucose_value, level, trend_arrow, patient_name, config, trend_alert)
-        any_success = False
-        for output in outputs:
-            try:
-                if output.send_alert(message, glucose_value, level):
-                    any_success = True
-            except Exception as e:
-                logger.error("Output %s failed: %s", type(output).__name__, e)
         effective_level = level if level != "normal" else f"trend_{trend_alert}"
-        if any_success:
+        if notifier.notify(message, glucose_value, level):
             new_patient_state = {
                 "last_alert_time": datetime.now(timezone.utc).isoformat(),
                 "last_alert_level": effective_level,
@@ -244,13 +259,13 @@ def main() -> None:
             set_external_polling(True)
             interval = config.get("monitoring", {}).get("interval_seconds", 300)
             logger.info("Starting full mode (daemon + dashboard, interval: %ds)", interval)
-            # Build outputs once; they are reused across every polling cycle.
-            _loop_outputs = build_outputs(config)
+            # Build the notifier once; it is reused across every polling cycle.
+            _loop_notifier = MultiNotifier(build_outputs(config))
 
             def _polling_loop() -> None:
                 while True:
                     try:
-                        run_once(config, outputs=_loop_outputs)
+                        run_once(config, notifier=_loop_notifier)
                         update_readings_cache()
                     except Exception as e:
                         logger.error("Error in monitoring cycle: %s: %s", type(e).__name__, e)
@@ -269,11 +284,11 @@ def main() -> None:
         if mode == "daemon":
             interval = config.get("monitoring", {}).get("interval_seconds", 300)
             logger.info("Starting in daemon mode (interval: %ds)", interval)
-            # Build outputs once; they are reused across every polling cycle.
-            _daemon_outputs = build_outputs(config)
+            # Build the notifier once; it is reused across every polling cycle.
+            _daemon_notifier = MultiNotifier(build_outputs(config))
             while True:
                 try:
-                    run_once(config, outputs=_daemon_outputs)
+                    run_once(config, notifier=_daemon_notifier)
                 except Exception as e:
                     logger.error("Error in monitoring cycle: %s: %s", type(e).__name__, e)
                 logger.info("Sleeping %d seconds...", interval)

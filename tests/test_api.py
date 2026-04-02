@@ -76,21 +76,26 @@ class TestHealthEndpoint:
         resp = client.get("/api/health")
         assert resp.json()["status"] == "ok"
 
-    def test_has_timestamp(self, client, tmp_cache):
+    def test_has_updated_at(self, client, tmp_cache):
         resp = client.get("/api/health")
-        assert "timestamp" in resp.json()
+        assert "updated_at" in resp.json()
 
-    def test_patients_monitored_zero_when_empty(self, client, tmp_cache):
+    def test_patient_count_zero_when_empty(self, client, tmp_cache):
         resp = client.get("/api/health")
-        assert resp.json()["patients_monitored"] == 0
+        assert resp.json()["patient_count"] == 0
 
-    def test_patients_monitored_counts_cache(self, client, tmp_cache):
+    def test_patient_count_counts_cache(self, client, tmp_cache):
         _write_readings(tmp_cache, [
             {"patient_id": "p1", "patient_name": "Ana", "value": 100, "trend_arrow": "→"},
             {"patient_id": "p2", "patient_name": "Juan", "value": 120, "trend_arrow": "→"},
         ])
         resp = client.get("/api/health")
-        assert resp.json()["patients_monitored"] == 2
+        assert resp.json()["patient_count"] == 2
+
+    def test_cache_age_seconds_is_null(self, client, tmp_cache):
+        """Dashboard API always returns null for cache_age_seconds (in-memory)."""
+        resp = client.get("/api/health")
+        assert resp.json()["cache_age_seconds"] is None
 
 
 # ── /api/patients ────────────────────────────────────────────────────────────
