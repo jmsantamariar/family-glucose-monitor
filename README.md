@@ -5,13 +5,13 @@
 
 > **⚠️ AVISO MÉDICO:** Este software NO es un dispositivo médico y NO reemplaza las alarmas del sensor CGM ni la atención profesional. Consulta [DISCLAIMER.md](DISCLAIMER.md) antes de usarlo.
 
-Monitor de glucosa familiar para **padres y cuidadores** de personas con diabetes que usan sensores **FreeStyle Libre** con la app **LibreLinkUp**. Lee automáticamente las lecturas de *todos* los pacientes vinculados a tu cuenta y envía alertas por Telegram, Webhook o WhatsApp cuando los valores salen del rango configurado.
+Monitor de glucosa familiar para **padres y cuidadores** de personas con diabetes que usan sensores **FreeStyle Libre** con la app **LibreLinkUp**. Lee automáticamente las lecturas de *todos* los pacientes vinculados a la cuenta y envía alertas por Telegram, Webhook o WhatsApp Cloud API.
 
 ---
 
 ## ¿Para quién es?
 
-Para **familias** donde uno o varios miembros usan un sensor FreeStyle Libre y tienen a un cuidador (padre, madre, pareja) configurado en LibreLinkUp. Este sistema centraliza las alertas de todos los pacientes en tus canales de comunicación favoritos.
+Para **familias** donde uno o varios miembros usan un sensor FreeStyle Libre y tienen a un cuidador (padre, madre, pareja) configurado en LibreLinkUp. Este sistema centraliza las alertas de todos los pacientes en un único punto y ofrece un dashboard web en tiempo real.
 
 ---
 
@@ -24,8 +24,8 @@ Para **familias** donde uno o varios miembros usan un sensor FreeStyle Libre y t
 - 💬 Salidas: **Telegram**, **Webhook** (Pushover-compatible), **WhatsApp Cloud API**
 - 🖥️ Dashboard web autenticado con semáforo de colores y gráficos por paciente
 - 🔐 Autenticación con sesiones persistentes (SQLite) y contraseñas PBKDF2
-- 🔒 Credenciales de LibreLinkUp encriptadas en disco (Fernet/AES-128-CBC)
-- 📊 API REST externa para widgets, Home Assistant e integraciones locales
+- 🔒 Credenciales de LibreLinkUp encriptadas en disco (Fernet/AES-128-CBC + HMAC-SHA256)
+- 📊 API REST externa autenticada para widgets, Home Assistant e integraciones locales
 - 📋 Historial de alertas persistente (SQLite) con limpieza automática
 - 🔄 Retry automático con exponential backoff para la API de LibreLinkUp
 - 🔄 Modos: **cron** (una lectura), **daemon** (bucle continuo), **dashboard** (panel web), **full** (monitoreo + dashboard)
@@ -57,9 +57,12 @@ cd family-glucose-monitor
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+pip install -r requirements-dev.txt   # incluye sqlalchemy, alembic y utilidades de test
 ```
 
-### 2. Configurar variables de entorno (opcional pero recomendado en producción)
+> **Nota pip:** `sqlalchemy` es una dependencia de producción gestionada por Poetry. Si instalas solo con `pip install -r requirements.txt` sin el archivo dev, el sistema fallará en runtime. Se recomienda instalar también `requirements-dev.txt` o migrar a Poetry.
+
+### 2. Configurar variables de entorno (recomendado en producción)
 
 ```bash
 cp .env.example .env
@@ -131,16 +134,16 @@ main.py ─── run_once() ─── evalúa umbrales y tendencias
        │
        ├──► readings_cache.json (fuente única de verdad)
        │         │
-       │         ├──► api.py (dashboard :8080) ── lazy reload por mtime
-       │         └──► api_server.py (API externa :8081) ── lectura directa
+       │         ├──► api.py (dashboard :8080) ── recarga por mtime desde archivo
+       │         └──► api_server.py (API externa :8081) ── lectura directa por petición
        │
        └──► alert_history.db (SQLite)
                  │
                  └──► /api/alerts (ambos servidores)
 
 Seguridad:
-  config.yaml ──► credenciales LLU encriptadas (Fernet)
-  .secret_key ──► clave de encriptación (0600)
+  config.yaml ──► credenciales LLU encriptadas (Fernet/HKDF-SHA256)
+  .secret_key ──► clave maestra local (0600) — o FGM_MASTER_KEY en producción
   sessions.db ──► sesiones persistentes (SQLite)
   dashboard_auth ──► contraseñas PBKDF2-HMAC-SHA256
 ```
@@ -149,12 +152,12 @@ Para el diagrama completo y decisiones de diseño, consulta [docs/ARCHITECTURE.m
 
 ### Modos de ejecución
 
-| Modo | Descripción | Polling | Dashboard |
-|------|-------------|---------|-----------|
-| `cron` | Una sola lectura y sale | ✅ (1 vez) | ❌ |
-| `daemon` | Bucle continuo con intervalo configurable | ✅ (loop) | ❌ |
-| `dashboard` | Solo panel web, sin alertas | ❌ | ✅ (:8080) |
-| `full` | Monitoreo completo + dashboard | ✅ (hilo daemon) | ✅ (:8080, main thread) |
+| Modo | Descripción | Polling LibreLinkUp | Ciclo de alertas | Dashboard |
+|------|-------------|---------------------|------------------|-----------|
+| `cron` | Una sola lectura y salida (default) | ✅ una vez | ✅ una vez | ❌ |
+| `daemon` | Bucle continuo en foreground | ✅ continuo | ✅ continuo | ❌ |
+| `dashboard` | Panel web; hace polling sin ciclo de alertas/salidas | ✅ background | ❌ | ✅ |
+| `full` | Polling + ciclo de alertas + panel web | ✅ background | ✅ background | ✅ |
 
 En modo `full`, Uvicorn se ejecuta en el hilo principal (manejo correcto de señales) y el polling corre en un hilo daemon en segundo plano. Solo hay **un** ciclo de polling activo.
 
@@ -164,11 +167,13 @@ En modo `full`, Uvicorn se ejecuta en el hilo principal (manejo correcto de señ
 
 | Mecanismo | Descripción |
 |-----------|-------------|
-| **Encriptación de credenciales** | Contraseña de LibreLinkUp almacenada con Fernet (AES-128-CBC + HMAC-SHA256) en `config.yaml`. Backward compatible con texto plano. |
+| **Encriptación de credenciales** | Contraseña de LibreLinkUp almacenada con Fernet (AES-128-CBC + HMAC-SHA256, derivación HKDF-SHA256) en `config.yaml`. Backward compatible con texto plano. |
 | **Hashing de contraseñas** | Contraseña del dashboard hasheada con PBKDF2-HMAC-SHA256 (260,000 iteraciones). |
 | **Sesiones persistentes** | Tokens de sesión almacenados en SQLite (`sessions.db`) con TTL de 24 horas. |
 | **Permisos de archivos** | `config.yaml` y `.secret_key` con permisos `0600` (solo propietario). |
 | **CORS restringido** | API externa sin orígenes permitidos por defecto. Configurable via `CORS_ALLOWED_ORIGINS`. |
+| **CSRF** | Patrón double-submit cookie (`csrf_token` + `X-CSRF-Token`) en todos los endpoints POST autenticados del dashboard. |
+| **API segura por defecto** | La API externa requiere `Authorization: Bearer <API_KEY>`. Sin `API_KEY` configurada y sin `ALLOW_INSECURE_LOCAL_API=1`, todas las peticiones son rechazadas con 401. |
 | **Separación de credenciales** | Credenciales de LibreLinkUp independientes de las del dashboard. |
 
 > ⚠️ Para reportar vulnerabilidades, consulta [SECURITY.md](SECURITY.md).
@@ -182,23 +187,46 @@ src/
   config_schema.py       ← validación de configuración
   glucose_reader.py      ← lee TODOS los pacientes vía pylibrelinkup
   alert_engine.py        ← evalúa umbrales, cooldown, construye mensajes
-  state.py               ← persistencia JSON por patient_id
+  state.py               ← persistencia JSON por patient_id (escritura atómica)
   api.py                 ← dashboard web + API interna autenticada (modo dashboard/full)
-  api_server.py          ← API REST externa de solo lectura (sin auth, para widgets/apps)
+  api_server.py          ← API REST externa autenticada de solo lectura (para widgets/apps)
   auth.py                ← gestión de sesiones y credenciales del dashboard
-  alert_history.py       ← historial de alertas en SQLite
+  alert_history.py       ← historial de alertas en SQLite (via SQLAlchemy ORM)
+  crypto.py              ← cifrado/descifrado Fernet para credenciales sensibles
+  db.py                  ← fábrica centralizada de conexiones SQLite (WAL, FK, timeout)
+  setup_status.py        ← detección de setup completo vs. modo wizard inicial
+  models/
+    __init__.py          ← dataclasses de dominio: GlucoseReading, AlertsConfig, PatientState
+    db_models.py         ← modelos SQLAlchemy ORM: SessionToken, LoginAttempt, AlertHistory
   outputs/
-    base.py              ← clase abstracta BaseOutput
+    base.py              ← clase abstracta BaseOutput / interfaz Notifier
+    __init__.py          ← fábrica build_outputs() y MultiNotifier
     telegram.py          ← Bot API de Telegram
     webhook.py           ← Webhook HTTP (Pushover-compatible)
     whatsapp.py          ← WhatsApp Cloud API
+  dashboard/
+    index.html           ← interfaz principal del dashboard (SPA)
+    login.html           ← página de login
+    setup.html           ← wizard de configuración inicial
 tests/
+  conftest.py
   test_alert_engine.py
-  test_state.py
-  test_telegram_output.py
+  test_alert_history.py
+  test_alembic_migrations.py
   test_api.py
   test_api_server.py
   test_auth.py
+  test_config_schema.py
+  test_crypto.py
+  test_db_models.py
+  test_glucose_reader.py
+  test_main_startup.py
+  test_multi_notifier.py
+  test_run_once.py
+  test_setup_status.py
+  test_state.py
+  test_telegram_output.py
+  test_trend_alerts.py
 docs/
   ARCHITECTURE.md        ← diseño del sistema
   DEPLOYMENT.md          ← guía de despliegue y operación
@@ -339,20 +367,26 @@ python -m src.main
 docker build -t family-glucose-monitor .
 docker run --rm \
   -e FGM_MASTER_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')" \
+  -e API_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')" \
   -v $(pwd)/config.yaml:/app/config.yaml:ro \
   -v $(pwd)/state.json:/app/state.json \
+  -v $(pwd)/alert_history.db:/app/alert_history.db \
+  -v $(pwd)/readings_cache.json:/app/readings_cache.json \
+  -p 8080:8080 \
   family-glucose-monitor
 ```
+
+> **Nota:** El Dockerfile expone el puerto 8080 y arranca con `python -m src.main`. Para el modo `full` o `dashboard`, asegúrate de que `monitoring.mode` esté configurado correctamente en `config.yaml`.
 
 ---
 
 ## 🌐 API REST externa
 
-El sistema incluye un servidor de API ligero (`src/api_server.py`) para que clientes externos (widgets Android, complicaciones de Apple Watch, dashboards remotos) consuman las últimas lecturas de glucosa **sin autenticación**.
+El sistema incluye un servidor de API ligero (`src/api_server.py`) para que clientes externos (widgets Android, complicaciones de Apple Watch, dashboards remotos) consuman las últimas lecturas de glucosa sin autenticarse contra el dashboard.
 
-> **Distinción importante:** `src/api.py` es el backend del dashboard web (requiere login). `src/api_server.py` es la API externa de solo lectura. Son dos servidores independientes con propósitos distintos.
+> **Distinción importante:** `src/api.py` es el backend del dashboard web (requiere login de sesión). `src/api_server.py` es la API externa autenticada de solo lectura. Son dos servidores independientes con propósitos distintos.
 
-> **Seguridad por defecto:** La API externa requiere autenticación con `Authorization: Bearer <API_KEY>`. Para entornos locales/dev sin autenticación, establece `ALLOW_INSECURE_LOCAL_API=1` (nunca en producción).
+> **Seguridad por defecto:** La API externa requiere `Authorization: Bearer <API_KEY>`. Si `API_KEY` no está definida **y** `ALLOW_INSECURE_LOCAL_API=1` no está activo, todas las peticiones son rechazadas con **401**. Para entornos locales/dev sin autenticación, establece `ALLOW_INSECURE_LOCAL_API=1` (nunca en producción).
 
 ### Cómo funciona
 
@@ -368,6 +402,7 @@ uvicorn src.api_server:app ←→  lee readings_cache.json → responde clientes
 
 ```bash
 # Junto al monitor (terminal separada o proceso independiente):
+export API_KEY="tu-clave-secreta"
 uvicorn src.api_server:app --host 0.0.0.0 --port 8081
 ```
 
@@ -375,8 +410,9 @@ Con Docker:
 
 ```bash
 docker run --rm \
-  -v $(pwd)/config.yaml:/app/config.yaml:ro \
+  -e API_KEY="tu-clave-secreta" \
   -v $(pwd)/readings_cache.json:/app/readings_cache.json \
+  -v $(pwd)/alert_history.db:/app/alert_history.db \
   -p 8081:8081 \
   family-glucose-monitor \
   uvicorn src.api_server:app --host 0.0.0.0 --port 8081
@@ -384,11 +420,14 @@ docker run --rm \
 
 ### Endpoints de la API externa
 
-| Method | Path | Description |
+| Method | Path | Descripción |
 |--------|------|-------------|
-| `GET` | `/api/readings` | All cached patient readings |
-| `GET` | `/api/readings/{patient_id}` | Single patient reading by ID |
-| `GET` | `/api/health` | API health + data freshness |
+| `GET` | `/api/readings` | Todas las lecturas cacheadas de los pacientes |
+| `GET` | `/api/readings/{patient_id}` | Lectura de un paciente específico por ID |
+| `GET` | `/api/health` | Health de la API + frescura del caché |
+| `GET` | `/api/alerts` | Historial de alertas (últimas 24h por defecto, máx. 168h) |
+
+Todos los endpoints requieren `Authorization: Bearer <API_KEY>`.
 
 #### `GET /api/readings`
 
@@ -412,7 +451,7 @@ docker run --rm \
 
 #### `GET /api/readings/{patient_id}`
 
-Returns the reading object for the given patient ID, or `404` if not found.
+Devuelve el objeto de lectura para el paciente indicado, o `404` si no se encuentra.
 
 #### `GET /api/health`
 
@@ -425,25 +464,29 @@ Returns the reading object for the given patient ID, or `404` if not found.
 }
 ```
 
-### `config.yaml` API section
+#### `GET /api/alerts`
+
+Parámetros opcionales: `patient_id` (filtro) y `hours` (rango, 1–168, defecto 24).
+
+### Sección `api` en `config.yaml`
 
 ```yaml
 api:
-  enabled: false          # reserved for future auto-start integration
+  enabled: false          # reservado para integración futura de auto-inicio
   host: "0.0.0.0"
   port: 8081
   cache_file: "readings_cache.json"
 ```
 
-> **Nota:** `api.cache_file` configura la ruta donde `src/main.py` escribe el cache. Sin embargo, `src/api_server.py` lee siempre desde `readings_cache.json` en el directorio raíz del proyecto (ruta fija). Para evitar desincronización, mantén el valor por defecto o asegúrate de montar ambas rutas al mismo archivo.
+> **Nota:** `api.cache_file` configura la ruta donde `src/main.py` escribe el caché. `src/api_server.py` siempre lee desde la ruta resuelta relativa al directorio raíz del proyecto, independientemente de esta configuración.
 
-Para una guía completa de despliegue incluyendo HTTPS, reverse proxy, permisos y configuración de producción, consulta [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+Para una guía completa de despliegue incluyendo HTTPS, reverse proxy y configuración de producción, consulta [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ---
 
 ## 🖥️ Dashboard
 
-El sistema incluye un dashboard web en tiempo real que muestra el estado de todos los pacientes monitoreados.
+El sistema incluye un dashboard web en tiempo real que muestra el estado de todos los pacientes monitoreados. Sirve desde `src/dashboard/` (HTML/JS) a través de `src/api.py`.
 
 ### Características del Dashboard
 
@@ -455,12 +498,6 @@ El sistema incluye un dashboard web en tiempo real que muestra el estado de todo
 - **Filtros**: Por paciente y por período de tiempo
 - **Modo oscuro**: Adaptación automática al tema del sistema
 - **Auto-actualización**: Los datos se refrescan automáticamente
-
-### Mockup del Dashboard
-
-![Dashboard Mockup](docs/images/dashboard-mockup.png)
-
-> **Nota**: Este mockup muestra las mejoras planificadas para el dashboard. La versión actual ya incluye la tabla de pacientes en tiempo real con código de colores.
 
 ### Ejecutar el Dashboard
 
@@ -476,7 +513,7 @@ python -m src.main
 
 El dashboard estará disponible en `http://localhost:8080` por defecto.
 
-> **Nota de seguridad:** El dashboard requiere autenticación. El proceso de setup inicial (`/setup`) te pedirá crear credenciales. Para producción, consulta [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) para recomendaciones de HTTPS y reverse proxy.
+> **Nota de seguridad:** El dashboard requiere autenticación. El proceso de setup inicial (`/setup`) te pedirá crear credenciales. Para producción, consulta [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ---
 
@@ -488,6 +525,7 @@ poetry install   # instala también dependencias de desarrollo
 poetry run pytest tests/ -v --cov=src
 
 # Con pip
+pip install -r requirements.txt
 pip install -r requirements-dev.txt
 pytest tests/ -v --cov=src
 ```
@@ -498,10 +536,11 @@ pytest tests/ -v --cov=src
 
 - **No es un dispositivo médico.** No está certificado por ninguna autoridad sanitaria.
 - **Depende de LibreLinkUp.** Si la API de Abbott no está disponible, no habrá lecturas.
-- **No almacena histórico.** Solo persiste el estado de la última alerta por paciente.
+- **No almacena histórico completo de glucosa.** Persiste el estado de la última alerta por paciente (`state.json`) y un historial de alertas enviadas (`alert_history.db`). No guarda el historial continuo de lecturas de glucosa.
 - **No garantiza entrega en tiempo real.** Pueden ocurrir retrasos por red, API o servicios de mensajería.
 - **No reemplaza las alarmas del sensor.** Las alarmas del FreeStyle Libre son el mecanismo primario.
 - **API no oficial.** LibreLinkUp no provee una API pública documentada; puede cambiar sin aviso.
+- **File locking vía `fcntl`.** Solo disponible en Linux/macOS. En Windows el lock se omite silenciosamente.
 
 ---
 
