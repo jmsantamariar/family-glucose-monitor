@@ -441,6 +441,7 @@ Todos los endpoints requieren `Authorization: Bearer <API_KEY>`.
       "value": 120,
       "timestamp": "2026-01-01T10:00:00+00:00",
       "trend_arrow": "→",
+      "trend_name": "stable",
       "is_high": false,
       "is_low": false
     }
