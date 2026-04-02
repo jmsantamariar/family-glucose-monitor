@@ -124,11 +124,15 @@ def get_engine(db_url: str):
     """Return a SQLAlchemy engine for the given database URL.
 
     Uses ``check_same_thread=False`` for SQLite so the engine can be shared
-    across threads (consistent with the existing raw-sqlite usage pattern).
+    across threads (consistent with the existing raw-sqlite usage pattern),
+    and applies a 10s SQLite busy timeout to match ``src.db.connect_db()``.
     """
     connect_args = {}
     if db_url.startswith("sqlite"):
+        # Allow connections to be used across threads and mirror the 10s
+        # busy timeout configured by the raw SQLite helper.
         connect_args["check_same_thread"] = False
+        connect_args.setdefault("timeout", 10)
     return create_engine(db_url, connect_args=connect_args)
 
 
