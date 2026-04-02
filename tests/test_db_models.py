@@ -1,13 +1,15 @@
-"""Tests for SQLAlchemy ORM models (Iteration 2 — preparatory, not yet wired in).
+"""Tests for SQLAlchemy ORM models.
 
 These tests verify that:
   - The ORM models can be imported and instantiated.
   - create_tables() creates the expected tables on a fresh in-memory SQLite DB.
   - The model attributes map correctly to column names.
 
-NOTE: The ORM is NOT yet used by the application.  These tests exist to ensure
-the models remain consistent with the raw SQL schemas in auth.py /
-alert_history.py as the codebase evolves.
+The ORM is actively used by the application:
+  - ``AlertHistory`` is used by ``src/alert_history.py`` for all DML.
+  - ``SessionToken`` is used by ``src/auth.SessionManager`` for session DML.
+  - ``LoginAttempt`` is described in the model but accessed via ``text()``
+    queries in ``src/auth.SessionManager`` (no physical PK in the table).
 """
 import pytest
 from sqlalchemy import inspect, text
