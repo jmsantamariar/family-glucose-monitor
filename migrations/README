@@ -1,0 +1,27 @@
+Generic single-database configuration.
+
+This directory contains Alembic migration scripts for the
+``alert_history.db`` SQLite database.
+
+Quick reference
+---------------
+Apply all pending migrations:
+    alembic upgrade head
+
+Show current revision:
+    alembic current
+
+Generate a new auto-migration after editing src/models/db_models.py:
+    alembic revision --autogenerate -m "describe_your_change"
+
+Use a custom DB path:
+    ALERT_HISTORY_DB=/path/to/alert_history.db alembic upgrade head
+
+Notes
+-----
+* The sessions.db database (auth sessions / login attempts) is managed
+  separately and is NOT covered by these migrations.
+* All migrations use render_as_batch=True for SQLite compatibility
+  (SQLite does not support most ALTER TABLE statements natively).
+* The baseline migration (0001) uses IF NOT EXISTS guards so it is safe
+  to run against existing databases without data loss.
