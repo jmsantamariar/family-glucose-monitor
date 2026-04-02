@@ -440,8 +440,8 @@ Todos los endpoints requieren `Authorization: Bearer <API_KEY>`.
       "patient_name": "Juan García",
       "value": 120,
       "timestamp": "2026-01-01T10:00:00+00:00",
-      "trend_arrow": "→",
       "trend_name": "stable",
+      "trend_arrow": "→",
       "is_high": false,
       "is_low": false
     }
@@ -535,17 +535,19 @@ pytest tests/ -v --cov=src
 
 ## 🗄️ Migraciones de Base de Datos
 
-El sistema usa [Alembic](https://alembic.sqlalchemy.org/) para gestionar el esquema de `alert_history.db`. Las migraciones se aplican automáticamente al arrancar la aplicación en condiciones normales, pero en despliegues donde el contenedor no tiene acceso de escritura al directorio de datos hasta que se monten los volúmenes, puede ser necesario ejecutarlas manualmente:
+El sistema usa [Alembic](https://alembic.sqlalchemy.org/) para gestionar el esquema de `alert_history.db`. Las migraciones **no se aplican automáticamente** al arrancar la aplicación; deben ejecutarse manualmente antes del primer arranque o al actualizar a una versión con cambios de schema.
+
+> **Nota sobre Docker:** La imagen de producción solo instala dependencias `main` (sin Alembic) y no incluye `alembic.ini` ni `migrations/`. Las migraciones deben ejecutarse desde un clone del repositorio con las dependencias de desarrollo instaladas.
 
 ```bash
-# Aplicar todas las migraciones pendientes
-alembic upgrade head
+# Desde el directorio raíz del repositorio (requiere dependencias de desarrollo):
+poetry run alembic upgrade head
 
 # Ver el estado actual de la base de datos
-alembic current
+poetry run alembic current
 
 # Ver el historial de migraciones
-alembic history
+poetry run alembic history
 ```
 
 > **Nota:** `sessions.db` no está gestionada por Alembic. Su esquema se crea con DDL raw (`IF NOT EXISTS`) al arrancar `src/auth.py`. Si necesitas regenerarlo, borra el archivo y reinicia la aplicación.
