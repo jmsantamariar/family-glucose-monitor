@@ -42,20 +42,23 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+import yaml
 from fastapi import FastAPI, HTTPException, Request, Query, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from src.alert_history import get_alerts
+from src.cache_path import get_readings_cache_path
 
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-CACHE_FILE = PROJECT_ROOT / "readings_cache.json"
 # Allow overriding the DB path via an environment variable so deployments can
 # point to the same file used by main.py (which reads from config.yaml).
 _default_db = str(PROJECT_ROOT / "alert_history.db")
 DB_FILE = os.environ.get("ALERT_HISTORY_DB", _default_db)
+
+_config: dict = {}
 
 # --- Authentication configuration ---
 # Secure by default: API_KEY is required.
@@ -94,8 +97,24 @@ def _require_api_key(
         )
 
 
+def _load_config_file() -> dict:
+    config_path = PROJECT_ROOT / "config.yaml"
+    with open(config_path) as f:
+        parsed = yaml.safe_load(f)
+    if not isinstance(parsed, dict):
+        return {}
+    return parsed
+
+
 @asynccontextmanager
 async def lifespan(application: "FastAPI"):
+    global _config
+    try:
+        _config = _load_config_file()
+    except FileNotFoundError:
+        logger.warning("config.yaml not found, using defaults for cache path")
+    except yaml.YAMLError as exc:
+        logger.warning("config.yaml is invalid YAML, using defaults for cache path: %s", exc)
     if API_KEY is None:
         if ALLOW_INSECURE_LOCAL_API:
             logger.warning(
@@ -146,8 +165,9 @@ async def security_headers_middleware(request: Request, call_next):
 
 def _load_cache() -> dict:
     """Load the readings cache from disk. Returns empty structure on missing/invalid file."""
+    cache_file = get_readings_cache_path(_config)
     try:
-        with open(CACHE_FILE) as f:
+        with open(cache_file) as f:
             return json.load(f)
     except FileNotFoundError:
         return {"readings": [], "updated_at": None}

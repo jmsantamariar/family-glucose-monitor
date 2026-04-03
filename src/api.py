@@ -43,6 +43,7 @@ from fastapi import Query
 from src import alert_engine
 from src.alert_history import get_alerts
 from src.auth import hash_password, is_configured, session_manager, verify_credentials
+from src.cache_path import get_readings_cache_path
 from src.config_schema import validate_config as schema_validate_config
 from src.crypto import encrypt_value
 from src.setup_status import is_setup_complete
@@ -259,10 +260,7 @@ async def security_headers_middleware(request: Request, call_next):
 
 def _get_cache_path() -> str:
     """Return the absolute path to the readings cache file."""
-    cache_path = _config.get("api", {}).get("cache_file", "readings_cache.json")
-    if not os.path.isabs(cache_path):
-        cache_path = str(PROJECT_ROOT / cache_path)
-    return cache_path
+    return get_readings_cache_path(_config)
 
 
 def _load_and_enrich_cache() -> None:
