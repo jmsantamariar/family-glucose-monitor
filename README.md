@@ -57,10 +57,10 @@ cd family-glucose-monitor
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-pip install -r requirements-dev.txt   # incluye sqlalchemy, alembic y utilidades de test
+pip install -r requirements-dev.txt   # incluye alembic y utilidades de test
 ```
 
-> **Nota pip:** `requirements.txt` usa `sqlalchemy>=2.0` (sin pinear) mientras que `requirements-dev.txt` instala `sqlalchemy==2.0.48` (versión fijada). **No mezcles pip y Poetry en el mismo entorno**: pueden producirse conflictos de versiones. Usa uno de los dos métodos de instalación de forma exclusiva.
+> **Nota pip:** `requirements.txt` pinea las mismas versiones que `pyproject.toml` (incluyendo `sqlalchemy==2.0.48`). `requirements-dev.txt` añade solo dependencias de desarrollo (pytest, alembic, httpx, etc.). **No mezcles pip y Poetry en el mismo entorno**: pueden producirse conflictos de versiones. Usa uno de los dos métodos de instalación de forma exclusiva.
 
 ### 2. Configurar variables de entorno (recomendado en producción)
 
@@ -365,10 +365,16 @@ python -m src.main
 ### Docker
 
 ```bash
+# Genera las claves y recrea .env con un único FGM_MASTER_KEY y API_KEY:
+echo "FGM_MASTER_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')" > .env
+echo "API_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> .env
+chmod 600 .env
+
+# Crea los archivos de estado antes del primer arranque:
+touch state.json alert_history.db sessions.db readings_cache.json
+
 docker build -t family-glucose-monitor .
-docker run --rm \
-  -e FGM_MASTER_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')" \
-  -e API_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')" \
+docker run --rm --env-file .env \
   -v $(pwd)/config.yaml:/app/config.yaml:ro \
   -v $(pwd)/state.json:/app/state.json \
   -v $(pwd)/alert_history.db:/app/alert_history.db \
@@ -379,6 +385,10 @@ docker run --rm \
 ```
 
 > **Nota:** El Dockerfile expone el puerto 8080 y arranca con `python -m src.main`. Para el modo `full` o `dashboard`, asegúrate de que `monitoring.mode` esté configurado correctamente en `config.yaml`.
+>
+> **Archivos de estado:** Los archivos `state.json`, `alert_history.db`, `sessions.db` y `readings_cache.json` deben existir en el host **antes** del primer arranque. Si no existen, Docker crea un directorio vacío en su lugar y la aplicación falla. Usa `touch` para crearlos vacíos.
+>
+> **Setup wizard en Docker:** `config.yaml` se monta como solo lectura (`:ro`). El wizard de setup no puede escribir `config.yaml` desde dentro del contenedor. Genera `config.yaml` fuera del contenedor primero (ejecutando el wizard sin Docker o copiando `config.example.yaml`), y luego monta el archivo resultante.
 
 ---
 
