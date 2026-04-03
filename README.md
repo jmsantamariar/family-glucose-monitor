@@ -156,7 +156,7 @@ Para el diagrama completo y decisiones de diseño, consulta [docs/ARCHITECTURE.m
 |------|-------------|---------------------|------------------|-----------|
 | `cron` | Una sola lectura y salida (default) | ✅ una vez | ✅ una vez | ❌ |
 | `daemon` | Bucle continuo en foreground | ✅ continuo | ✅ continuo | ❌ |
-| `dashboard` | Panel web; hace polling sin ciclo de alertas/salidas | ✅ background | ❌ | ✅ |
+| `dashboard` | Solo panel web (requiere polling externo o modo `full` para datos frescos) | ❌ | ❌ | ✅ |
 | `full` | Polling + ciclo de alertas + panel web | ✅ background | ✅ background | ✅ |
 
 En modo `full`, Uvicorn se ejecuta en el hilo principal (manejo correcto de señales) y el polling corre en un hilo daemon en segundo plano. Solo hay **un** ciclo de polling activo.
@@ -200,7 +200,8 @@ src/
     db_models.py         ← modelos SQLAlchemy ORM: SessionToken, LoginAttempt, AlertHistory
   outputs/
     base.py              ← clase abstracta BaseOutput / interfaz Notifier
-    __init__.py          ← fábrica build_outputs() y MultiNotifier
+    __init__.py          ← fábrica build_outputs()
+    multi_notifier.py    ← MultiNotifier: envía alerta por todos los canales habilitados
     telegram.py          ← Bot API de Telegram
     webhook.py           ← Webhook HTTP (Pushover-compatible)
     whatsapp.py          ← WhatsApp Cloud API
@@ -297,7 +298,7 @@ El modo de ejecución se configura con `monitoring.mode` en `config.yaml`. Hay c
 |------|-------------|---------------------|------------------|-----------|
 | `cron` | Una sola lectura y salida (default) | ✅ una vez | ✅ una vez | ❌ |
 | `daemon` | Bucle continuo en foreground | ✅ continuo | ✅ continuo | ❌ |
-| `dashboard` | Panel web; hace polling sin ciclo de alertas/salidas | ✅ background | ❌ | ✅ |
+| `dashboard` | Solo panel web (requiere polling externo o modo `full` para datos frescos) | ❌ | ❌ | ✅ |
 | `full` | Polling + ciclo de alertas + panel web | ✅ background | ✅ background | ✅ |
 
 ### Modo cron (una sola lectura)
@@ -503,7 +504,8 @@ El sistema incluye un dashboard web en tiempo real que muestra el estado de todo
 ### Ejecutar el Dashboard
 
 ```bash
-# Modo solo dashboard (polling a LibreLinkUp en background, sin envío de alertas)
+# Modo solo dashboard (solo panel web; lee el archivo configurado en api.cache_file,
+# por defecto readings_cache.json, escrito por un proceso externo)
 # En config.yaml: monitoring.mode: "dashboard"
 python -m src.main
 
@@ -515,6 +517,49 @@ python -m src.main
 El dashboard estará disponible en `http://localhost:8080` por defecto.
 
 > **Nota de seguridad:** El dashboard requiere autenticación. El proceso de setup inicial (`/setup`) te pedirá crear credenciales. Para producción, consulta [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+### Setup Wizard (configuración inicial)
+
+Al ejecutar por primera vez sin `config.yaml`, el sistema arranca automáticamente en **modo setup-only**: sirve únicamente la página `/setup` donde un wizard interactivo permite configurar:
+
+- Credenciales de LibreLinkUp (email, contraseña, región)
+- Credenciales del dashboard (usuario y contraseña independientes, hasheada con PBKDF2)
+- Umbrales de alerta (bajo, alto, cooldown, edad máxima de lectura)
+- Canal de notificación (Telegram, Webhook, WhatsApp o ninguno)
+
+Al completar el wizard, se genera `config.yaml` con permisos `0600`, se inicia sesión automáticamente y se redirige al dashboard. Si no se configura ningún canal de notificación, el modo se establece a `dashboard` (solo panel web, sin envío de alertas).
+
+La lógica de detección está en `src/setup_status.py`, que verifica: existencia del archivo, YAML válido, mapping no vacío, y validación completa del schema.
+
+### Persistencia de datos
+
+| Archivo | Módulo | Descripción |
+|---------|--------|-------------|
+| `state.json` | `src/state.py` | Estado de alertas por paciente (última alerta, nivel, timestamp). Escritura atómica. |
+| `readings_cache.json` | `src/main.py` (escritura) / `src/api.py`, `src/api_server.py` (lectura) | Caché de lecturas más recientes. Lo escribe `src/main.py` de forma atómica y lo consumen el dashboard y la API; para que ambos vean exactamente los mismos datos deben usar la misma ruta de caché. Actualmente `src/api_server.py` lee `PROJECT_ROOT/readings_cache.json`, por lo que puede divergir si `api.cache_file` apunta a otro archivo. |
+| `alert_history.db` | `src/alert_history.py` | Historial de alertas enviadas (SQLite, tabla `alerts`). Gestionado con SQLAlchemy ORM. Migraciones con Alembic. |
+| `sessions.db` | `src/auth.py` | Sesiones del dashboard (tabla `sessions`) y log de intentos de login (tabla `login_attempts`). SQLite con SQLAlchemy ORM para sesiones, `text()` para login_attempts. |
+| `config.yaml` | Varios módulos | Configuración principal. Generado por el wizard o manualmente. Permisos `0600`. |
+| `.secret_key` | `src/crypto.py` | Clave maestra local para cifrado Fernet (dev/local). En producción se usa `FGM_MASTER_KEY`. |
+
+### Flujo de arranque
+
+1. `main()` resuelve `PROJECT_ROOT/config.yaml`
+2. `check_setup(config_path)` verifica si la configuración es válida:
+   - Si **no es válida** → configura logging básico, loguea warnings, arranca en **modo setup-only** (solo dashboard con `/setup`)
+3. Si es válida, carga `config.yaml` con `yaml.safe_load()`
+   - Si falla la carga post-validación → modo setup-only (fallback)
+4. `configure_logging(config)` configura el sistema de logging
+5. Restringe permisos de `config.yaml` a `0600` si es necesario
+6. Lee `monitoring.mode` de la configuración (default: `cron`)
+7. Según el modo:
+   - **`dashboard`**: arranca solo el dashboard (`_start_dashboard`)
+   - **`full`**: adquiere file lock, activa `set_external_polling(True)`, construye `MultiNotifier` una vez,
+     lanza hilo daemon con `_polling_loop` (`run_once` + `update_readings_cache` en bucle),
+     arranca dashboard en hilo principal
+   - **`daemon`**: adquiere file lock, construye `MultiNotifier` una vez, bucle `run_once()` con sleep
+   - **`cron`** (default): adquiere file lock, ejecuta `run_once()` una sola vez
+8. En modos con bucle (`daemon`, `full`), el `MultiNotifier` se construye una sola vez y se reutiliza en cada ciclo
 
 ---
 
