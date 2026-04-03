@@ -100,7 +100,10 @@ def _require_api_key(
 def _load_config_file() -> dict:
     config_path = PROJECT_ROOT / "config.yaml"
     with open(config_path) as f:
-        return yaml.safe_load(f) or {}
+        parsed = yaml.safe_load(f)
+    if not isinstance(parsed, dict):
+        return {}
+    return parsed
 
 
 @asynccontextmanager
