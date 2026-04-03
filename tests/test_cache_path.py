@@ -1,5 +1,4 @@
 """Tests for the centralized cache path resolver."""
-from pathlib import Path
 from src.cache_path import get_readings_cache_path, PROJECT_ROOT, DEFAULT_CACHE_FILENAME
 
 
