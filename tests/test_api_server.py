@@ -338,3 +338,93 @@ def test_alerts_hours_max_is_168(monkeypatch):
     assert response.status_code == 422  # Exceeds le=168 constraint
     monkeypatch.delenv("ALLOW_INSECURE_LOCAL_API", raising=False)
     importlib.reload(api_server_module)
+
+
+# ---------------------------------------------------------------------------
+# _load_config_file
+# ---------------------------------------------------------------------------
+
+def test_load_config_file_valid(tmp_path, monkeypatch):
+    """_load_config_file returns the parsed dict for a valid config.yaml."""
+    import importlib
+    import src.api_server as api_server_module
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text("alert_history_db: /tmp/alerts.db\n")
+    monkeypatch.setattr(api_server_module, "PROJECT_ROOT", tmp_path)
+    result = api_server_module._load_config_file()
+    assert result == {"alert_history_db": "/tmp/alerts.db"}
+
+
+def test_load_config_file_invalid_not_dict(tmp_path, monkeypatch):
+    """_load_config_file returns {} when the YAML does not parse to a dict."""
+    import src.api_server as api_server_module
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text("- item1\n- item2\n")
+    monkeypatch.setattr(api_server_module, "PROJECT_ROOT", tmp_path)
+    result = api_server_module._load_config_file()
+    assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# get_db_path
+# ---------------------------------------------------------------------------
+
+def test_get_db_path_from_env(monkeypatch):
+    """get_db_path returns the ALERT_HISTORY_DB env var when set."""
+    import src.api_server as api_server_module
+    monkeypatch.setenv("ALERT_HISTORY_DB", "/custom/path/alerts.db")
+    result = api_server_module.get_db_path()
+    assert result == "/custom/path/alerts.db"
+    monkeypatch.delenv("ALERT_HISTORY_DB", raising=False)
+
+
+def test_get_db_path_from_config(monkeypatch):
+    """get_db_path returns the resolved config path when env var is not set."""
+    import src.api_server as api_server_module
+    monkeypatch.delenv("ALERT_HISTORY_DB", raising=False)
+    with patch.object(api_server_module, "_config", {"alert_history_db": "custom_alerts.db"}):
+        result = api_server_module.get_db_path()
+    assert result == str(api_server_module.PROJECT_ROOT / "custom_alerts.db")
+
+
+def test_get_db_path_from_config_absolute(monkeypatch):
+    """get_db_path returns an absolute config path unchanged."""
+    import src.api_server as api_server_module
+    monkeypatch.delenv("ALERT_HISTORY_DB", raising=False)
+    with patch.object(api_server_module, "_config", {"alert_history_db": "/abs/alerts.db"}):
+        result = api_server_module.get_db_path()
+    assert result == "/abs/alerts.db"
+
+
+def test_get_db_path_default(monkeypatch):
+    """get_db_path falls back to PROJECT_ROOT/alert_history.db when nothing is configured."""
+    import src.api_server as api_server_module
+    monkeypatch.delenv("ALERT_HISTORY_DB", raising=False)
+    with patch.object(api_server_module, "_config", {}):
+        result = api_server_module.get_db_path()
+    assert result == str(api_server_module.PROJECT_ROOT / "alert_history.db")
+
+
+# ---------------------------------------------------------------------------
+# /api/alerts uses get_db_path
+# ---------------------------------------------------------------------------
+
+def test_alerts_endpoint_uses_get_db_path(monkeypatch):
+    """The /api/alerts endpoint calls get_db_path() instead of a hardcoded constant."""
+    import src.api_server as api_server_module
+    called_with = []
+
+    def mock_get_alerts(db_path, **kwargs):
+        called_with.append(db_path)
+        return []
+
+    with patch.object(api_server_module, "get_db_path", return_value="/resolved/alerts.db") as mock_gdb, \
+         patch.object(api_server_module, "ALLOW_INSECURE_LOCAL_API", True), \
+         patch.object(api_server_module, "API_KEY", None), \
+         patch.object(api_server_module, "get_alerts", side_effect=mock_get_alerts):
+        test_client = TestClient(api_server_module.app)
+        response = test_client.get("/api/alerts")
+
+    assert response.status_code == 200
+    mock_gdb.assert_called_once()
+    assert called_with == ["/resolved/alerts.db"]
