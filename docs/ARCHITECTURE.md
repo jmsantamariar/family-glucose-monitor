@@ -143,13 +143,14 @@ Valores sin prefijo `encrypted:` se devuelven tal cual (backward compatible con 
 
 ### `src/outputs/` — Salidas de alertas
 
-Patrón Strategy con clase base abstracta `BaseOutput`. El módulo `src/outputs/__init__.py` expone `build_outputs(config)`, función de fábrica que instancia todos los canales habilitados. `MultiNotifier` encapsula la lista y despacha a todos.
+Patrón Strategy con clase base abstracta `BaseOutput`. El módulo `src/outputs/__init__.py` expone `build_outputs(config)`, función de fábrica que instancia todos los canales habilitados. `MultiNotifier` (en `src/outputs/multi_notifier.py`) encapsula la lista y despacha a todos.
 
-| Clase | Descripción |
-|-------|-------------|
-| `TelegramOutput` | Envía mensajes via Telegram Bot API |
-| `WebhookOutput` | HTTP POST compatible con Pushover |
-| `WhatsAppOutput` | WhatsApp Cloud API (Meta) |
+| Clase | Archivo | Descripción |
+|-------|---------|-------------|
+| `MultiNotifier` | `multi_notifier.py` | Encapsula una lista de outputs; despacha la alerta a todos los canales habilitados |
+| `TelegramOutput` | `telegram.py` | Envía mensajes via Telegram Bot API |
+| `WebhookOutput` | `webhook.py` | HTTP POST compatible con Pushover |
+| `WhatsAppOutput` | `whatsapp.py` | WhatsApp Cloud API (Meta) |
 
 ---
 
