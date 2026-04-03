@@ -550,7 +550,9 @@ class TestAuthMiddleware:
         assert resp.status_code == 200
 
     def test_exempt_login_route_accessible_without_auth(self, auth_client):
-        with patch("src.api.is_setup_complete", return_value=True):
+        with patch("src.api.is_setup_complete", return_value=True), \
+             patch("src.api.is_configured", return_value=True), \
+             patch("src.auth.is_configured", return_value=True):
             resp = auth_client.get("/login")
         assert resp.status_code == 200
 
@@ -574,7 +576,9 @@ class TestPageRoutes:
         assert resp.headers["location"] == "/setup"
 
     def test_login_page_returns_html_when_configured(self, client):
-        with patch("src.api.is_setup_complete", return_value=True):
+        with patch("src.api.is_setup_complete", return_value=True), \
+             patch("src.api.is_configured", return_value=True), \
+             patch("src.auth.is_configured", return_value=True):
             resp = client.get("/login")
         assert resp.status_code == 200
         assert "text/html" in resp.headers["content-type"]
