@@ -99,8 +99,10 @@ touch data/state.json data/alert_history.db data/sessions.db data/readings_cache
 Genera las claves UNA VEZ y guárdalas en `.env`:
 
 ```bash
-echo "FGM_MASTER_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> .env
-echo "API_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> .env
+{
+  echo "FGM_MASTER_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')"
+  echo "API_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')"
+} > .env
 chmod 600 .env
 ```
 
