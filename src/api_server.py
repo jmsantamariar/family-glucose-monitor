@@ -34,6 +34,7 @@ needs to be reached from a browser on a different origin, e.g.::
 
     CORS_ALLOWED_ORIGINS=http://localhost:3000,https://dashboard.example.com
 """
+import hmac
 import json
 import logging
 import os
@@ -53,10 +54,6 @@ from src.cache_path import get_readings_cache_path
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-# Allow overriding the DB path via an environment variable so deployments can
-# point to the same file used by main.py (which reads from config.yaml).
-_default_db = str(PROJECT_ROOT / "alert_history.db")
-DB_FILE = os.environ.get("ALERT_HISTORY_DB", _default_db)
 
 _config: dict = {}
 
@@ -82,7 +79,7 @@ def _require_api_key(
       all requests are rejected with 401 to prevent accidental data exposure.
     """
     if API_KEY is not None:
-        if credentials is None or credentials.credentials != API_KEY:
+        if credentials is None or not hmac.compare_digest(credentials.credentials, API_KEY):
             raise HTTPException(status_code=401, detail="Invalid or missing API key.")
         return
     # No API_KEY configured — check explicit opt-out flag.
@@ -104,6 +101,25 @@ def _load_config_file() -> dict:
     if not isinstance(parsed, dict):
         return {}
     return parsed
+
+
+def get_db_path() -> str:
+    """Resolve the alert history DB path.
+
+    Priority:
+    1. ``ALERT_HISTORY_DB`` environment variable (checked at call time).
+    2. ``alert_history_db`` key from the runtime-loaded ``_config``.
+    3. Default: ``<PROJECT_ROOT>/alert_history.db``.
+    """
+    env_path = os.environ.get("ALERT_HISTORY_DB")
+    if env_path:
+        return env_path
+    config_path = _config.get("alert_history_db")
+    if config_path:
+        if not os.path.isabs(config_path):
+            return str(PROJECT_ROOT / config_path)
+        return config_path
+    return str(PROJECT_ROOT / "alert_history.db")
 
 
 @asynccontextmanager
@@ -227,5 +243,5 @@ def get_alert_history(patient_id: Optional[str] = None, hours: int = Query(defau
     Optionally filter by *patient_id*.  Returns an empty list when there are no
     alerts or the database does not exist yet.
     """
-    alerts = get_alerts(DB_FILE, patient_id=patient_id, hours=hours)
+    alerts = get_alerts(get_db_path(), patient_id=patient_id, hours=hours)
     return alerts

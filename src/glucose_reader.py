@@ -72,7 +72,7 @@ def _retry_with_backoff(
 
 
 def _build_client(email: str, password: str, region: str) -> PyLibreLinkUp:
-    api_url = REGION_MAP.get(region.upper(), APIUrl.US)
+    api_url = REGION_MAP.get(region.upper(), APIUrl.EU)
     client = PyLibreLinkUp(email=email, password=password, api_url=api_url)
     try:
         _retry_with_backoff(
@@ -97,7 +97,7 @@ def read_all_patients(config: dict) -> list[dict]:
     try:
         email = os.environ.get("LIBRELINKUP_EMAIL") or config["librelinkup"]["email"]
         password = os.environ.get("LIBRELINKUP_PASSWORD") or decrypt_value(config["librelinkup"]["password"])
-        region = config.get("librelinkup", {}).get("region", "US")
+        region = config.get("librelinkup", {}).get("region", "EU")
         retry_cfg = config.get("librelinkup", {}).get("retry", {})
         patients_max_retries: int = retry_cfg.get("max_retries", 2)
         patients_base_delay: float = retry_cfg.get("base_delay", 2.0)
