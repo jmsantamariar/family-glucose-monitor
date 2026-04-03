@@ -110,6 +110,8 @@ async def lifespan(application: "FastAPI"):
         _config = _load_config_file()
     except FileNotFoundError:
         logger.warning("config.yaml not found, using defaults for cache path")
+    except yaml.YAMLError as exc:
+        logger.warning("config.yaml is invalid YAML, using defaults for cache path: %s", exc)
     if API_KEY is None:
         if ALLOW_INSECURE_LOCAL_API:
             logger.warning(
