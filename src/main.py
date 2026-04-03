@@ -75,7 +75,7 @@ def release_lock(lock_fd) -> None:
 
 
 def _save_readings_cache(readings: list[dict], config: dict) -> None:
-    """Write the latest readings to readings_cache.json for API consumption."""
+    """Write the latest readings to the configured cache file for API consumption."""
     cache_path = get_readings_cache_path(config)
     payload = {
         "readings": readings,
