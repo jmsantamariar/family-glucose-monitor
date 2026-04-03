@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import src.api_server as _api_server_module
-from src.api_server import CACHE_FILE, app
+from src.api_server import app
 
 # Bypass authentication for tests that do not specifically test auth behaviour.
 # The module-level client assumes ALLOW_INSECURE_LOCAL_API=True so existing
@@ -65,7 +65,7 @@ def _make_cache(readings=None, updated_at=None):
 def test_get_all_readings_returns_list(tmp_path):
     cache_file = tmp_path / "readings_cache.json"
     cache_file.write_text(json.dumps(SAMPLE_CACHE))
-    with patch("src.api_server.CACHE_FILE", cache_file):
+    with patch.object(_api_server_module, "_config", {"api": {"cache_file": str(cache_file)}}):
         response = client.get("/api/readings")
     assert response.status_code == 200
     data = response.json()
@@ -76,7 +76,7 @@ def test_get_all_readings_returns_list(tmp_path):
 def test_get_all_readings_includes_updated_at(tmp_path):
     cache_file = tmp_path / "readings_cache.json"
     cache_file.write_text(json.dumps(SAMPLE_CACHE))
-    with patch("src.api_server.CACHE_FILE", cache_file):
+    with patch.object(_api_server_module, "_config", {"api": {"cache_file": str(cache_file)}}):
         response = client.get("/api/readings")
     assert response.status_code == 200
     data = response.json()
@@ -84,7 +84,7 @@ def test_get_all_readings_includes_updated_at(tmp_path):
 
 
 def test_get_all_readings_empty_when_no_cache():
-    with patch("src.api_server.CACHE_FILE", "/nonexistent/path/readings_cache.json"):
+    with patch.object(_api_server_module, "_config", {"api": {"cache_file": "/nonexistent/path/readings_cache.json"}}):
         response = client.get("/api/readings")
     assert response.status_code == 200
     data = response.json()
@@ -95,7 +95,7 @@ def test_get_all_readings_empty_when_no_cache():
 def test_get_all_readings_empty_when_cache_corrupted(tmp_path):
     cache_file = tmp_path / "readings_cache.json"
     cache_file.write_text("not valid json{{{")
-    with patch("src.api_server.CACHE_FILE", cache_file):
+    with patch.object(_api_server_module, "_config", {"api": {"cache_file": str(cache_file)}}):
         response = client.get("/api/readings")
     assert response.status_code == 200
     data = response.json()
@@ -109,7 +109,7 @@ def test_get_all_readings_empty_when_cache_corrupted(tmp_path):
 def test_get_patient_reading_found(tmp_path):
     cache_file = tmp_path / "readings_cache.json"
     cache_file.write_text(json.dumps(SAMPLE_CACHE))
-    with patch("src.api_server.CACHE_FILE", cache_file):
+    with patch.object(_api_server_module, "_config", {"api": {"cache_file": str(cache_file)}}):
         response = client.get("/api/readings/patient-001")
     assert response.status_code == 200
     data = response.json()
@@ -120,7 +120,7 @@ def test_get_patient_reading_found(tmp_path):
 def test_get_patient_reading_second_patient(tmp_path):
     cache_file = tmp_path / "readings_cache.json"
     cache_file.write_text(json.dumps(SAMPLE_CACHE))
-    with patch("src.api_server.CACHE_FILE", cache_file):
+    with patch.object(_api_server_module, "_config", {"api": {"cache_file": str(cache_file)}}):
         response = client.get("/api/readings/patient-002")
     assert response.status_code == 200
     data = response.json()
@@ -131,14 +131,14 @@ def test_get_patient_reading_second_patient(tmp_path):
 def test_get_patient_reading_not_found(tmp_path):
     cache_file = tmp_path / "readings_cache.json"
     cache_file.write_text(json.dumps(SAMPLE_CACHE))
-    with patch("src.api_server.CACHE_FILE", cache_file):
+    with patch.object(_api_server_module, "_config", {"api": {"cache_file": str(cache_file)}}):
         response = client.get("/api/readings/nonexistent-id")
     assert response.status_code == 404
     assert "nonexistent-id" in response.json()["detail"]
 
 
 def test_get_patient_reading_no_cache():
-    with patch("src.api_server.CACHE_FILE", "/nonexistent/path/readings_cache.json"):
+    with patch.object(_api_server_module, "_config", {"api": {"cache_file": "/nonexistent/path/readings_cache.json"}}):
         response = client.get("/api/readings/patient-001")
     assert response.status_code == 404
 
@@ -150,7 +150,7 @@ def test_get_patient_reading_no_cache():
 def test_health_ok_with_cache(tmp_path):
     cache_file = tmp_path / "readings_cache.json"
     cache_file.write_text(json.dumps(SAMPLE_CACHE))
-    with patch("src.api_server.CACHE_FILE", cache_file):
+    with patch.object(_api_server_module, "_config", {"api": {"cache_file": str(cache_file)}}):
         response = client.get("/api/health")
     assert response.status_code == 200
     data = response.json()
@@ -160,7 +160,7 @@ def test_health_ok_with_cache(tmp_path):
 
 
 def test_health_ok_no_cache():
-    with patch("src.api_server.CACHE_FILE", "/nonexistent/path/readings_cache.json"):
+    with patch.object(_api_server_module, "_config", {"api": {"cache_file": "/nonexistent/path/readings_cache.json"}}):
         response = client.get("/api/health")
     assert response.status_code == 200
     data = response.json()
@@ -175,7 +175,7 @@ def test_health_cache_age_seconds(tmp_path):
     cache = _make_cache(updated_at=updated_at.isoformat())
     cache_file = tmp_path / "readings_cache.json"
     cache_file.write_text(json.dumps(cache))
-    with patch("src.api_server.CACHE_FILE", cache_file):
+    with patch.object(_api_server_module, "_config", {"api": {"cache_file": str(cache_file)}}):
         response = client.get("/api/health")
     assert response.status_code == 200
     data = response.json()
@@ -187,7 +187,7 @@ def test_health_zero_patients_when_empty_readings(tmp_path):
     cache = _make_cache(readings=[])
     cache_file = tmp_path / "readings_cache.json"
     cache_file.write_text(json.dumps(cache))
-    with patch("src.api_server.CACHE_FILE", cache_file):
+    with patch.object(_api_server_module, "_config", {"api": {"cache_file": str(cache_file)}}):
         response = client.get("/api/health")
     assert response.status_code == 200
     assert response.json()["patient_count"] == 0
@@ -201,7 +201,7 @@ def test_cors_no_wildcard_by_default(tmp_path):
     """By default, CORS wildcard must not be set — origins are empty."""
     cache_file = tmp_path / "readings_cache.json"
     cache_file.write_text(json.dumps(SAMPLE_CACHE))
-    with patch("src.api_server.CACHE_FILE", cache_file):
+    with patch.object(_api_server_module, "_config", {"api": {"cache_file": str(cache_file)}}):
         response = client.get("/api/readings", headers={"Origin": "http://localhost:3000"})
     # No wildcard origin should be in the response by default
     assert response.headers.get("access-control-allow-origin") != "*"
@@ -219,7 +219,7 @@ def test_cors_allowed_origin_via_env(tmp_path, monkeypatch):
     cache_file = tmp_path / "readings_cache.json"
     cache_file.write_text(json.dumps(SAMPLE_CACHE))
     test_client = TestClient(api_server_module.app)
-    with patch.object(api_server_module, "CACHE_FILE", cache_file):
+    with patch.object(api_server_module, "_config", {"api": {"cache_file": str(cache_file)}}):
         response = test_client.get(
             "/api/readings", headers={"Origin": "http://localhost:3000"}
         )
@@ -247,7 +247,7 @@ def test_no_api_key_no_allow_insecure_blocks_all(tmp_path, monkeypatch):
     cache_file = tmp_path / "readings_cache.json"
     cache_file.write_text(json.dumps(SAMPLE_CACHE))
     test_client = TestClient(api_server_module.app)
-    with patch.object(api_server_module, "CACHE_FILE", cache_file):
+    with patch.object(api_server_module, "_config", {"api": {"cache_file": str(cache_file)}}):
         response = test_client.get("/api/readings")
     assert response.status_code == 401
     monkeypatch.delenv("ALLOW_INSECURE_LOCAL_API", raising=False)
@@ -264,7 +264,7 @@ def test_allow_insecure_local_api_bypasses_auth(tmp_path, monkeypatch):
     cache_file = tmp_path / "readings_cache.json"
     cache_file.write_text(json.dumps(SAMPLE_CACHE))
     test_client = TestClient(api_server_module.app)
-    with patch.object(api_server_module, "CACHE_FILE", cache_file):
+    with patch.object(api_server_module, "_config", {"api": {"cache_file": str(cache_file)}}):
         response = test_client.get("/api/readings")
     assert response.status_code == 200
     monkeypatch.delenv("ALLOW_INSECURE_LOCAL_API", raising=False)
@@ -280,7 +280,7 @@ def test_api_key_set_blocks_unauthenticated(tmp_path, monkeypatch):
     cache_file = tmp_path / "readings_cache.json"
     cache_file.write_text(json.dumps(SAMPLE_CACHE))
     test_client = TestClient(api_server_module.app)
-    with patch.object(api_server_module, "CACHE_FILE", cache_file):
+    with patch.object(api_server_module, "_config", {"api": {"cache_file": str(cache_file)}}):
         response = test_client.get("/api/readings")
     assert response.status_code == 401
     monkeypatch.delenv("API_KEY", raising=False)
@@ -296,7 +296,7 @@ def test_api_key_set_allows_correct_key(tmp_path, monkeypatch):
     cache_file = tmp_path / "readings_cache.json"
     cache_file.write_text(json.dumps(SAMPLE_CACHE))
     test_client = TestClient(api_server_module.app)
-    with patch.object(api_server_module, "CACHE_FILE", cache_file):
+    with patch.object(api_server_module, "_config", {"api": {"cache_file": str(cache_file)}}):
         response = test_client.get(
             "/api/readings",
             headers={"Authorization": "Bearer test-secret-key"},
@@ -315,7 +315,7 @@ def test_api_key_set_blocks_wrong_key(tmp_path, monkeypatch):
     cache_file = tmp_path / "readings_cache.json"
     cache_file.write_text(json.dumps(SAMPLE_CACHE))
     test_client = TestClient(api_server_module.app)
-    with patch.object(api_server_module, "CACHE_FILE", cache_file):
+    with patch.object(api_server_module, "_config", {"api": {"cache_file": str(cache_file)}}):
         response = test_client.get(
             "/api/readings",
             headers={"Authorization": "Bearer wrong-key"},
