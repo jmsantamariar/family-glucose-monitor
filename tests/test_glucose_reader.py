@@ -380,3 +380,44 @@ def test_retry_backoff_sleeps():
     # Delays should be base_delay * 2^attempt * jitter(1.0): 2, 4, 8
     delays = [c.args[0] for c in mock_sleep.call_args_list]
     assert delays == pytest.approx([2.0, 4.0, 8.0])
+
+
+# ---------------------------------------------------------------------------
+# Default region fallback
+# ---------------------------------------------------------------------------
+
+def test_default_region_is_eu():
+    """When no region is configured, the client is built with APIUrl.EU."""
+    from pylibrelinkup.api_url import APIUrl
+
+    config_no_region = {
+        "librelinkup": {
+            "email": "user@example.com",
+            "password": "secret",
+        }
+    }
+
+    mock_client = MagicMock()
+    mock_client.get_patients.return_value = []
+
+    with patch("src.glucose_reader.PyLibreLinkUp", return_value=mock_client) as mock_cls:
+        read_all_patients(config_no_region)
+
+    mock_cls.assert_called_once()
+    _, kwargs = mock_cls.call_args
+    assert kwargs["api_url"] == APIUrl.EU
+
+
+def test_build_client_unknown_region_falls_back_to_eu():
+    """_build_client with an unrecognised region string uses APIUrl.EU."""
+    from pylibrelinkup.api_url import APIUrl
+    from src.glucose_reader import _build_client
+
+    mock_client = MagicMock()
+
+    with patch("src.glucose_reader.PyLibreLinkUp", return_value=mock_client) as mock_cls:
+        _build_client("user@example.com", "secret", "UNKNOWN_REGION")
+
+    mock_cls.assert_called_once()
+    _, kwargs = mock_cls.call_args
+    assert kwargs["api_url"] == APIUrl.EU
