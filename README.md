@@ -536,7 +536,7 @@ La lógica de detección está en `src/setup_status.py`, que verifica: existenci
 | Archivo | Módulo | Descripción |
 |---------|--------|-------------|
 | `state.json` | `src/state.py` | Estado de alertas por paciente (última alerta, nivel, timestamp). Escritura atómica. |
-| `readings_cache.json` | `src/main.py` (escritura) / `src/api.py`, `src/api_server.py` (lectura) | Caché de lecturas más recientes. Fuente única de verdad para dashboard y API. Escritura atómica. |
+| `readings_cache.json` | `src/main.py` (escritura) / `src/api.py`, `src/api_server.py` (lectura) | Caché de lecturas más recientes. Lo escribe `src/main.py` de forma atómica y lo consumen el dashboard y la API; para que ambos vean exactamente los mismos datos deben usar la misma ruta de caché. Actualmente `src/api_server.py` lee `PROJECT_ROOT/readings_cache.json`, por lo que puede divergir si `api.cache_file` apunta a otro archivo. |
 | `alert_history.db` | `src/alert_history.py` | Historial de alertas enviadas (SQLite, tabla `alerts`). Gestionado con SQLAlchemy ORM. Migraciones con Alembic. |
 | `sessions.db` | `src/auth.py` | Sesiones del dashboard (tabla `sessions`) y log de intentos de login (tabla `login_attempts`). SQLite con SQLAlchemy ORM para sesiones, `text()` para login_attempts. |
 | `config.yaml` | Varios módulos | Configuración principal. Generado por el wizard o manualmente. Permisos `0600`. |
