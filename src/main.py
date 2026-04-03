@@ -15,6 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 from src.alert_engine import build_message, evaluate, evaluate_trend, is_stale, should_alert
 from src.alert_history import cleanup_old_alerts, init_db, log_alert
+from src.cache_path import get_readings_cache_path
 from src.config_schema import validate_config as schema_validate_config
 from src.glucose_reader import read_all_patients
 from src.outputs import build_outputs
@@ -74,10 +75,8 @@ def release_lock(lock_fd) -> None:
 
 
 def _save_readings_cache(readings: list[dict], config: dict) -> None:
-    """Write the latest readings to readings_cache.json for API consumption."""
-    cache_path = config.get("api", {}).get("cache_file", "readings_cache.json")
-    if not os.path.isabs(cache_path):
-        cache_path = str(PROJECT_ROOT / cache_path)
+    """Write the latest readings to the configured cache file for API consumption."""
+    cache_path = get_readings_cache_path(config)
     payload = {
         "readings": readings,
         "updated_at": datetime.now(timezone.utc).isoformat(),
