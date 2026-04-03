@@ -365,8 +365,8 @@ python -m src.main
 ### Docker
 
 ```bash
-# Genera las claves UNA VEZ y guárdalas en .env:
-echo "FGM_MASTER_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> .env
+# Genera las claves y recrea .env con un único FGM_MASTER_KEY y API_KEY:
+echo "FGM_MASTER_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')" > .env
 echo "API_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> .env
 chmod 600 .env
 
