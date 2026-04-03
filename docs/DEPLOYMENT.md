@@ -64,11 +64,16 @@ python -c "import secrets; print(secrets.token_hex(32))"
 ### Build y ejecución básica
 
 ```bash
-docker build -t family-glucose-monitor .
+# Genera las claves UNA VEZ y guárdalas en .env:
+echo "FGM_MASTER_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> .env
+echo "API_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> .env
+chmod 600 .env
 
-docker run --rm \
-  -e FGM_MASTER_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')" \
-  -e API_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')" \
+# Crea los archivos de estado antes del primer arranque:
+touch state.json alert_history.db sessions.db readings_cache.json
+
+docker build -t family-glucose-monitor .
+docker run --rm --env-file .env \
   -v $(pwd)/config.yaml:/app/config.yaml:ro \
   -v $(pwd)/state.json:/app/state.json \
   -v $(pwd)/alert_history.db:/app/alert_history.db \
@@ -78,12 +83,28 @@ docker run --rm \
   family-glucose-monitor
 ```
 
-> **Importante:** monta los archivos de estado (`state.json`, `alert_history.db`, `sessions.db`, `readings_cache.json`) como volúmenes para que persistan entre reinicios del contenedor. Sin estos mounts, el estado y el historial se pierden al detener el contenedor.
+> **Archivos de estado:** Los archivos `state.json`, `alert_history.db`, `sessions.db` y `readings_cache.json` deben existir en el host **antes** del primer arranque. Si no existen, Docker crea un directorio vacío en su lugar y la aplicación falla. Usa `touch` para crearlos vacíos.
+
+> **Setup wizard en Docker:** `config.yaml` se monta como solo lectura (`:ro`). El wizard de setup no puede escribir `config.yaml` desde dentro del contenedor. Genera `config.yaml` fuera del contenedor primero (ejecutando el wizard sin Docker o copiando `config.example.yaml`), y luego monta el archivo resultante.
 
 ### Docker Compose (dashboard + API externa)
 
+Crea el directorio de datos y los archivos vacíos antes del primer arranque:
+
+```bash
+mkdir -p data
+touch data/state.json data/alert_history.db data/sessions.db data/readings_cache.json
+```
+
+Genera las claves UNA VEZ y guárdalas en `.env`:
+
+```bash
+echo "FGM_MASTER_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> .env
+echo "API_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> .env
+chmod 600 .env
+```
+
 ```yaml
-version: "3.9"
 services:
   monitor:
     build: .
@@ -92,7 +113,10 @@ services:
       - API_KEY=${API_KEY}
     volumes:
       - ./config.yaml:/app/config.yaml:ro
-      - fgm_data:/app
+      - ./data/state.json:/app/state.json
+      - ./data/alert_history.db:/app/alert_history.db
+      - ./data/sessions.db:/app/sessions.db
+      - ./data/readings_cache.json:/app/readings_cache.json
     ports:
       - "8080:8080"
     restart: unless-stopped
@@ -102,23 +126,15 @@ services:
     command: uvicorn src.api_server:app --host 0.0.0.0 --port 8081
     environment:
       - API_KEY=${API_KEY}
+      - ALERT_HISTORY_DB=/app/alert_history.db
     volumes:
-      - fgm_data:/app
+      - ./data/alert_history.db:/app/alert_history.db:ro
+      - ./data/readings_cache.json:/app/readings_cache.json:ro
     ports:
       - "8081:8081"
     depends_on:
       - monitor
     restart: unless-stopped
-
-volumes:
-  fgm_data:
-```
-
-Crea un archivo `.env` junto al `docker-compose.yml`:
-
-```bash
-FGM_MASTER_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')
-API_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')
 ```
 
 ---
@@ -156,7 +172,6 @@ dashboard.tudominio.com {
 
 api.tudominio.com {
     reverse_proxy localhost:8081
-}
 }
 ```
 
