@@ -13,9 +13,16 @@ def get_readings_cache_path(config: dict | None = None) -> str:
     ``readings_cache.json`` relative to the project root when the key
     is missing or *config* is ``None``.
     """
-    if config is None:
+    if not isinstance(config, dict):
         config = {}
-    cache_path = config.get("api", {}).get("cache_file", DEFAULT_CACHE_FILENAME)
+
+    api_config = config.get("api", {})
+    if not isinstance(api_config, dict):
+        api_config = {}
+
+    cache_path = api_config.get("cache_file")
+    if not isinstance(cache_path, str) or not cache_path:
+        cache_path = DEFAULT_CACHE_FILENAME
     if not os.path.isabs(cache_path):
         cache_path = str(PROJECT_ROOT / cache_path)
     return cache_path
