@@ -504,7 +504,8 @@ El sistema incluye un dashboard web en tiempo real que muestra el estado de todo
 ### Ejecutar el Dashboard
 
 ```bash
-# Modo solo dashboard (solo panel web; lee readings_cache.json escrito por un proceso externo)
+# Modo solo dashboard (solo panel web; lee el archivo configurado en api.cache_file,
+# por defecto readings_cache.json, escrito por un proceso externo)
 # En config.yaml: monitoring.mode: "dashboard"
 python -m src.main
 
