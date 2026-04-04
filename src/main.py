@@ -15,8 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 from src.alert_engine import build_message, evaluate, evaluate_trend, is_stale, should_alert
 from src.alert_history import cleanup_old_alerts, init_db, log_alert
-from src.bootstrap import BootstrapError, bootstrap_storage, check_config_writable
-from src.cache_path import get_readings_cache_path  # backward-compat shim
+from src.bootstrap import BootstrapError, bootstrap_storage
 from src.config_schema import validate_config as schema_validate_config
 from src.glucose_reader import read_all_patients
 from src.outputs import build_outputs
