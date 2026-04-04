@@ -44,7 +44,6 @@ from src import alert_engine
 from src.alert_history import get_alerts
 from src.auth import hash_password, is_configured, session_manager, verify_credentials
 from src.bootstrap import check_config_writable
-from src.cache_path import get_readings_cache_path  # backward-compat shim
 from src.config_schema import validate_config as schema_validate_config
 from src.crypto import encrypt_value
 from src.paths import get_cache_path
