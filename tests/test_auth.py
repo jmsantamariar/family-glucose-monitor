@@ -398,7 +398,15 @@ class TestSetupEndpoint:
         client.post("/api/setup", json=payload)
         config = yaml.safe_load((tmp_path / "config.yaml").read_text())
         outputs = config["outputs"]
-        assert any(o["type"] == "telegram" and o["enabled"] for o in outputs)
+        tg = next((o for o in outputs if o.get("type") == "telegram"), None)
+        assert tg is not None and tg["enabled"]
+        # Ensure the wizard writes bot_token (not the legacy "token" key) so
+        # that the config_schema validator and build_outputs both accept it.
+        assert tg.get("bot_token") == "BOT_TOKEN", (
+            "Expected 'bot_token' key in telegram output; got: " + str(tg)
+        )
+        assert "token" not in tg, "Legacy 'token' key must not appear in telegram output"
+        assert tg.get("chat_id") == "-100123"
 
     def test_setup_with_webhook(self, client, tmp_path):
         payload = self._minimal_payload()
