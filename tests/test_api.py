@@ -910,8 +910,11 @@ class TestConfiguracionPageUxElements:
 
     def test_page_has_aria_invalid_attributes(self, client):
         resp = client.get("/configuracion")
-        assert "aria-describedby" in resp.text
-        assert "aria-invalid" in resp.text or "aria-describedby" in resp.text
+        # Verify that specific inputs have aria-describedby pointing to their error spans
+        assert 'aria-describedby="ll-email-error"' in resp.text
+        assert 'aria-describedby="low-threshold-error"' in resp.text
+        # tg-token has both hint and error in aria-describedby
+        assert 'aria-describedby="tg-token-hint tg-token-error"' in resp.text
 
     def test_page_has_callout_info_for_test_note(self, client):
         resp = client.get("/configuracion")
@@ -965,7 +968,7 @@ class TestConfiguracionPageUxElements:
     def test_page_has_specific_error_messages(self, client):
         resp = client.get("/configuracion")
         assert "umbral bajo debe ser menor" in resp.text
-        assert "bot token" in resp.text.lower() or "Bot Token" in resp.text
+        assert "bot token" in resp.text.lower()
 
     def test_page_has_aria_live_on_test_results(self, client):
         resp = client.get("/configuracion")

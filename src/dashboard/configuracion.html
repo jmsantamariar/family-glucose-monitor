@@ -656,7 +656,7 @@
     { pattern: /librelinkup\.email.*required/i,    field: 'll-email',       section: 'librelinkup', msg: 'El correo electrónico es obligatorio.' },
     { pattern: /librelinkup\.password.*required/i, field: 'll-password',    section: 'librelinkup', msg: 'La contraseña de LibreLinkUp es obligatoria.' },
     { pattern: /región no válida/i,                field: 'll-region',      section: 'librelinkup', msg: 'Región de LibreLinkUp inválida.' },
-    { pattern: /region/i,                          field: 'll-region',      section: 'librelinkup', msg: 'Región de LibreLinkUp inválida.' },
+    { pattern: /región.*inválida|invalid.*region/i, field: 'll-region',      section: 'librelinkup', msg: 'Región de LibreLinkUp inválida.' },
     { pattern: /low_threshold.*less/i,             field: 'low-threshold',  section: 'alertas',     msg: 'El umbral bajo debe ser menor que el umbral alto.' },
     { pattern: /umbral bajo.*menor/i,              field: 'low-threshold',  section: 'alertas',     msg: 'El umbral bajo debe ser menor que el umbral alto.' },
     { pattern: /low_threshold/i,                   field: 'low-threshold',  section: 'alertas',     msg: 'El umbral bajo no es válido.' },
@@ -665,7 +665,8 @@
     { pattern: /max_reading_age/i,                 field: 'max-age',        section: 'alertas',     msg: 'La antigüedad máxima no es válida.' },
     { pattern: /telegram.*bot.*token/i,            field: 'tg-token',       section: 'notif',       msg: 'El bot token de Telegram es obligatorio cuando Telegram está activo.' },
     { pattern: /telegram.*chat.*id/i,              field: 'tg-chatid',      section: 'notif',       msg: 'El chat ID de Telegram es obligatorio cuando Telegram está activo.' },
-    { pattern: /telegram/i,                        field: 'tg-token',       section: 'notif',       msg: 'Error en la configuración de Telegram.' },
+    // Fallback for other Telegram config errors (e.g. token format)
+    { pattern: /telegram.*token|token.*bot/i,      field: 'tg-token',       section: 'notif',       msg: 'Error en el token de Telegram.' },
   ];
 
   function setFieldError(inputId, message) {
@@ -727,7 +728,8 @@
     if (!badge) return;
 
     // Remove all state classes
-    ['ok','err','warn'].forEach(c => { badge.classList.remove(c); card?.classList.remove('card-ok','card-error','card-warn'); });
+    badge.classList.remove('ok', 'err', 'warn');
+    card?.classList.remove('card-ok', 'card-error', 'card-warn');
     badge.classList.remove('show');
 
     if (!state) return;
