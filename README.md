@@ -23,6 +23,7 @@ Para **familias** donde uno o varios miembros usan un sensor FreeStyle Libre y t
 - 📈 Alertas por tendencia (subiendo rápido, bajando rápido, etc.)
 - 💬 Salidas: **Telegram**, **Webhook** (Pushover-compatible), **WhatsApp Cloud API**
 - 🔔 Notificaciones push en el navegador (Web Push / VAPID) — suscripción desde el dashboard
+- 📱 **PWA instalable en Android** (y escritorio) — icono en pantalla de inicio, modo standalone, soporte offline
 - 🖥️ Dashboard web autenticado con semáforo de colores y gráficos por paciente
 - 🔐 Autenticación con sesiones persistentes (SQLite) y contraseñas PBKDF2
 - 🔒 Credenciales de LibreLinkUp encriptadas en disco (Fernet/AES-128-CBC + HMAC-SHA256)
@@ -282,9 +283,32 @@ export WHATSAPP_ACCESS_TOKEN="token_whatsapp"
 
 ### Telegram — configuración del bot
 
+#### Opción A — Wizard de configuración (recomendado)
+
+El wizard de configuración (`/setup`) incluye una interfaz guiada para Telegram que automatiza la obtención del Chat ID:
+
+1. Abre `http://localhost:8080/setup` (o la URL de tu servidor) en el navegador.
+2. En el **paso 3** del wizard, selecciona **Telegram** en el desplegable de notificaciones.
+3. Habla con [@BotFather](https://t.me/BotFather) → escribe `/newbot` → copia el **token** en el campo.
+4. Abre tu bot nuevo en Telegram y envíale cualquier mensaje (por ejemplo, *Hola*).
+5. Haz clic en el botón **"📥 Obtener Chat ID"**: el wizard llama automáticamente al endpoint `POST /api/setup/telegram/fetch-chat-id`, que consulta `getUpdates` en tu nombre y rellena el Chat ID detectado.
+6. Haz clic en **"💾 Guardar y comenzar"** — el token y el Chat ID quedan grabados en `config.yaml`.
+
+> **Nota:** Si el bot detecta varios chats (grupos, canales), el wizard mostrará un selector para elegir el correcto.
+
+#### Opción B — Configuración manual
+
 1. Habla con [@BotFather](https://t.me/BotFather) → `/newbot` → copia el token.
 2. Obtén tu `chat_id`: abre `https://api.telegram.org/bot<TOKEN>/getUpdates` después de enviar un mensaje al bot.
 3. Configura en `config.yaml` y valida con `python validate_telegram.py`.
+
+```yaml
+outputs:
+  - type: telegram
+    enabled: true
+    bot_token: "123456789:ABCDEFGabcdefg..."
+    chat_id: "-100123456789"
+```
 
 ### Modo daemon (bucle continuo)
 
@@ -588,7 +612,17 @@ La lógica de detección está en `src/setup_status.py`, que verifica: existenci
 
 El dashboard incluye soporte de notificaciones push nativas del navegador. Una vez suscrito, recibirás alertas de glucosa aunque la pestaña del dashboard esté en segundo plano o cerrada.
 
-### Cómo funciona
+### Cómo activar las notificaciones (paso a paso)
+
+1. Abre el dashboard en tu navegador e inicia sesión.
+2. Haz clic en el botón **"🔔 Activar notificaciones"** que aparece en el dashboard.
+3. El navegador solicitará permiso para mostrar notificaciones — acepta.
+4. Tu suscripción queda registrada en el servidor (`push_subscriptions.db`).
+5. A partir de ahora, cada alerta de glucosa llegará como notificación del sistema aunque la pestaña esté en segundo plano.
+
+Para desactivarlas, haz clic en **"🔕 Desactivar notificaciones"** (el botón cambia de estado automáticamente).
+
+### Cómo funciona internamente
 
 1. El Service Worker (`sw.js`) registrado por el dashboard escucha eventos `push` y muestra la notificación del sistema.
 2. Al hacer clic en "Activar notificaciones" en el dashboard, el navegador llama a `pushManager.subscribe()` con la clave VAPID pública del servidor.
@@ -596,6 +630,18 @@ El dashboard incluye soporte de notificaciones push nativas del navegador. Una v
 4. En cada ciclo de alerta, `WebPushOutput` obtiene todas las suscripciones activas y las llama vía `pywebpush`. Las suscripciones expiradas (HTTP 404/410) se eliminan automáticamente.
 
 > **Nota HTTPS:** Las notificaciones push del navegador requieren HTTPS en producción. En desarrollo local, `localhost` funciona sin HTTPS.
+
+### Compatibilidad de navegadores
+
+| Navegador | Soporte push | Notas |
+|-----------|-------------|-------|
+| Chrome (Android/escritorio) | ✅ Completo | Recomendado |
+| Firefox (Android/escritorio) | ✅ Completo | |
+| Edge (escritorio) | ✅ Completo | |
+| Safari (macOS 13+, iOS 16.4+) | ⚠️ Parcial | Requiere que la PWA esté instalada en iOS |
+| Chrome en iOS | ❌ Sin soporte | Apple no permite Service Workers en Chrome/Firefox iOS |
+
+> En **iOS**, las notificaciones push solo funcionan siguiendo este orden exacto: (1) instala la PWA en la pantalla de inicio desde **Safari** (iOS 16.4+), (2) ábrela desde el icono instalado, y (3) activa las notificaciones desde dentro de la app instalada. Activarlas desde Safari sin instalar la PWA no funciona.
 
 ### Gestión de claves VAPID
 
@@ -633,6 +679,46 @@ print('VAPID_PUBLIC_KEY=' + pub)
 ```
 
 Añade `VAPID_PRIVATE_KEY` a tu `.env` o como variable de entorno/Docker secret. Consulta `.env.example` para el formato completo.
+
+---
+
+## 📱 Instalar como app en Android (PWA)
+
+El dashboard es una **Progressive Web App (PWA)** completamente funcional. Puedes instalarlo en Android (o cualquier escritorio con Chrome/Edge) para que se comporte como una aplicación nativa: icono en la pantalla de inicio, modo standalone sin barras del navegador, soporte offline básico y notificaciones push.
+
+### Qué está implementado
+
+| Componente | Archivo | Descripción |
+|------------|---------|-------------|
+| Web App Manifest | `src/dashboard/manifest.json` | Define nombre, iconos, colores, orientación y `display: standalone` |
+| Service Worker | `src/dashboard/sw.js` | Caché del app-shell (offline), manejo de eventos `push` y `notificationclick` |
+| Iconos | `src/dashboard/icons/` | SVG escalables en 192×192 y 512×512 con propósito `any maskable` |
+| Rutas PWA | `src/api.py` (`/manifest.json`, `/sw.js`, `/icons/*`) | Servidas sin autenticación para que el navegador las cargue correctamente |
+
+### Cómo instalar en Android
+
+1. Abre el dashboard en **Chrome para Android** (`http://<IP-servidor>:8080`).
+2. Inicia sesión en el dashboard.
+3. Toca el menú ⋮ de Chrome → **"Añadir a pantalla de inicio"** (o aparecerá un banner automático de instalación).
+4. Confirma el nombre y toca **"Añadir"** — el icono de la app aparecerá en tu pantalla de inicio.
+5. Ábrela desde el icono: se carga en modo standalone (sin barra de navegador) como una app nativa.
+
+> **Nota:** Para que Chrome ofrezca la instalación automática, el dashboard debe servirse por **HTTPS** en producción. En una red local (`localhost` o IP privada) Chrome puede ofrecer la instalación igualmente, pero las notificaciones push requieren HTTPS. Consulta [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) para la configuración HTTPS con reverse proxy.
+
+### Soporte offline
+
+El Service Worker pre-cachea las páginas principales (`/`, `/login`, `/setup`) durante la instalación. Si el servidor no está disponible, el usuario verá una página de "Sin conexión" en lugar de un error de Chrome. Las lecturas de glucosa en tiempo real siguen requiriendo conexión al servidor.
+
+### Notificaciones push en Android
+
+Una vez instalada la PWA en Android, puedes activar las notificaciones push directamente desde el dashboard:
+
+1. Abre la app instalada.
+2. En el dashboard, haz clic en **"🔔 Activar notificaciones"**.
+3. Acepta el permiso de notificaciones del sistema.
+4. A partir de ese momento, recibirás alertas de glucosa aunque la app esté en segundo plano o la pantalla apagada.
+
+> Las notificaciones push funcionan incluso con la app cerrada si el Service Worker sigue activo. Android puede pausar los Service Workers en modo ahorro de batería — si no recibes notificaciones, revisa la configuración de batería de la app.
 
 ---
 
