@@ -242,6 +242,7 @@
 
     .tg-chat-id-msg-success { color: var(--success-fg); }
     .tg-chat-id-msg-error   { color: var(--error-fg); }
+    .tg-chat-id-msg-info    { color: var(--subtext); }
 
     /* ── Buttons ──────────────────────────────────────────────────── */
     .btn-row {
@@ -603,15 +604,13 @@
           msg.style.display = 'block';
         } else if (!data.chats || data.chats.length === 0) {
           msg.textContent = '⚠️ No se encontraron mensajes. Envía un mensaje a tu bot y vuelve a intentarlo.';
-          msg.className = '';
-          msg.style.color = 'var(--subtext)';
+          msg.className = 'tg-chat-id-msg-info';
           msg.style.display = 'block';
         } else if (data.chats.length === 1) {
           document.getElementById('tgChatId').value = data.chats[0].id;
           const label = data.chats[0].name ? ` (${data.chats[0].name})` : '';
           msg.textContent = `✅ Chat ID obtenido: ${data.chats[0].id}${label}`;
           msg.className = 'tg-chat-id-msg-success';
-          msg.style.color = '';
           msg.style.display = 'block';
         } else {
           // Multiple chats found — render a selector
@@ -628,13 +627,11 @@
           document.getElementById('tgChatId').value = data.chats[0].id;
           msg.textContent = `✅ Se encontraron ${data.chats.length} chats. Selecciona el correcto arriba.`;
           msg.className = 'tg-chat-id-msg-success';
-          msg.style.color = '';
           msg.style.display = 'block';
         }
       } catch {
         msg.textContent = '⚠️ Error de conexión al obtener el Chat ID.';
         msg.className = 'tg-chat-id-msg-error';
-        msg.style.color = '';
         msg.style.display = 'block';
       } finally {
         btn.disabled = false;
