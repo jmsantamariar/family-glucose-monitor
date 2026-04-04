@@ -599,10 +599,11 @@ El dashboard incluye soporte de notificaciones push nativas del navegador. Una v
 
 Las claves VAPID (RFC 8292) se resuelven en este orden:
 
-1. Variable de entorno `VAPID_PRIVATE_KEY` (PEM, con `\n` literales o saltos de línea reales).
+1. Variable de entorno `VAPID_PRIVATE_KEY` (PEM con saltos de línea reales).
 2. Archivo `vapid_private.pem` en la raíz del proyecto.
 3. Auto-generación en primer arranque → guardado en `vapid_private.pem` (permisos `0600`). La clave pública se loguea a nivel INFO para configurar los clientes.
 
+> **Importante:** `VAPID_PRIVATE_KEY` debe contener un PEM válido con saltos de línea reales; el formato con `\n` literales no está documentado como soportado. Si tu plataforma no maneja bien variables multilínea, usa `vapid_private.pem` (por ejemplo, montándolo como archivo o secret).
 La clave pública se sirve dinámicamente en `GET /api/push/vapid-public-key` (exento de autenticación), por lo que los clientes siempre usan la clave correcta.
 
 ### Endpoints Web Push (`src/api.py`)
