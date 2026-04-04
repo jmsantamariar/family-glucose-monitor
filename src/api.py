@@ -43,9 +43,10 @@ from fastapi import Query
 from src import alert_engine
 from src.alert_history import get_alerts
 from src.auth import hash_password, is_configured, session_manager, verify_credentials
-from src.cache_path import get_readings_cache_path
+from src.bootstrap import check_config_writable
 from src.config_schema import validate_config as schema_validate_config
 from src.crypto import encrypt_value
+from src.paths import get_cache_path
 from src.setup_status import is_setup_complete
 
 logger = logging.getLogger(__name__)
@@ -260,7 +261,7 @@ async def security_headers_middleware(request: Request, call_next):
 
 def _get_cache_path() -> str:
     """Return the absolute path to the readings cache file."""
-    return get_readings_cache_path(_config)
+    return get_cache_path(_config)
 
 
 def _load_and_enrich_cache() -> None:
@@ -703,6 +704,12 @@ async def api_setup(request: Request, response: Response):
         )
 
     config_path = PROJECT_ROOT / "config.yaml"
+
+    # Guard: fail early with a clear message if config.yaml is read-only.
+    writable_error = check_config_writable(config_path)
+    if writable_error:
+        raise HTTPException(status_code=500, detail=writable_error)
+
     with open(config_path, "w", encoding="utf-8") as f:
         yaml.safe_dump(config_dict, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
 

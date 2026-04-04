@@ -14,6 +14,8 @@ from src.api_server import app
 # tests remain unaffected.  Auth-specific tests reload the module with the
 # appropriate env vars set.
 _api_server_module.ALLOW_INSECURE_LOCAL_API = True
+# Allow TestClient's synthetic host ('testclient') through the loopback guardrail.
+_api_server_module._LOOPBACK_ADDRS = frozenset({"127.0.0.1", "::1", "localhost", "testclient"})
 
 client = TestClient(app)
 
@@ -264,7 +266,8 @@ def test_allow_insecure_local_api_bypasses_auth(tmp_path, monkeypatch):
     cache_file = tmp_path / "readings_cache.json"
     cache_file.write_text(json.dumps(SAMPLE_CACHE))
     test_client = TestClient(api_server_module.app)
-    with patch.object(api_server_module, "_config", {"api": {"cache_file": str(cache_file)}}):
+    with patch.object(api_server_module, "_config", {"api": {"cache_file": str(cache_file)}}), \
+         patch.object(api_server_module, "_LOOPBACK_ADDRS", frozenset({"127.0.0.1", "::1", "testclient"})):
         response = test_client.get("/api/readings")
     assert response.status_code == 200
     monkeypatch.delenv("ALLOW_INSECURE_LOCAL_API", raising=False)
@@ -333,7 +336,8 @@ def test_alerts_hours_max_is_168(monkeypatch):
     import src.api_server as api_server_module
     importlib.reload(api_server_module)
     test_client = TestClient(api_server_module.app)
-    with patch("src.alert_history.get_alerts", return_value=[]):
+    with patch("src.alert_history.get_alerts", return_value=[]), \
+         patch.object(api_server_module, "_LOOPBACK_ADDRS", frozenset({"127.0.0.1", "::1", "testclient"})):
         response = test_client.get("/api/alerts?hours=200")
     assert response.status_code == 422  # Exceeds le=168 constraint
     monkeypatch.delenv("ALLOW_INSECURE_LOCAL_API", raising=False)
@@ -421,6 +425,7 @@ def test_alerts_endpoint_uses_get_db_path(monkeypatch):
     with patch.object(api_server_module, "get_db_path", return_value="/resolved/alerts.db") as mock_gdb, \
          patch.object(api_server_module, "ALLOW_INSECURE_LOCAL_API", True), \
          patch.object(api_server_module, "API_KEY", None), \
+         patch.object(api_server_module, "_LOOPBACK_ADDRS", frozenset({"127.0.0.1", "::1", "testclient"})), \
          patch.object(api_server_module, "get_alerts", side_effect=mock_get_alerts):
         test_client = TestClient(api_server_module.app)
         response = test_client.get("/api/alerts")
