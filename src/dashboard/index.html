@@ -482,7 +482,7 @@
         </div>
         <div class="header-subtitle">
           <span id="last-update">Última actualización: —</span>
-          <span class="live-badge">● LIVE</span>
+          <span class="live-badge" aria-label="Estado en vivo">● LIVE</span>
         </div>
       </div>
     </div>
@@ -508,19 +508,19 @@
   <div id="alert-strip" class="alert-strip">
     <span class="alert-strip-title">🔔 Historial de alertas (24h)</span>
     <div class="alert-strip-cards">
-      <div class="alert-card alert-card-total" data-filter="" role="button" tabindex="0">
+      <div class="alert-card alert-card-total" data-filter="" role="button" tabindex="0" aria-label="Total de alertas">
         <span class="alert-card-count" id="strip-total">—</span>
         <span class="alert-card-label">Alertas totales</span>
       </div>
-      <div class="alert-card alert-card-high" data-filter="high" role="button" tabindex="0">
+      <div class="alert-card alert-card-high" data-filter="high" role="button" tabindex="0" aria-label="Filtrar alertas de glucosa alta">
         <span class="alert-card-count" id="strip-high">—</span>
         <span class="alert-card-label">Alertas ALTA</span>
       </div>
-      <div class="alert-card alert-card-low" data-filter="low" role="button" tabindex="0">
+      <div class="alert-card alert-card-low" data-filter="low" role="button" tabindex="0" aria-label="Filtrar alertas de glucosa baja">
         <span class="alert-card-count" id="strip-low">—</span>
         <span class="alert-card-label">Alertas BAJA</span>
       </div>
-      <div class="alert-card alert-card-trend" data-filter="trend" role="button" tabindex="0">
+      <div class="alert-card alert-card-trend" data-filter="trend" role="button" tabindex="0" aria-label="Filtrar alertas de tendencia">
         <span class="alert-card-count" id="strip-trend">—</span>
         <span class="alert-card-label">Alertas tendencia</span>
       </div>
@@ -728,6 +728,16 @@
   let _alertsData = []; // all fetched alerts (last N hours, unfiltered by level)
   let _levelFilter = null; // null | 'high' | 'low' | 'trend'
 
+  // Time constants
+  const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
+  // Max gap in ms between the last stored alert and current reading before adding a new point
+  const CURRENT_READING_MIN_GAP_MS = 60 * 1000; // 60 seconds
+
+  // Helper: returns true for trend-type alerts
+  function isTrendAlert(a) {
+    return Boolean(a.level && a.level.startsWith('trend_'));
+  }
+
   // ── Update hero header subtitle ──────────────────────────────────
   function updateLastUpdateLabel(isoTimestamp) {
     const el = document.getElementById('last-update');
@@ -748,7 +758,7 @@
   function buildMiniChart(patientId, currentGlucose) {
     const W = 120, H = 40;
     const now           = Date.now();
-    const threeHoursAgo = now - 3 * 60 * 60 * 1000;
+    const threeHoursAgo = now - THREE_HOURS_MS;
 
     // Collect alert points for this patient in the last 3 hours
     const pts = _alertsData
@@ -756,10 +766,10 @@
       .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
       .map(a => ({ t: new Date(a.timestamp).getTime(), v: Number(a.glucose_value) }));
 
-    // Append current reading if it isn't already the last point
+    // Append current reading if it is sufficiently newer than the last stored point
     const cg = Number(currentGlucose);
     if (!isNaN(cg) && cg > 0) {
-      if (!pts.length || (now - pts[pts.length - 1].t) > 60000) {
+      if (!pts.length || (now - pts[pts.length - 1].t) > CURRENT_READING_MIN_GAP_MS) {
         pts.push({ t: now, v: cg });
       }
     }
@@ -795,7 +805,7 @@
     const total = alerts.length;
     const high  = alerts.filter(a => a.level === 'high').length;
     const low   = alerts.filter(a => a.level === 'low').length;
-    const trend = alerts.filter(a => a.level && a.level.startsWith('trend_')).length;
+    const trend = alerts.filter(isTrendAlert).length;
 
     document.getElementById('strip-total').textContent = total;
     document.getElementById('strip-high').textContent  = high;
@@ -811,18 +821,24 @@
     });
     const filtered = _levelFilter
       ? _alertsData.filter(a => {
-          if (_levelFilter === 'trend') return a.level && a.level.startsWith('trend_');
+          if (_levelFilter === 'trend') return isTrendAlert(a);
           return a.level === _levelFilter;
         })
       : _alertsData;
     updateHistory(filtered, /* skipStore= */ true);
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     document.getElementById('history-body').closest('.table-wrap')
-      .scrollIntoView({ behavior: 'smooth', block: 'start' });
+      .scrollIntoView({ behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'start' });
   }
 
   document.querySelectorAll('.alert-card').forEach(card => {
     card.addEventListener('click', () => applyLevelFilter(card.dataset.filter || null));
-    card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') applyLevelFilter(card.dataset.filter || null); });
+    card.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        applyLevelFilter(card.dataset.filter || null);
+      }
+    });
   });
   // ── Table update (current readings) ─────────────────────────────
   function updateTable(patients) {
