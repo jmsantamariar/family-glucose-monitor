@@ -35,6 +35,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+import requests as _requests
 import yaml
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
@@ -506,6 +507,78 @@ def pwa_icon(filename: str):
 def setup_status():
     """Return whether the system has already been configured."""
     return {"configured": is_setup_complete()}
+
+
+_TELEGRAM_API_URL = "https://api.telegram.org"
+
+
+@app.post("/api/setup/telegram/fetch-chat-id", response_class=JSONResponse)
+async def api_telegram_fetch_chat_id(request: Request):
+    """Call Telegram's getUpdates to discover chat IDs from recent messages.
+
+    This endpoint is used by the setup wizard to help non-technical users
+    retrieve their ``chat_id`` without having to call the Telegram Bot API
+    manually.  The caller provides the bot token; the endpoint forwards it to
+    ``getUpdates`` and returns the unique chat IDs found in the response.
+
+    The user must have sent at least one message to the bot before calling
+    this endpoint so that Telegram has a pending update to return.
+    """
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON inválido")
+
+    bot_token = str(data.get("bot_token", "")).strip()
+    if not bot_token:
+        raise HTTPException(status_code=422, detail="bot_token es requerido")
+
+    url = f"{_TELEGRAM_API_URL}/bot{bot_token}/getUpdates"
+    try:
+        resp = _requests.get(url, timeout=10)
+    except _requests.RequestException as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Error al contactar Telegram: {exc}",
+        )
+
+    if resp.status_code == 401:
+        raise HTTPException(
+            status_code=422,
+            detail="Token inválido. Verifica el token del bot.",
+        )
+    if not resp.ok:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Error de Telegram: {resp.status_code}",
+        )
+
+    result = resp.json()
+    updates = result.get("result", [])
+
+    # Extract unique chats from all update types that carry a chat object.
+    seen: dict[str, str] = {}
+    for update in updates:
+        for key in ("message", "channel_post", "edited_message", "edited_channel_post"):
+            msg = update.get(key)
+            if not msg:
+                continue
+            chat = msg.get("chat", {})
+            chat_id = chat.get("id")
+            if chat_id is None:
+                continue
+            chat_id_str = str(chat_id)
+            if chat_id_str not in seen:
+                name = (
+                    chat.get("title")
+                    or chat.get("username")
+                    or chat.get("first_name")
+                    or chat_id_str
+                )
+                seen[chat_id_str] = name
+
+    return {"chats": [{"id": cid, "name": name} for cid, name in seen.items()]}
+
 
 @app.post("/api/login", response_class=JSONResponse)
 async def api_login(request: Request, response: Response):
