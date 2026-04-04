@@ -15,12 +15,13 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 from src.alert_engine import build_message, evaluate, evaluate_trend, is_stale, should_alert
 from src.alert_history import cleanup_old_alerts, init_db, log_alert
-from src.cache_path import get_readings_cache_path
+from src.bootstrap import BootstrapError, bootstrap_storage
 from src.config_schema import validate_config as schema_validate_config
 from src.glucose_reader import read_all_patients
 from src.outputs import build_outputs
 from src.outputs.base import Notifier
 from src.outputs.multi_notifier import MultiNotifier
+from src.paths import get_cache_path, get_db_path, get_state_path
 from src.setup_status import check_setup
 from src.state import (
     clear_patient_state,
@@ -49,14 +50,22 @@ def configure_logging(config: dict) -> None:
     root.addHandler(handler)
 
 
-def acquire_lock(lock_path: str):
+def acquire_lock(lock_path: str, mode: str = "cron"):
     try:
         import fcntl
         lock_fd = open(lock_path, "w")
         fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         return lock_fd
     except ImportError:
-        logger.debug("fcntl not available, skipping file lock")
+        if mode in ("daemon", "full"):
+            logger.warning(
+                "fcntl is not available on this platform (Windows?). "
+                "File locking is disabled — running multiple instances of the daemon "
+                "simultaneously may cause data corruption. "
+                "Use a process supervisor that prevents duplicate instances."
+            )
+        else:
+            logger.debug("fcntl not available, skipping file lock")
         return None
     except OSError:
         logger.info("Another instance is running, exiting")
@@ -76,7 +85,7 @@ def release_lock(lock_fd) -> None:
 
 def _save_readings_cache(readings: list[dict], config: dict) -> None:
     """Write the latest readings to the configured cache file for API consumption."""
-    cache_path = get_readings_cache_path(config)
+    cache_path = get_cache_path(config)
     payload = {
         "readings": readings,
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -115,13 +124,9 @@ def run_once(
     long-running modes (``daemon``, ``full``) to construct the outputs once
     and reuse them across every polling cycle without re-reading config.
     """
-    state_path = config.get("state_file", "state.json")
-    if not os.path.isabs(state_path):
-        state_path = str(PROJECT_ROOT / state_path)
+    state_path = get_state_path(config)
 
-    db_path = config.get("alert_history_db", "alert_history.db")
-    if not os.path.isabs(db_path):
-        db_path = str(PROJECT_ROOT / db_path)
+    db_path = get_db_path(config)
     init_db(db_path)
 
     state = load_state(state_path)
@@ -262,6 +267,14 @@ def main() -> None:
     except OSError:
         pass  # Windows or other OS without Unix permissions
     logger.info("Config validation passed")
+
+    # Bootstrap: create/validate all persistent-storage files before use.
+    try:
+        bootstrap_storage(config)
+    except BootstrapError as exc:
+        logger.error("Storage bootstrap failed: %s", exc)
+        sys.exit(1)
+
     lock_path = config.get("lock_file", "/tmp/family-glucose-monitor.lock")
     if not os.path.isabs(lock_path):
         lock_path = str(PROJECT_ROOT / lock_path)
@@ -272,7 +285,7 @@ def main() -> None:
         return
 
     if mode == "full":
-        lock_fd = acquire_lock(lock_path)
+        lock_fd = acquire_lock(lock_path, mode="full")
         try:
             from src.api import set_external_polling, update_readings_cache
             set_external_polling(True)
@@ -298,7 +311,7 @@ def main() -> None:
             release_lock(lock_fd)
         return
 
-    lock_fd = acquire_lock(lock_path)
+    lock_fd = acquire_lock(lock_path, mode=mode)
     try:
         if mode == "daemon":
             interval = config.get("monitoring", {}).get("interval_seconds", 300)
