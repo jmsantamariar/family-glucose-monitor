@@ -85,7 +85,9 @@ docker run --rm --env-file .env \
   family-glucose-monitor
 ```
 
-> **Archivos de estado:** Los archivos `state.json`, `alert_history.db`, `sessions.db`, `readings_cache.json` y `push_subscriptions.db` deben existir en el host **antes** del primer arranque. Si no existen, Docker crea un directorio vacío en su lugar y la aplicación falla. Usa `touch` para crearlos vacíos.
+> **Archivos de estado:** Los archivos `state.json`, `alert_history.db`, `sessions.db` y `readings_cache.json` sí deben existir en el host **antes** del primer arranque. Si no existen y se montan con bind mounts de Docker, Docker puede crear un directorio vacío en su lugar y la aplicación falla. Usa `touch` para crearlos vacíos.
+>
+> **Web Push (opcional):** `push_subscriptions.db` se recomienda si quieres persistir las suscripciones de Web Push entre reinicios. Si el archivo no existe o no se monta correctamente, el canal Web Push puede quedar deshabilitado o perder persistencia, pero esto no debería impedir el arranque general de la aplicación.
 
 > **Setup wizard en Docker:** `config.yaml` se monta como solo lectura (`:ro`). El wizard de setup no puede escribir `config.yaml` desde dentro del contenedor. Genera `config.yaml` fuera del contenedor primero (ejecutando el wizard sin Docker o copiando `config.example.yaml`), y luego monta el archivo resultante.
 
