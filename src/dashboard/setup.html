@@ -614,15 +614,24 @@
           msg.style.display = 'block';
         } else {
           // Multiple chats found — render a selector
-          let html = '<label style="font-size:.85rem;font-weight:600">Selecciona el chat:</label>'
-            + '<select style="width:100%;margin-top:.3rem;padding:.45rem .75rem;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:.9rem"'
-            + ' onchange="document.getElementById(\'tgChatId\').value=this.value">';
+          const label = document.createElement('label');
+          label.style.cssText = 'font-size:.85rem;font-weight:600';
+          label.textContent = 'Selecciona el chat:';
+
+          const select = document.createElement('select');
+          select.style.cssText = 'width:100%;margin-top:.3rem;padding:.45rem .75rem;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:.9rem';
+          select.addEventListener('change', function() {
+            document.getElementById('tgChatId').value = this.value;
+          });
+
           for (const chat of data.chats) {
-            const label = chat.name ? `${chat.name} (${chat.id})` : chat.id;
-            html += `<option value="${chat.id}">${label}</option>`;
+            const option = document.createElement('option');
+            option.value = String(chat.id);
+            option.textContent = chat.name ? `${chat.name} (${chat.id})` : String(chat.id);
+            select.appendChild(option);
           }
-          html += '</select>';
-          sel.innerHTML = html;
+
+          sel.replaceChildren(label, select);
           sel.style.display = 'block';
           document.getElementById('tgChatId').value = data.chats[0].id;
           msg.textContent = `✅ Se encontraron ${data.chats.length} chats. Selecciona el correcto arriba.`;
