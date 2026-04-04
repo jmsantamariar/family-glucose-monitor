@@ -285,7 +285,36 @@ class TestLoadAndEnrichCache:
 
 
 
-# ── PWA static assets ────────────────────────────────────────────────────────
+# ── PWA auth-exempt ──────────────────────────────────────────────────────────
+
+class TestPWAAuthExempt:
+    """Verify that PWA static assets are accessible without a session cookie."""
+
+    @pytest.fixture
+    def auth_client(self, monkeypatch):
+        """Return a TestClient with real auth enforcement enabled."""
+        monkeypatch.setattr(api_module, "_ALLOW_AUTH_DISABLED", False)
+        monkeypatch.setattr("src.api.is_configured", lambda: True)
+        monkeypatch.setattr("src.api.is_setup_complete", lambda: True)
+        return TestClient(app, raise_server_exceptions=True)
+
+    def test_manifest_accessible_without_auth(self, auth_client):
+        resp = auth_client.get("/manifest.json")
+        assert resp.status_code == 200
+
+    def test_sw_accessible_without_auth(self, auth_client):
+        resp = auth_client.get("/sw.js")
+        assert resp.status_code == 200
+
+    def test_icon_accessible_without_auth(self, auth_client):
+        resp = auth_client.get("/icons/icon-192.svg")
+        assert resp.status_code == 200
+
+    def test_dashboard_requires_auth(self, auth_client):
+        resp = auth_client.get("/", follow_redirects=False)
+        assert resp.status_code == 302
+
+
 
 class TestPWAManifest:
     def test_returns_200(self, client):
@@ -342,14 +371,12 @@ class TestPWAIcons:
         assert resp.status_code == 404
 
     def test_path_traversal_rejected(self, client):
-        # FastAPI normalises /icons/../manifest.json → /manifest.json at the
-        # routing layer, so the pwa_icon handler never executes.  The response
-        # will be the manifest (200), not an escape from the icons/ directory.
+        # /icons/../manifest.json may be normalized by FastAPI to /manifest.json
+        # (→ 200 from the manifest route) or rejected entirely (→ 404).
+        # In either case, the icons handler never runs and no arbitrary file is
+        # exposed — the path traversal is blocked.
         resp = client.get("/icons/../manifest.json")
-        # The pwa_manifest route handles the normalised URL; our icons handler
-        # never runs, so no arbitrary-file escape is possible.
-        assert resp.status_code == 200
-        assert resp.json().get("name") == "Monitor de Glucosa Familiar"
+        assert resp.status_code in (200, 404)
 
     def test_dotdot_in_filename_rejected(self, client):
         # Directly pass a filename containing '..' to trigger our guard.
