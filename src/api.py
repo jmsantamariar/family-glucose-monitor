@@ -226,7 +226,13 @@ _AUTH_EXEMPT_PATHS = {
     "/api/logout",
     "/login",
     "/setup",
+    "/manifest.json",
+    "/sw.js",
 }
+
+_AUTH_EXEMPT_PREFIXES = (
+    "/icons/",
+)
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
@@ -235,6 +241,9 @@ async def auth_middleware(request: Request, call_next):
         return await call_next(request)
 
     if request.url.path in _AUTH_EXEMPT_PATHS:
+        return await call_next(request)
+
+    if request.url.path.startswith(_AUTH_EXEMPT_PREFIXES):
         return await call_next(request)
 
     token = request.cookies.get("session_token")
@@ -486,7 +495,7 @@ def pwa_icon(filename: str):
         path.relative_to(icons_dir.resolve())
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid icon filename")
-    if not path.exists():
+    if not path.is_file():
         raise HTTPException(status_code=404, detail=f"Icon '{filename}' not found")
     suffix = path.suffix.lower()
     media_type = _MIME_TYPES.get(suffix, "application/octet-stream")
