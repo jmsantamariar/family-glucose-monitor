@@ -82,14 +82,6 @@
       box-shadow: 0 2px 10px rgba(0,0,0,.3);
     }
 
-    header h1 {
-      font-size: 1.25rem;
-      font-weight: 700;
-      letter-spacing: .02em;
-    }
-
-    header h1 span { font-size: 1.5rem; margin-right: .4rem; }
-
     .header-right {
       display: flex;
       align-items: center;
@@ -307,6 +299,151 @@
     .alert-high   { background: var(--yellow-bg); color: var(--yellow-fg); }
     .alert-trend  { background: var(--green-bg);  color: var(--green-fg);  }
 
+    /* ── Hero header ───────────────────────────────────────────── */
+    header {
+      padding: 1.1rem 1.5rem;
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .header-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: .5rem;
+    }
+
+    .header-brand {
+      display: flex;
+      align-items: center;
+      gap: .9rem;
+    }
+
+    .header-icon {
+      font-size: 2.4rem;
+      line-height: 1;
+      filter: drop-shadow(0 0 10px rgba(255,120,120,.7));
+    }
+
+    .header-title {
+      font-size: 1.45rem;
+      font-weight: 800;
+      letter-spacing: .01em;
+      line-height: 1.2;
+    }
+
+    .title-family  { color: #ffffff; }
+    .title-glucose { color: #63b3ed; margin: 0 .25rem; }
+    .title-monitor { color: #ffffff; }
+
+    .header-subtitle {
+      font-size: .76rem;
+      color: rgba(255,255,255,.72);
+      display: flex;
+      align-items: center;
+      gap: .65rem;
+      margin-top: .2rem;
+    }
+
+    .live-badge {
+      background: rgba(72,187,120,.18);
+      color: #68d391;
+      border: 1px solid rgba(72,187,120,.45);
+      border-radius: 20px;
+      padding: .1rem .45rem;
+      font-weight: 700;
+      font-size: .7rem;
+      letter-spacing: .08em;
+      animation: live-pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes live-pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: .45; }
+    }
+
+    /* ── Alert strip ────────────────────────────────────────────── */
+    .alert-strip {
+      background: var(--surface);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      padding: .7rem 1rem;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .alert-strip-title {
+      font-size: .82rem;
+      font-weight: 700;
+      color: var(--subtext);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      white-space: nowrap;
+    }
+
+    .alert-strip-cards {
+      display: flex;
+      gap: .5rem;
+      flex-wrap: wrap;
+    }
+
+    .alert-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: .3rem .75rem;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: filter .15s, transform .1s;
+      min-width: 68px;
+      border: 2px solid transparent;
+      user-select: none;
+    }
+
+    .alert-card:hover  { filter: brightness(.9); transform: translateY(-1px); }
+    .alert-card.active { border-color: currentColor; }
+
+    .alert-card-total { background: var(--border);  color: var(--text);    }
+    .alert-card-high  { background: var(--yellow-bg); color: var(--yellow-fg); }
+    .alert-card-low   { background: #bee3f8; color: #2c5282; }
+    .alert-card-trend { background: #fed7aa; color: #7b341e; }
+
+    @media (prefers-color-scheme: dark) {
+      .alert-card-low   { background: #1a3a5c; color: #90cdf4; }
+      .alert-card-trend { background: #3b1a00; color: #fbd38d; }
+    }
+
+    .alert-card-count {
+      font-size: 1.35rem;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+
+    .alert-card-label {
+      font-size: .62rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      margin-top: .12rem;
+      text-align: center;
+    }
+
+    /* ── Mini sparkline ─────────────────────────────────────────── */
+    .mini-chart-cell {
+      padding: .4rem .5rem !important;
+      vertical-align: middle;
+    }
+
+    @media (max-width: 640px) {
+      .col-mini-chart { display: none; }
+    }
+
     /* ── Footer ────────────────────────────────────────────────── */
     footer {
       text-align: center;
@@ -320,7 +457,9 @@
 
     /* ── Responsive ─────────────────────────────────────────────── */
     @media (max-width: 640px) {
-      header h1 { font-size: 1rem; }
+      .header-title { font-size: 1.1rem; }
+      .header-icon  { font-size: 1.8rem; }
+      .header-subtitle { font-size: .7rem; }
       .glucose-value { font-size: 1.4rem; }
       thead th:nth-child(5),
       tbody td.col-trend-alert { display: none; }  /* hide trend alert col on small screens */
@@ -332,25 +471,64 @@
 <body>
 
 <header>
-  <h1><span>💉</span>Monitor de Glucosa Familiar</h1>
-  <div class="header-right">
-    <span id="clock">--:--:--</span>
-    <div class="status-badge">
-      <div class="status-dot" id="status-dot"></div>
-      <span id="status-label">Conectando…</span>
+  <div class="header-top">
+    <div class="header-brand">
+      <div class="header-icon">🩸</div>
+      <div>
+        <div class="header-title">
+          <span class="title-family">Family</span>
+          <span class="title-glucose">Glucose</span>
+          <span class="title-monitor">Monitor</span>
+        </div>
+        <div class="header-subtitle">
+          <span id="last-update">Última actualización: —</span>
+          <span class="live-badge">● LIVE</span>
+        </div>
+      </div>
     </div>
-    <a href="/configuracion" id="settings-btn" aria-label="Ir a Configuración del sistema" style="display:inline-flex;align-items:center;gap:.35rem;background:transparent;border:1px solid rgba(255,255,255,.4);color:inherit;border-radius:4px;padding:.25rem .6rem;cursor:pointer;font-size:.8rem;text-decoration:none;">
-      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-        <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-      </svg>
-      Configuración
-    </a>
-    <button id="logout-btn" title="Cerrar sesión" style="background:transparent;border:1px solid rgba(255,255,255,.4);color:inherit;border-radius:4px;padding:.25rem .6rem;cursor:pointer;font-size:.8rem;">⏏ Salir</button>
+    <div class="header-right">
+      <span id="clock">--:--:--</span>
+      <div class="status-badge">
+        <div class="status-dot" id="status-dot"></div>
+        <span id="status-label">Conectando…</span>
+      </div>
+      <a href="/configuracion" id="settings-btn" aria-label="Ir a Configuración del sistema" style="display:inline-flex;align-items:center;gap:.35rem;background:transparent;border:1px solid rgba(255,255,255,.4);color:inherit;border-radius:4px;padding:.25rem .6rem;cursor:pointer;font-size:.8rem;text-decoration:none;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+          <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        Configuración
+      </a>
+      <button id="logout-btn" title="Cerrar sesión" style="background:transparent;border:1px solid rgba(255,255,255,.4);color:inherit;border-radius:4px;padding:.25rem .6rem;cursor:pointer;font-size:.8rem;">⏏ Salir</button>
+    </div>
   </div>
 </header>
 
 <main>
+  <!-- ── Alert strip (last 24h summary) ───────────────────────── -->
+  <div id="alert-strip" class="alert-strip">
+    <span class="alert-strip-title">🔔 Historial de alertas (24h)</span>
+    <div class="alert-strip-cards">
+      <div class="alert-card alert-card-total" data-filter="" role="button" tabindex="0">
+        <span class="alert-card-count" id="strip-total">—</span>
+        <span class="alert-card-label">Alertas totales</span>
+      </div>
+      <div class="alert-card alert-card-high" data-filter="high" role="button" tabindex="0">
+        <span class="alert-card-count" id="strip-high">—</span>
+        <span class="alert-card-label">Alertas ALTA</span>
+      </div>
+      <div class="alert-card alert-card-low" data-filter="low" role="button" tabindex="0">
+        <span class="alert-card-count" id="strip-low">—</span>
+        <span class="alert-card-label">Alertas BAJA</span>
+      </div>
+      <div class="alert-card alert-card-trend" data-filter="trend" role="button" tabindex="0">
+        <span class="alert-card-count" id="strip-trend">—</span>
+        <span class="alert-card-label">Alertas tendencia</span>
+      </div>
+    </div>
+  </div>
+
   <!-- ── Current readings ─────────────────────────────────────── -->
+  <p class="section-title">📊 Lecturas actuales</p>
   <div class="table-wrap">
     <table id="patients-table">
       <thead>
@@ -361,11 +539,12 @@
           <th>Nivel</th>
           <th class="col-trend-alert">Alerta tendencia</th>
           <th>Última lectura</th>
+          <th class="col-mini-chart">Últimas 3h</th>
         </tr>
       </thead>
       <tbody id="patients-body">
         <tr>
-          <td colspan="6">
+          <td colspan="7">
             <div class="no-data">
               <span class="icon">⏳</span>
               <p>Cargando datos…</p>
@@ -545,13 +724,113 @@
     return d.innerHTML;
   }
 
+  // ── Alerts data store (for mini-charts and strip) ────────────────
+  let _alertsData = []; // all fetched alerts (last N hours, unfiltered by level)
+  let _levelFilter = null; // null | 'high' | 'low' | 'trend'
+
+  // ── Update hero header subtitle ──────────────────────────────────
+  function updateLastUpdateLabel(isoTimestamp) {
+    const el = document.getElementById('last-update');
+    if (!el || !isoTimestamp) return;
+    const d = new Date(isoTimestamp);
+    el.textContent = 'Última actualización: ' + d.toLocaleString('es-ES', {
+      month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit',
+    });
+  }
+
+  // ── Mini sparkline SVG ───────────────────────────────────────────
+  const MINI_LOW  = 70;   // mg/dL — threshold low
+  const MINI_HIGH = 200;  // mg/dL — threshold high
+  const MINI_YMIN = 40;   // display min
+  const MINI_YMAX = 400;  // display max
+
+  function buildMiniChart(patientId, currentGlucose) {
+    const W = 120, H = 40;
+    const now           = Date.now();
+    const threeHoursAgo = now - 3 * 60 * 60 * 1000;
+
+    // Collect alert points for this patient in the last 3 hours
+    const pts = _alertsData
+      .filter(a => a.patient_id === patientId && new Date(a.timestamp).getTime() >= threeHoursAgo)
+      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+      .map(a => ({ t: new Date(a.timestamp).getTime(), v: Number(a.glucose_value) }));
+
+    // Append current reading if it isn't already the last point
+    const cg = Number(currentGlucose);
+    if (!isNaN(cg) && cg > 0) {
+      if (!pts.length || (now - pts[pts.length - 1].t) > 60000) {
+        pts.push({ t: now, v: cg });
+      }
+    }
+
+    const toY = v => H - Math.max(0, Math.min(H, ((v - MINI_YMIN) / (MINI_YMAX - MINI_YMIN)) * H));
+    const toX = t => Math.max(0, Math.min(W, ((t - threeHoursAgo) / (now - threeHoursAgo)) * W));
+
+    const highY = toY(MINI_HIGH);
+    const lowY  = toY(MINI_LOW);
+
+    if (!pts.length) {
+      return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="border-radius:4px;border:1px solid var(--border);display:block">` +
+        `<rect width="${W}" height="${H}" fill="rgba(154,230,180,.15)"/>` +
+        `<text x="${W/2}" y="${H/2+4}" text-anchor="middle" font-size="9" fill="#a0aec0">sin datos</text>` +
+        `</svg>`;
+    }
+
+    const mapped = pts.map(p => ({ x: toX(p.t), y: toY(p.v) }));
+    const path   = mapped.map((p, i) => (i === 0 ? `M${p.x.toFixed(1)},${p.y.toFixed(1)}` : `L${p.x.toFixed(1)},${p.y.toFixed(1)}`)).join(' ');
+    const dots   = mapped.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.5" fill="rgba(45,55,72,.85)"/>`).join('');
+
+    return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="border-radius:4px;border:1px solid var(--border);display:block">` +
+      `<rect x="0" y="0" width="${W}" height="${highY.toFixed(1)}" fill="rgba(252,129,129,.28)"/>` +
+      `<rect x="0" y="${highY.toFixed(1)}" width="${W}" height="${Math.max(0, lowY - highY).toFixed(1)}" fill="rgba(154,230,180,.28)"/>` +
+      `<rect x="0" y="${lowY.toFixed(1)}" width="${W}" height="${Math.max(0, H - lowY).toFixed(1)}" fill="rgba(144,205,244,.28)"/>` +
+      `<path d="${path}" fill="none" stroke="rgba(45,55,72,.8)" stroke-width="1.5" stroke-linejoin="round"/>` +
+      dots +
+      `</svg>`;
+  }
+
+  // ── Alert strip counters ─────────────────────────────────────────
+  function updateAlertStrip(alerts) {
+    const total = alerts.length;
+    const high  = alerts.filter(a => a.level === 'high').length;
+    const low   = alerts.filter(a => a.level === 'low').length;
+    const trend = alerts.filter(a => a.level && a.level.startsWith('trend_')).length;
+
+    document.getElementById('strip-total').textContent = total;
+    document.getElementById('strip-high').textContent  = high;
+    document.getElementById('strip-low').textContent   = low;
+    document.getElementById('strip-trend').textContent = trend;
+  }
+
+  // ── Alert strip level filter ─────────────────────────────────────
+  function applyLevelFilter(filter) {
+    _levelFilter = _levelFilter === filter ? null : filter;
+    document.querySelectorAll('.alert-card').forEach(card => {
+      card.classList.toggle('active', card.dataset.filter === (_levelFilter || '') && _levelFilter !== null);
+    });
+    const filtered = _levelFilter
+      ? _alertsData.filter(a => {
+          if (_levelFilter === 'trend') return a.level && a.level.startsWith('trend_');
+          return a.level === _levelFilter;
+        })
+      : _alertsData;
+    updateHistory(filtered, /* skipStore= */ true);
+    document.getElementById('history-body').closest('.table-wrap')
+      .scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  document.querySelectorAll('.alert-card').forEach(card => {
+    card.addEventListener('click', () => applyLevelFilter(card.dataset.filter || null));
+    card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') applyLevelFilter(card.dataset.filter || null); });
+  });
   // ── Table update (current readings) ─────────────────────────────
   function updateTable(patients) {
     const tbody = document.getElementById('patients-body');
 
     if (!patients || patients.length === 0) {
       tbody.innerHTML = `
-        <tr><td colspan="6">
+        <tr><td colspan="7">
           <div class="no-data">
             <span class="icon">📭</span>
             <p>Sin datos — esperando lecturas…</p>
@@ -568,6 +847,7 @@
       const level      = levelLabel(p.level);
       const trendAlert = trendAlertLabel(p.trend_alert);
       const timeSince  = formatTimeSince(p.fetched_at || p.timestamp);
+      const miniChart  = buildMiniChart(p.patient_id, glucose);
 
       return `
         <tr class="${rowClass}">
@@ -580,6 +860,7 @@
           <td><span class="level-badge">${escapeHtml(level)}</span></td>
           <td class="trend-alert-text col-trend-alert">${trendAlert}</td>
           <td class="time-text">${escapeHtml(timeSince)}</td>
+          <td class="mini-chart-cell col-mini-chart">${miniChart}</td>
         </tr>`;
     }).join('');
   }
@@ -783,7 +1064,13 @@
   }
 
   // ── History table update ─────────────────────────────────────────
-  function updateHistory(alerts) {
+  function updateHistory(alerts, skipStore) {
+    // Store raw 24h alerts for mini-charts and strip (only when fetched fresh)
+    if (!skipStore) {
+      _alertsData = alerts || [];
+      updateAlertStrip(_alertsData);
+    }
+
     const tbody = document.getElementById('history-body');
 
     if (!alerts || alerts.length === 0) {
@@ -794,6 +1081,7 @@
             <p>Sin alertas en el período seleccionado.</p>
           </div>
         </td></tr>`;
+      renderCharts([]);
       return;
     }
 
@@ -840,6 +1128,23 @@
   }
 
   // ── Fetch history ────────────────────────────────────────────────
+  // ── Fetch alert summary (always 24h — feeds strip & mini-charts) ─
+  let _lastPatients = null; // cache to re-render table after alert load
+
+  async function fetchAlertSummary() {
+    try {
+      const resp = await fetch('/api/alerts?hours=24');
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const alerts = await resp.json();
+      _alertsData = alerts;
+      updateAlertStrip(alerts);
+      // Re-render patient table so mini-charts reflect updated alert data
+      if (_lastPatients) updateTable(_lastPatients);
+    } catch (e) {
+      console.error('Error al obtener resumen de alertas:', e);
+    }
+  }
+
   async function fetchHistory() {
     const patientId = document.getElementById('patient-filter').value;
     const hours     = document.getElementById('hours-filter').value;
@@ -866,8 +1171,10 @@
       const resp = await fetch('/api/patients');
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
+      _lastPatients = data.patients;
       updateTable(data.patients);
       updatePatientFilter(data.patients);
+      updateLastUpdateLabel(new Date().toISOString());
       setStatus('connected');
     } catch (e) {
       setStatus('disconnected');
@@ -876,8 +1183,10 @@
   }
 
   setInterval(fetchPatients, 30000);
+  setInterval(fetchAlertSummary, 60000);
   setInterval(fetchHistory, 60000);
   fetchPatients();
+  fetchAlertSummary();
   fetchHistory();
 
   async function logout() {
