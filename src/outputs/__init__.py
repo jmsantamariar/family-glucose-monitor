@@ -41,8 +41,11 @@ def build_outputs(config: dict) -> list[BaseOutput]:
                 language_code=out_cfg.get("language_code", "es_MX"),
             ))
         elif out_type == "telegram":
+            # Accept legacy "token" key from configs written before the field
+            # was renamed to "bot_token" (bug fixed in wizard April 2026).
+            bot_token = out_cfg.get("bot_token") or out_cfg.get("token", "")
             outputs.append(TelegramOutput(
-                bot_token=out_cfg["bot_token"],
+                bot_token=bot_token,
                 chat_id=out_cfg["chat_id"],
             ))
         else:
