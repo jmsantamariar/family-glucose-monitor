@@ -393,7 +393,9 @@ docker run --rm --env-file .env \
 
 > **Nota:** El Dockerfile expone el puerto 8080 y arranca con `python -m src.main`. Para el modo `full` o `dashboard`, asegúrate de que `monitoring.mode` esté configurado correctamente en `config.yaml`.
 >
-> **Archivos de estado:** Los archivos `state.json`, `alert_history.db`, `sessions.db`, `readings_cache.json` y `push_subscriptions.db` deben existir en el host **antes** del primer arranque. Si no existen, Docker crea un directorio vacío en su lugar y la aplicación falla. Usa `touch` para crearlos vacíos.
+> **Archivos de estado:** Los archivos `state.json`, `alert_history.db`, `sessions.db`, `readings_cache.json` y `push_subscriptions.db` conviene crearlos en el host **antes** del primer arranque. Si no existen, Docker puede crear un directorio vacío en su lugar al hacer el bind-mount, lo que rompe la persistencia esperada y puede provocar errores. Usa `touch` para crearlos vacíos.
+> 
+> En particular, `push_subscriptions.db` debe existir si quieres persistir las suscripciones web push y evitar que Docker monte un directorio en su lugar. Si falta, la funcionalidad de push puede no inicializarse correctamente, pero no debería bloquear el arranque del resto de canales de notificación.
 >
 > **Setup wizard en Docker:** `config.yaml` se monta como solo lectura (`:ro`). El wizard de setup no puede escribir `config.yaml` desde dentro del contenedor. Genera `config.yaml` fuera del contenedor primero (ejecutando el wizard sin Docker o copiando `config.example.yaml`), y luego monta el archivo resultante.
 
