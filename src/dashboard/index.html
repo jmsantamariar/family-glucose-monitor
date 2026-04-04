@@ -13,6 +13,8 @@
   <meta name="apple-mobile-web-app-title" content="Glucosa" />
   <link rel="apple-touch-icon" href="/icons/icon-192.svg" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <!-- DSEG7 digital display font for glucose numbers -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dseg@0.46.0/css/dseg.min.css" />
   <style>
     /* ── Reset & Variables ─────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -33,12 +35,18 @@
       --red-bg:    #fed7d7;
       --red-fg:    #742a2a;
 
-      --status-ok:  #48bb78;
-      --status-err: #fc8181;
+      --status-ok:   #48bb78;
+      --status-warn: #f6ad55;
+      --status-err:  #fc8181;
 
       --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
       --radius: 10px;
       --shadow: 0 2px 8px rgba(0,0,0,.08);
+
+      --blue-bg:  #bee3f8;
+      --blue-fg:  #2c5282;
+      --orange-bg: #feebc8;
+      --orange-fg: #7b341e;
     }
 
     @media (prefers-color-scheme: dark) {
@@ -56,6 +64,10 @@
         --yellow-fg: #f6e05e;
         --red-bg:    #3b1515;
         --red-fg:    #feb2b2;
+        --blue-bg:   #1a3a5c;
+        --blue-fg:   #90cdf4;
+        --orange-bg: #3b1a00;
+        --orange-fg: #fbd38d;
       }
     }
 
@@ -111,9 +123,20 @@
       transition: background .3s, box-shadow .3s;
     }
 
+    .status-dot.warn {
+      background: var(--status-warn);
+      box-shadow: 0 0 6px var(--status-warn);
+      animation: warn-pulse 1.5s ease-in-out infinite;
+    }
+
     .status-dot.err {
       background: var(--status-err);
       box-shadow: 0 0 6px var(--status-err);
+    }
+
+    @keyframes warn-pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: .35; }
     }
 
     /* ── Main content ──────────────────────────────────────────── */
@@ -176,30 +199,82 @@
     }
 
     /* ── Row colors ────────────────────────────────────────────── */
-    .row-normal  { background: var(--green-bg);  color: var(--green-fg);  }
-    .row-warning { background: var(--yellow-bg); color: var(--yellow-fg); }
-    .row-danger  { background: var(--red-bg);    color: var(--red-fg);    }
+    .row-normal       { background: var(--green-bg);  color: var(--green-fg);  }
+    .row-warning      { background: var(--yellow-bg); color: var(--yellow-fg); animation: pulse-warning 2.5s ease-in-out infinite; }
+    .row-danger       { background: var(--red-bg);    color: var(--red-fg);    animation: pulse-danger 2s ease-in-out infinite; }
+    .row-danger-low   { background: var(--blue-bg);   color: var(--blue-fg);   animation: pulse-low 2s ease-in-out infinite; }
+    .row-trending-up  { background: var(--orange-bg); color: var(--orange-fg); }
+    .row-trending-down{ background: var(--blue-bg);   color: var(--blue-fg);   opacity: .85; }
 
-    /* ── Glucose value ─────────────────────────────────────────── */
+    @keyframes pulse-warning {
+      0%, 100% { background: var(--yellow-bg); }
+      50%       { background: #f6e05e; }
+    }
+    @keyframes pulse-danger {
+      0%, 100% { background: var(--red-bg); }
+      50%       { background: #fc8181; }
+    }
+    @keyframes pulse-low {
+      0%, 100% { background: var(--blue-bg); }
+      50%       { background: #90cdf4; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .row-warning, .row-danger, .row-danger-low { animation: none; }
+      .status-dot.warn { animation: none; }
+    }
+
+    /* ── Digital glucose display ───────────────────────────────── */
+    .glucose-display {
+      display: inline-flex;
+      align-items: baseline;
+      gap: .25rem;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: .15rem .55rem .15rem .45rem;
+    }
+
     .glucose-value {
+      font-family: 'DSEG7 Classic', 'Courier New', monospace;
       font-size: 1.8rem;
-      font-weight: 800;
+      font-weight: normal;
       font-variant-numeric: tabular-nums;
+      letter-spacing: .08em;
       line-height: 1;
+      color: #00e676;
+      transition: color .3s, text-shadow .3s;
+    }
+
+    .glucose-value.trending-up {
+      color: #ff5555;
+      text-shadow: 0 0 8px #ff4444, 0 0 16px #ff2222;
+    }
+
+    .glucose-value.trending-down {
+      color: #5599ff;
+      text-shadow: 0 0 8px #4488ff, 0 0 16px #2266ff;
     }
 
     .glucose-unit {
-      font-size: .7rem;
-      font-weight: 400;
-      margin-left: .2rem;
-      opacity: .8;
+      font-size: .65rem;
+      font-weight: 600;
+      font-family: var(--font);
+      color: rgba(200,200,200,.7);
+      margin-left: .05rem;
     }
 
     /* ── Trend arrow ───────────────────────────────────────────── */
-    .trend-arrow {
-      font-size: 1.6rem;
+    .trend-arrow-icon {
+      font-size: 2rem;
       line-height: 1;
+      display: inline-block;
+      font-weight: bold;
+      transition: color .3s;
     }
+
+    .trend-up-fast, .trend-up   { color: #fc8181; }
+    .trend-down-fast,.trend-down { color: #63b3ed; }
+    .trend-stable               { color: var(--subtext); }
 
     /* ── Level badge ───────────────────────────────────────────── */
     .level-badge {
@@ -408,15 +483,10 @@
     .alert-card:hover  { filter: brightness(.9); transform: translateY(-1px); }
     .alert-card.active { border-color: currentColor; }
 
-    .alert-card-total { background: var(--border);  color: var(--text);    }
-    .alert-card-high  { background: var(--yellow-bg); color: var(--yellow-fg); }
-    .alert-card-low   { background: #bee3f8; color: #2c5282; }
-    .alert-card-trend { background: #fed7aa; color: #7b341e; }
-
-    @media (prefers-color-scheme: dark) {
-      .alert-card-low   { background: #1a3a5c; color: #90cdf4; }
-      .alert-card-trend { background: #3b1a00; color: #fbd38d; }
-    }
+    .alert-card-total { background: var(--border);    color: var(--text);       }
+    .alert-card-high  { background: var(--yellow-bg); color: var(--yellow-fg);  }
+    .alert-card-low   { background: var(--blue-bg);   color: var(--blue-fg);    }
+    .alert-card-trend { background: var(--orange-bg); color: var(--orange-fg);  }
 
     .alert-card-count {
       font-size: 1.35rem;
@@ -444,6 +514,82 @@
       .col-mini-chart { display: none; }
     }
 
+    /* ── Expandable patient row ─────────────────────────────────── */
+    .patient-row {
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .patient-row td:first-child::before {
+      content: '▶';
+      display: inline-block;
+      margin-right: .45rem;
+      font-size: .6rem;
+      opacity: .45;
+      transition: transform .2s, opacity .2s;
+      vertical-align: middle;
+    }
+
+    .patient-row.expanded td:first-child::before {
+      transform: rotate(90deg);
+      opacity: .75;
+    }
+
+    .expanded-details-row {
+      display: none;
+    }
+
+    .expanded-details-row.visible {
+      display: table-row;
+    }
+
+    .expanded-panel {
+      padding: .9rem 1.1rem;
+      background: var(--surface);
+      color: var(--text);
+      border-top: 2px solid var(--border);
+    }
+
+    .expanded-stats {
+      display: flex;
+      gap: .75rem;
+      flex-wrap: wrap;
+      margin-bottom: .6rem;
+    }
+
+    .stat-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: .4rem .7rem;
+      background: var(--bg);
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      min-width: 75px;
+    }
+
+    .stat-value {
+      font-size: 1.25rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.2;
+    }
+
+    .stat-label {
+      font-size: .6rem;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--subtext);
+      margin-top: .15rem;
+      text-align: center;
+    }
+
+    .expanded-trend-note {
+      font-size: .82rem;
+      color: var(--subtext);
+      margin-top: .4rem;
+    }
+
     /* ── Footer ────────────────────────────────────────────────── */
     footer {
       text-align: center;
@@ -460,7 +606,8 @@
       .header-title { font-size: 1.1rem; }
       .header-icon  { font-size: 1.8rem; }
       .header-subtitle { font-size: .7rem; }
-      .glucose-value { font-size: 1.4rem; }
+      .glucose-value { font-size: 1.3rem; }
+      .trend-arrow-icon { font-size: 1.6rem; }
       thead th:nth-child(5),
       tbody td.col-trend-alert { display: none; }  /* hide trend alert col on small screens */
       table { font-size: .88rem; }
@@ -642,12 +789,17 @@
   updateClock();
 
   // ── Status indicator ────────────────────────────────────────────
+  let _failCount = 0; // consecutive fetch failures — drives reconnecting vs disconnected state
+
   function setStatus(state) {
-    const dot = document.getElementById('status-dot');
+    const dot   = document.getElementById('status-dot');
     const label = document.getElementById('status-label');
+    dot.className = 'status-dot';
     if (state === 'connected') {
-      dot.classList.remove('err');
       label.textContent = 'Conectado';
+    } else if (state === 'reconnecting') {
+      dot.classList.add('warn');
+      label.textContent = 'Reconectando…';
     } else {
       dot.classList.add('err');
       label.textContent = 'Sin conexión';
@@ -656,8 +808,15 @@
 
   // ── Helpers ─────────────────────────────────────────────────────
   function getRowClass(patient) {
-    if (patient.color === 'red')    return 'row-danger';
+    if (patient.color === 'red') {
+      // Distinguish high vs. low alert by level field
+      return patient.level === 'low' ? 'row-danger-low' : 'row-danger';
+    }
     if (patient.color === 'yellow') return 'row-warning';
+    // Subtle gradient for trend alerts when still in normal range
+    const ta = patient.trend_alert;
+    if (ta === 'rising' || ta === 'rising_fast')   return 'row-trending-up';
+    if (ta === 'falling' || ta === 'falling_fast') return 'row-trending-down';
     return 'row-normal';
   }
 
@@ -698,13 +857,35 @@
     return 'alert-trend';
   }
 
-  function trendArrowDisplay(arrow, trendName) {
+  function trendArrowHtml(arrow, trendName) {
     const map = {
-      'SingleUp': '↑', 'FortyFiveUp': '↗', 'Flat': '→',
-      'FortyFiveDown': '↘', 'SingleDown': '↓'
+      'DoubleUp':      { char: '⬆', cls: 'trend-up-fast',   label: 'Subiendo muy rápido' },
+      'SingleUp':      { char: '↑', cls: 'trend-up-fast',   label: 'Subiendo rápido' },
+      'FortyFiveUp':   { char: '↗', cls: 'trend-up',        label: 'Subiendo' },
+      'Flat':          { char: '→', cls: 'trend-stable',    label: 'Estable' },
+      'FortyFiveDown': { char: '↘', cls: 'trend-down',      label: 'Bajando' },
+      'SingleDown':    { char: '↓', cls: 'trend-down-fast', label: 'Bajando rápido' },
+      'DoubleDown':    { char: '⬇', cls: 'trend-down-fast', label: 'Bajando muy rápido' },
     };
-    if (!arrow && trendName) return map[trendName] || trendName;
-    return arrow || '→';
+    // Legacy arrow characters passed directly
+    const charFallback = {
+      '↑': { cls: 'trend-up-fast', label: 'Subiendo rápido' },
+      '↗': { cls: 'trend-up',      label: 'Subiendo' },
+      '→': { cls: 'trend-stable',  label: 'Estable' },
+      '↘': { cls: 'trend-down',    label: 'Bajando' },
+      '↓': { cls: 'trend-down-fast', label: 'Bajando rápido' },
+    };
+    const key = trendName || '';
+    const cfg = map[key] || (arrow && charFallback[arrow]) || { cls: 'trend-stable', label: '' };
+    const ch  = map[key] ? map[key].char : (arrow || '→');
+    return `<span class="trend-arrow-icon ${cfg.cls}" title="${cfg.label}" aria-label="${cfg.label}">${ch}</span>`;
+  }
+
+  function getGlucoseTrendClass(trendAlert) {
+    if (!trendAlert || trendAlert === 'normal') return '';
+    if (trendAlert === 'rising'  || trendAlert === 'rising_fast')  return 'trending-up';
+    if (trendAlert === 'falling' || trendAlert === 'falling_fast') return 'trending-down';
+    return '';
   }
 
   function trendAlertLabel(trendAlert) {
@@ -840,6 +1021,11 @@
       }
     });
   });
+  // ── Helper: is this rowClass an alert state? ───────────────────
+  function isAlertRowClass(rc) {
+    return rc === 'row-danger' || rc === 'row-danger-low' || rc === 'row-warning';
+  }
+
   // ── Table update (current readings) ─────────────────────────────
   function updateTable(patients) {
     const tbody = document.getElementById('patients-body');
@@ -855,30 +1041,92 @@
       return;
     }
 
+    // Remember which rows were manually expanded (so we don't collapse on refresh)
+    const manuallyExpanded = new Set();
+    tbody.querySelectorAll('.patient-row.expanded').forEach(row => {
+      // Only persist manual expansions; alert rows are always auto-expanded
+      if (!row.classList.contains('row-danger') &&
+          !row.classList.contains('row-danger-low') &&
+          !row.classList.contains('row-warning')) {
+        manuallyExpanded.add(row.dataset.patientId);
+      }
+    });
+
     tbody.innerHTML = patients.map(p => {
-      const rowClass   = getRowClass(p);
-      const name       = escapeHtml(p.patient_name || p.patient_id);
-      const glucose    = p.glucose_value ?? p.value ?? '—';
-      const arrow      = trendArrowDisplay(p.trend_arrow, p.trend_name);
-      const level      = levelLabel(p.level);
-      const trendAlert = trendAlertLabel(p.trend_alert);
-      const timeSince  = formatTimeSince(p.fetched_at || p.timestamp);
-      const miniChart  = buildMiniChart(p.patient_id, glucose);
+      const rowClass      = getRowClass(p);
+      const name          = escapeHtml(p.patient_name || p.patient_id);
+      const glucose       = p.glucose_value ?? p.value ?? '—';
+      const arrowHtml     = trendArrowHtml(p.trend_arrow, p.trend_name);
+      const level         = levelLabel(p.level);
+      const trendAlert    = trendAlertLabel(p.trend_alert);
+      const timeSince     = formatTimeSince(p.fetched_at || p.timestamp);
+      const miniChart     = buildMiniChart(p.patient_id, glucose);
+      const glucoseClass  = getGlucoseTrendClass(p.trend_alert);
+      const pid           = escapeHtml(String(p.patient_id));
+
+      // Auto-expand for alert states; preserve manual expansion for normal rows
+      const isExpanded    = isAlertRowClass(rowClass) || manuallyExpanded.has(String(p.patient_id));
+
+      const glucoseStr    = String(glucose);
 
       return `
-        <tr class="${rowClass}">
+        <tr class="patient-row ${rowClass}${isExpanded ? ' expanded' : ''}"
+            data-patient-id="${pid}" tabindex="0" role="button" aria-expanded="${isExpanded}">
           <td class="patient-name">${name}</td>
           <td>
-            <span class="glucose-value">${escapeHtml(glucose)}</span>
-            <span class="glucose-unit">mg/dL</span>
+            <span class="glucose-display">
+              <span class="glucose-value${glucoseClass ? ' ' + glucoseClass : ''}">${escapeHtml(glucoseStr)}</span>
+              <span class="glucose-unit">mg/dL</span>
+            </span>
           </td>
-          <td class="trend-arrow">${escapeHtml(arrow)}</td>
+          <td>${arrowHtml}</td>
           <td><span class="level-badge">${escapeHtml(level)}</span></td>
           <td class="trend-alert-text col-trend-alert">${trendAlert}</td>
           <td class="time-text">${escapeHtml(timeSince)}</td>
           <td class="mini-chart-cell col-mini-chart">${miniChart}</td>
+        </tr>
+        <tr class="expanded-details-row${isExpanded ? ' visible' : ''}" data-patient-id="${pid}">
+          <td colspan="7">
+            <div class="expanded-panel">
+              <div class="expanded-stats">
+                <div class="stat-box">
+                  <span class="stat-value">${escapeHtml(glucoseStr)}</span>
+                  <span class="stat-label">mg/dL actual</span>
+                </div>
+                <div class="stat-box">
+                  <span class="stat-value">${escapeHtml(level)}</span>
+                  <span class="stat-label">Nivel</span>
+                </div>
+                <div class="stat-box">
+                  <span class="stat-value">${escapeHtml(timeSince)}</span>
+                  <span class="stat-label">Última lectura</span>
+                </div>
+              </div>
+              <p class="expanded-trend-note">
+                ${trendAlert !== '—'
+                  ? `<span aria-hidden="true">📊</span> <span>Tendencia: ${trendAlert}</span>`
+                  : `<span aria-hidden="true">✅</span> <span>Tendencia estable</span>`}
+              </p>
+            </div>
+          </td>
         </tr>`;
     }).join('');
+
+    // Attach click/keyboard handlers for row expansion
+    tbody.querySelectorAll('.patient-row').forEach(row => {
+      row.addEventListener('click',   ()  => _toggleExpanded(row));
+      row.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _toggleExpanded(row); }
+      });
+    });
+  }
+
+  function _toggleExpanded(row) {
+    const detailsRow = row.nextElementSibling;
+    if (!detailsRow || !detailsRow.classList.contains('expanded-details-row')) return;
+    const nowExpanded = detailsRow.classList.toggle('visible');
+    row.classList.toggle('expanded', nowExpanded);
+    row.setAttribute('aria-expanded', String(nowExpanded));
   }
 
   // ── Chart instances ──────────────────────────────────────────────
@@ -1112,7 +1360,12 @@
         <tr class="${rowClass}">
           <td class="time-text">${dt}</td>
           <td class="patient-name">${name}</td>
-          <td><span class="glucose-value" style="font-size:1.1rem">${glucose}</span><span class="glucose-unit">mg/dL</span></td>
+          <td>
+            <span class="glucose-display" style="font-size:.85em">
+              <span class="glucose-value">${glucose}</span>
+              <span class="glucose-unit">mg/dL</span>
+            </span>
+          </td>
           <td><span class="level-badge">${level}</span></td>
           <td style="font-size:.82rem">${msg}</td>
         </tr>`;
@@ -1188,12 +1441,14 @@
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
       _lastPatients = data.patients;
+      _failCount = 0;
       updateTable(data.patients);
       updatePatientFilter(data.patients);
       updateLastUpdateLabel(new Date().toISOString());
       setStatus('connected');
     } catch (e) {
-      setStatus('disconnected');
+      _failCount++;
+      setStatus(_failCount <= 2 ? 'reconnecting' : 'disconnected');
       console.error('Error al obtener datos:', e);
     }
   }
