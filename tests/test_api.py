@@ -626,7 +626,6 @@ class TestApiSaveConfiguracion:
         from src.crypto import encrypt_value
 
         original_encrypted = encrypt_value("oldpassword")
-        import src.api as api_module
         api_module._config["librelinkup"]["password"] = original_encrypted
 
         client.post("/api/configuracion", json={
