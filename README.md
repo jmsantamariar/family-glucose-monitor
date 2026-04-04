@@ -25,6 +25,7 @@ Para **familias** donde uno o varios miembros usan un sensor FreeStyle Libre y t
 - 🔔 Notificaciones push en el navegador (Web Push / VAPID) — suscripción desde el dashboard
 - 📱 **PWA instalable en Android** (y escritorio) — icono en pantalla de inicio, modo standalone, soporte offline
 - 🖥️ Dashboard web autenticado con semáforo de colores y gráficos por paciente
+- ⚙️ **Pantalla de Configuración integrada** — edita credenciales, umbrales y Telegram desde el navegador sin tocar `config.yaml`
 - 🔐 Autenticación con sesiones persistentes (SQLite) y contraseñas PBKDF2
 - 🔒 Credenciales de LibreLinkUp encriptadas en disco (Fernet/AES-128-CBC + HMAC-SHA256)
 - 📊 API REST externa autenticada para widgets, Home Assistant e integraciones locales
@@ -195,6 +196,7 @@ src/
   alert_engine.py        ← evalúa umbrales, cooldown, construye mensajes
   state.py               ← persistencia JSON por patient_id (escritura atómica)
   api.py                 ← dashboard web + API interna autenticada (modo dashboard/full)
+  connection_tester.py   ← funciones reutilizables para probar LibreLinkUp y Telegram
   api_server.py          ← API REST externa autenticada de solo lectura (para widgets/apps)
   auth.py                ← gestión de sesiones y credenciales del dashboard
   alert_history.py       ← historial de alertas en SQLite (via SQLAlchemy ORM)
@@ -218,6 +220,7 @@ src/
     sw.js                ← Service Worker: maneja eventos push y notificationclick
     login.html           ← página de login
     setup.html           ← wizard de configuración inicial
+    configuracion.html   ← pantalla de configuración (accesible desde el dashboard)
 tests/
   conftest.py
   test_alert_engine.py
@@ -283,9 +286,71 @@ export LIBRELINKUP_PASSWORD="tu-contraseña"
 export WHATSAPP_ACCESS_TOKEN="token_whatsapp"
 ```
 
+---
+
+## ⚙️ Pantalla de Configuración (después del setup inicial)
+
+Una vez que el sistema está configurado y has iniciado sesión, puedes modificar la configuración directamente desde el navegador, sin tocar `config.yaml` manualmente.
+
+### Acceso
+
+En la cabecera superior derecha del dashboard aparece el botón **⚙️ Configuración**, justo antes del botón "Salir". Al hacer clic accedes a `/configuracion`.
+
+### Qué puedes editar
+
+| Sección | Campos editables |
+|---------|-----------------|
+| **Cuenta LibreLinkUp** | Email, contraseña (opcional), región |
+| **Alertas** | Umbral bajo, umbral alto, minutos entre alertas (cooldown), antigüedad máxima de lectura |
+| **Notificaciones** | Activar/desactivar Telegram, bot token, chat ID |
+
+> **Nota sobre el acceso al dashboard (usuario/contraseña de login):** No es posible cambiar las credenciales del dashboard desde esta pantalla. Para modificarlas usa el wizard inicial (`/setup`) o edita `config.yaml` manualmente con un hash PBKDF2. Esta limitación existe deliberadamente para evitar riesgos de seguridad.
+
+### Manejo de secretos
+
+- Los campos de contraseña y bot token **nunca se muestran en texto claro**. Cuando ya hay un valor guardado, aparece un indicador ("Contraseña guardada") y el campo queda vacío.
+- Si dejas un campo de contraseña/token **vacío al guardar**, el valor existente se **conserva automáticamente** sin ser sobreescrito.
+- Para cambiar un secreto, escribe el nuevo valor en el campo correspondiente y guarda.
+
+### Prueba de conexiones desde la UI
+
+La pantalla incluye dos acciones de prueba que realizan comprobaciones reales de red:
+
+#### 🔍 Probar conexión con LibreLinkUp
+- Usa los valores **actualmente escritos en el formulario** (incluso si aún no se han guardado).
+- Si el campo de contraseña está vacío, usa la contraseña guardada.
+- Resultados posibles:
+  - ✅ Conexión exitosa + lista de pacientes con sus valores actuales
+  - ❌ Credenciales inválidas
+  - ❌ Región inválida
+  - ❌ Sin pacientes vinculados
+  - ❌ Error de red / timeout
+
+#### 📨 Probar Telegram
+- Usa los valores **actualmente escritos en el formulario**.
+- Si el campo de token está vacío, usa el token guardado.
+- Envía un mensaje de prueba real al chat configurado.
+- Resultados posibles:
+  - ✅ Telegram configurado correctamente
+  - ❌ Token de bot inválido
+  - ❌ Chat ID inválido
+  - ❌ No se pudo enviar mensaje de prueba
+
+### Comportamiento al guardar
+
+| Tipo de cambio | ¿Cuándo se aplica? |
+|----------------|-------------------|
+| Umbrales de alerta | **Inmediatamente** (se actualiza la configuración en memoria) |
+| Credenciales de LibreLinkUp | En el **próximo ciclo de polling** (sin reinicio del proceso) |
+| Configuración de Telegram | En la **próxima alerta** enviada |
+
+Tras guardar exitosamente aparece el mensaje: **"Configuración guardada correctamente."**
+
+---
+
 ### Telegram — configuración del bot
 
-#### Opción A — Wizard de configuración (recomendado)
+#### Opción A — Wizard de configuración inicial (primera instalación)
 
 El wizard de configuración (`/setup`) incluye una interfaz guiada para Telegram que automatiza la obtención del Chat ID:
 
