@@ -553,7 +553,26 @@ async def api_telegram_fetch_chat_id(request: Request):
             detail=f"Error de Telegram: {resp.status_code}",
         )
 
-    result = resp.json()
+    try:
+        result = resp.json()
+    except (ValueError, json.JSONDecodeError):
+        raise HTTPException(
+            status_code=502,
+            detail="Respuesta inválida de Telegram.",
+        )
+
+    if not isinstance(result, dict) or result.get("ok") is not True:
+        error_code = result.get("error_code") if isinstance(result, dict) else None
+        description = result.get("description") if isinstance(result, dict) else None
+        if error_code == 401:
+            raise HTTPException(
+                status_code=422,
+                detail="Token inválido. Verifica el token del bot.",
+            )
+        raise HTTPException(
+            status_code=502,
+            detail=description or "Error de Telegram.",
+        )
     updates = result.get("result", [])
 
     # Extract unique chats from all update types that carry a chat object.
