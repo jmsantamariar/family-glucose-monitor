@@ -46,7 +46,9 @@ from src.alert_history import get_alerts
 from src.auth import hash_password, is_configured, session_manager, verify_credentials
 from src.bootstrap import check_config_writable
 from src.config_schema import validate_config as schema_validate_config
-from src.crypto import encrypt_value
+from src.connection_tester import test_librelinkup as _test_librelinkup
+from src.connection_tester import test_telegram as _test_telegram
+from src.crypto import decrypt_value, encrypt_value, is_encrypted
 from src.outputs.webpush import WebPushOutput, get_vapid_public_key
 from src.paths import get_cache_path
 import src.push_subscriptions as _push_subs
@@ -980,3 +982,239 @@ async def api_setup(request: Request, response: Response):
     )
     _set_csrf_cookie(response, csrf_token)
     return {"success": True}
+
+# ── Settings (Configuración) routes ──────────────────────────────────────────
+
+@app.get("/configuracion", response_class=HTMLResponse)
+def configuracion_page():
+    """Serve the settings page. Requires authentication (handled by middleware)."""
+    html_path = Path(__file__).parent / "dashboard" / "configuracion.html"
+    if not html_path.exists():
+        raise HTTPException(status_code=500, detail="Configuración HTML no encontrado")
+    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+
+
+@app.get("/api/configuracion", response_class=JSONResponse)
+def api_get_configuracion():
+    """Return current configuration for the settings page.
+
+    Secrets (LibreLinkUp password, Telegram bot token) are NEVER returned
+    in plaintext.  A boolean flag indicates whether each secret is set.
+    """
+    ll = _config.get("librelinkup", {})
+    alerts_cfg = _config.get("alerts", {})
+    outputs = _config.get("outputs", [])
+
+    telegram_cfg = next((o for o in outputs if o.get("type") == "telegram"), {})
+    has_bot_token = bool(str(telegram_cfg.get("bot_token", "")).strip())
+
+    return {
+        "librelinkup": {
+            "email": str(ll.get("email", "")),
+            "has_password": bool(str(ll.get("password", "")).strip()),
+            "region": str(ll.get("region", "EU")),
+        },
+        "alerts": {
+            "low_threshold": alerts_cfg.get("low_threshold", 70),
+            "high_threshold": alerts_cfg.get("high_threshold", 180),
+            "cooldown_minutes": alerts_cfg.get("cooldown_minutes", 30),
+            "max_reading_age_minutes": alerts_cfg.get("max_reading_age_minutes", 15),
+        },
+        "telegram": {
+            "enabled": bool(telegram_cfg.get("enabled", False)),
+            "has_bot_token": has_bot_token,
+            "chat_id": str(telegram_cfg.get("chat_id", "")),
+        },
+    }
+
+
+@app.post("/api/configuracion", response_class=JSONResponse)
+async def api_save_configuracion(request: Request):
+    """Persist updated settings from the settings page.
+
+    Secret fields are only overwritten when the caller supplies a non-empty
+    value.  An empty value means keep the existing secret.
+    """
+    global _config
+
+    _validate_csrf(request)
+
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON inválido")
+
+    if not _config:
+        raise HTTPException(
+            status_code=409,
+            detail="No hay configuración guardada. Usa el asistente de configuración inicial.",
+        )
+
+    import copy
+    new_config = copy.deepcopy(_config)
+
+    # LibreLinkUp section
+    ll = new_config.setdefault("librelinkup", {})
+    email = str(data.get("librelinkup_email", "")).strip()
+    if email:
+        ll["email"] = email
+    new_password = str(data.get("librelinkup_password", "")).strip()
+    if new_password:
+        ll["password"] = encrypt_value(new_password)
+    region = str(data.get("librelinkup_region", "")).upper().strip()
+    _VALID_REGIONS = {"US", "EU", "EU2", "DE", "FR", "JP", "AP", "AU", "AE", "CA", "LA", "RU"}
+    if region:
+        if region not in _VALID_REGIONS:
+            raise HTTPException(status_code=422, detail=f"Región no válida: {region}")
+        ll["region"] = region
+
+    # Alerts section
+    alerts_cfg = new_config.setdefault("alerts", {})
+    for field in ("low_threshold", "high_threshold", "cooldown_minutes", "max_reading_age_minutes"):
+        raw = data.get(field)
+        if raw is not None:
+            try:
+                alerts_cfg[field] = int(raw)
+            except (TypeError, ValueError):
+                raise HTTPException(
+                    status_code=422, detail=f"{field} debe ser un número entero"
+                )
+
+    low = alerts_cfg.get("low_threshold", 0)
+    high = alerts_cfg.get("high_threshold", 0)
+    if isinstance(low, (int, float)) and isinstance(high, (int, float)) and low >= high:
+        raise HTTPException(
+            status_code=422,
+            detail="El umbral bajo debe ser menor que el umbral alto",
+        )
+
+    # Telegram section
+    outputs: list[dict] = new_config.setdefault("outputs", [])
+    telegram_enabled = data.get("telegram_enabled")
+    telegram_chat_id = str(data.get("telegram_chat_id", "")).strip()
+    new_bot_token = str(data.get("telegram_bot_token", "")).strip()
+
+    if telegram_enabled is not None:
+        tg_entry = next((o for o in outputs if o.get("type") == "telegram"), None)
+        if tg_entry is None:
+            tg_entry = {"type": "telegram", "enabled": False, "bot_token": "", "chat_id": ""}
+            outputs.append(tg_entry)
+
+        tg_entry["enabled"] = bool(telegram_enabled)
+        if new_bot_token:
+            tg_entry["bot_token"] = new_bot_token
+        if telegram_chat_id:
+            tg_entry["chat_id"] = telegram_chat_id
+
+        if tg_entry["enabled"]:
+            if not str(tg_entry.get("bot_token", "")).strip():
+                raise HTTPException(
+                    status_code=422,
+                    detail="Telegram activo requiere un bot token",
+                )
+            if not str(tg_entry.get("chat_id", "")).strip():
+                raise HTTPException(
+                    status_code=422,
+                    detail="Telegram activo requiere un chat ID",
+                )
+
+    config_errors = schema_validate_config(new_config)
+    if config_errors:
+        logger.warning("Settings update produced invalid config (%d error(s))", len(config_errors))
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "La configuración no es válida.", "errors": config_errors},
+        )
+
+    config_path = PROJECT_ROOT / "config.yaml"
+    writable_error = check_config_writable(config_path)
+    if writable_error:
+        raise HTTPException(status_code=500, detail=writable_error)
+
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(new_config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+    try:
+        os.chmod(config_path, stat.S_IRUSR | stat.S_IWUSR)
+    except OSError as exc:
+        logger.warning("Could not restrict config.yaml permissions: %s", exc)
+
+    _config = new_config
+
+    return {
+        "success": True,
+        "message": "Configuración guardada correctamente.",
+        "applied_hot": True,
+        "note": (
+            "Los cambios en umbrales se aplican de inmediato. "
+            "Los cambios en LibreLinkUp se usarán en el próximo ciclo de polling. "
+            "Los cambios en Telegram se usarán en la próxima alerta enviada."
+        ),
+    }
+
+
+@app.post("/api/configuracion/probar-librelinkup", response_class=JSONResponse)
+async def api_probar_librelinkup(request: Request):
+    """Test LibreLinkUp connection using values from the request.
+
+    Uses form values (approach A): if a field is empty, falls back to the
+    saved config value.  Never persists any credentials.
+    """
+    _validate_csrf(request)
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON inválido")
+
+    email = str(data.get("email", "")).strip()
+    password_input = str(data.get("password", "")).strip()
+    region = str(data.get("region", "")).strip()
+
+    ll = _config.get("librelinkup", {})
+    if not email:
+        email = str(ll.get("email", "")).strip()
+    if not password_input:
+        raw_pw = str(ll.get("password", "")).strip()
+        try:
+            password_input = decrypt_value(raw_pw)
+        except Exception:
+            password_input = raw_pw
+    if not region:
+        region = str(ll.get("region", "EU")).strip()
+
+    if not email or not password_input:
+        raise HTTPException(status_code=422, detail="Faltan campos obligatorios")
+
+    return _test_librelinkup(email, password_input, region)
+
+
+@app.post("/api/configuracion/probar-telegram", response_class=JSONResponse)
+async def api_probar_telegram(request: Request):
+    """Test Telegram bot configuration using values from the request.
+
+    Uses form values (approach A): if a field is empty, falls back to the
+    saved config value.  Never persists any credentials.
+    """
+    _validate_csrf(request)
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON inválido")
+
+    bot_token_input = str(data.get("bot_token", "")).strip()
+    chat_id = str(data.get("chat_id", "")).strip()
+
+    outputs = _config.get("outputs", [])
+    tg_cfg = next((o for o in outputs if o.get("type") == "telegram"), {})
+    if not bot_token_input:
+        bot_token_input = str(tg_cfg.get("bot_token", "")).strip()
+    if not chat_id:
+        chat_id = str(tg_cfg.get("chat_id", "")).strip()
+
+    if not bot_token_input or not chat_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Faltan campos obligatorios: bot token y chat ID",
+        )
+
+    return _test_telegram(bot_token_input, chat_id)
