@@ -48,8 +48,8 @@ from fastapi import FastAPI, HTTPException, Request, Query, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from src.alert_history import get_alerts
-from src.cache_path import get_readings_cache_path
+from src.alert_history import get_alerts, validate_schema
+from src.paths import get_cache_path, get_db_path as _paths_get_db_path
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +62,9 @@ _config: dict = {}
 # Set ALLOW_INSECURE_LOCAL_API=1 only for local/dev environments to bypass auth.
 API_KEY: str | None = os.environ.get("API_KEY") or None
 ALLOW_INSECURE_LOCAL_API: bool = os.environ.get("ALLOW_INSECURE_LOCAL_API") == "1"
+
+# Loopback addresses — enforced when ALLOW_INSECURE_LOCAL_API is set.
+_LOOPBACK_ADDRS: frozenset[str] = frozenset({"127.0.0.1", "::1", "localhost"})
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -106,20 +109,11 @@ def _load_config_file() -> dict:
 def get_db_path() -> str:
     """Resolve the alert history DB path.
 
-    Priority:
-    1. ``ALERT_HISTORY_DB`` environment variable (checked at call time).
-    2. ``alert_history_db`` key from the runtime-loaded ``_config``.
-    3. Default: ``<PROJECT_ROOT>/alert_history.db``.
+    Delegates to :func:`src.paths.get_db_path` with the runtime-loaded
+    ``_config`` so that the resolution priority (env > config > default)
+    is consistent across all modules.
     """
-    env_path = os.environ.get("ALERT_HISTORY_DB")
-    if env_path:
-        return env_path
-    config_path = _config.get("alert_history_db")
-    if config_path:
-        if not os.path.isabs(config_path):
-            return str(PROJECT_ROOT / config_path)
-        return config_path
-    return str(PROJECT_ROOT / "alert_history.db")
+    return _paths_get_db_path(_config)
 
 
 @asynccontextmanager
@@ -131,11 +125,26 @@ async def lifespan(application: "FastAPI"):
         logger.warning("config.yaml not found, using defaults for cache path")
     except yaml.YAMLError as exc:
         logger.warning("config.yaml is invalid YAML, using defaults for cache path: %s", exc)
+
+    # Preflight: validate alert_history.db schema if the file already exists.
+    db_path = get_db_path()
+    schema_errors = validate_schema(db_path)
+    if schema_errors:
+        detail = "\n  ".join(schema_errors)
+        logger.error(
+            "alert_history.db schema mismatch — API server cannot start safely:\n  %s\n"
+            "Delete the database file and restart to re-initialise it, "
+            "or run Alembic migrations to upgrade the schema.",
+            detail,
+        )
+        raise RuntimeError(f"alert_history.db schema mismatch: {schema_errors[0]}")
+
     if API_KEY is None:
         if ALLOW_INSECURE_LOCAL_API:
             logger.warning(
                 "ALLOW_INSECURE_LOCAL_API=1 — external API is running without "
-                "authentication. This should only be used in local/dev environments."
+                "authentication. Requests are restricted to loopback (127.0.0.1 / ::1). "
+                "This should only be used in local/dev environments."
             )
         else:
             logger.error(
@@ -179,9 +188,36 @@ async def security_headers_middleware(request: Request, call_next):
     return response
 
 
+@app.middleware("http")
+async def loopback_guardrail_middleware(request: Request, call_next):
+    """Reject non-loopback clients when ALLOW_INSECURE_LOCAL_API is enabled.
+
+    When ``ALLOW_INSECURE_LOCAL_API=1`` the external API runs without any
+    bearer-token authentication.  To prevent accidental exposure on a LAN or
+    the public internet, requests from addresses outside the loopback range
+    (127.0.0.1 / ::1) are rejected with ``403 Forbidden``.
+    """
+    if ALLOW_INSECURE_LOCAL_API and API_KEY is None:
+        client_host = request.client.host if request.client else None
+        # Allow when client host cannot be determined (e.g. WSGI test clients).
+        if client_host is not None and client_host not in _LOOPBACK_ADDRS:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "detail": (
+                        "ALLOW_INSECURE_LOCAL_API is enabled. "
+                        "Access is restricted to loopback addresses (127.0.0.1 / ::1). "
+                        "Set API_KEY to allow remote access."
+                    )
+                },
+            )
+    return await call_next(request)
+
+
 def _load_cache() -> dict:
     """Load the readings cache from disk. Returns empty structure on missing/invalid file."""
-    cache_file = get_readings_cache_path(_config)
+    cache_file = get_cache_path(_config)
     try:
         with open(cache_file) as f:
             return json.load(f)
