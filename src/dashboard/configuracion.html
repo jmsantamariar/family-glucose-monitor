@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Configuración del sistema — Monitor de Glucosa Familiar</title>
+  <style>
+    /* ── Reset & Variables ─────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #f0f4f8;
+      --surface:   #ffffff;
+      --text:      #1a202c;
+      --subtext:   #4a5568;
+      --border:    #e2e8f0;
+      --header-bg: #1a365d;
+      --header-fg: #ffffff;
+      --accent:    #2b6cb0;
+      --accent-hover: #2c5282;
+
+      --success-bg:     #c6f6d5;
+      --success-fg:     #22543d;
+      --success-border: #38a169;
+      --error-bg:       #fed7d7;
+      --error-fg:       #742a2a;
+      --error-border:   #e53e3e;
+      --warn-bg:        #fefcbf;
+      --warn-fg:        #744210;
+      --warn-border:    #d69e2e;
+      --info-bg:        #ebf8ff;
+      --info-fg:        #2c5282;
+      --info-border:    #63b3ed;
+
+      --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      --radius: 10px;
+      --shadow: 0 2px 8px rgba(0,0,0,.08);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg:        #0d1117;
+        --surface:   #161b22;
+        --text:      #e2e8f0;
+        --subtext:   #a0aec0;
+        --border:    #2d3748;
+        --header-bg: #0d1b2e;
+        --success-bg: #1c4532;
+        --success-fg: #9ae6b4;
+        --error-bg:   #3b1515;
+        --error-fg:   #feb2b2;
+        --warn-bg:    #2d2700;
+        --warn-fg:    #f6e05e;
+        --info-bg:    #1a2e45;
+        --info-fg:    #90cdf4;
+      }
+    }
+
+    /* ── Layout ─────────────────────────────────────────────── */
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    header {
+      background: var(--header-bg);
+      color: var(--header-fg);
+      padding: 1rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: .5rem;
+      box-shadow: 0 2px 10px rgba(0,0,0,.3);
+    }
+
+    header h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: .02em;
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
+
+    .header-right { display: flex; align-items: center; gap: .75rem; }
+
+    .btn-back {
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
+      background: transparent;
+      border: 1px solid rgba(255,255,255,.4);
+      color: inherit;
+      border-radius: 4px;
+      padding: .25rem .6rem;
+      cursor: pointer;
+      font-size: .8rem;
+      text-decoration: none;
+      transition: background .15s;
+    }
+    .btn-back:hover,
+    .btn-back:focus-visible {
+      background: rgba(255,255,255,.12);
+      outline: 2px solid rgba(255,255,255,.6);
+      outline-offset: 2px;
+    }
+
+    /* ── Main ───────────────────────────────────────────────── */
+    main {
+      flex: 1;
+      padding: 1.5rem;
+      max-width: 760px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    .page-header { margin-bottom: 1.5rem; }
+    .page-header h2 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      margin-bottom: .3rem;
+    }
+    .page-header p { color: var(--subtext); font-size: .9rem; }
+
+    /* ── Error summary banner ───────────────────────────────── */
+    .error-summary {
+      display: none;
+      background: var(--error-bg);
+      color: var(--error-fg);
+      border: 1px solid var(--error-border);
+      border-radius: var(--radius);
+      padding: .9rem 1.1rem;
+      margin-bottom: 1.25rem;
+      font-size: .88rem;
+    }
+    .error-summary.show { display: block; }
+    .error-summary strong {
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+      font-size: .92rem;
+      margin-bottom: .5rem;
+    }
+    .error-summary ul {
+      padding-left: 1.2rem;
+      margin-top: .25rem;
+    }
+    .error-summary li { margin-bottom: .2rem; }
+    .error-summary a { color: inherit; text-decoration: underline; }
+
+    /* ── Section cards ──────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      margin-bottom: 1.25rem;
+      overflow: hidden;
+      /* left accent border for state — start as transparent */
+      border-left: 4px solid transparent;
+      transition: border-left-color .25s;
+    }
+    .card.card-ok    { border-left-color: var(--success-border); }
+    .card.card-error { border-left-color: var(--error-border); }
+    .card.card-warn  { border-left-color: var(--warn-border); }
+
+    .card-header {
+      padding: .85rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: .6rem;
+    }
+    .card-header h3 { font-size: 1rem; font-weight: 700; flex: 1; }
+    .card-header .card-desc {
+      font-size: .82rem;
+      color: var(--subtext);
+      flex: 1;
+    }
+
+    /* ── Section state badge ─────────────────────────────────── */
+    .section-status {
+      display: none;
+      align-items: center;
+      gap: .3rem;
+      font-size: .75rem;
+      font-weight: 700;
+      padding: .15rem .5rem;
+      border-radius: 20px;
+      white-space: nowrap;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .section-status.show { display: inline-flex; }
+    .section-status.ok   { background: var(--success-bg); color: var(--success-fg); }
+    .section-status.err  { background: var(--error-bg);   color: var(--error-fg); }
+    .section-status.warn { background: var(--warn-bg);    color: var(--warn-fg); }
+
+    .card-body { padding: 1.25rem; }
+
+    /* ── Info callout ────────────────────────────────────────── */
+    .callout-info {
+      display: flex;
+      align-items: flex-start;
+      gap: .5rem;
+      background: var(--info-bg);
+      color: var(--info-fg);
+      border: 1px solid var(--info-border);
+      border-radius: 6px;
+      padding: .6rem .85rem;
+      font-size: .8rem;
+      margin-top: .75rem;
+    }
+    .callout-info .ci-icon { font-size: 1rem; flex-shrink: 0; margin-top: .05rem; }
+
+    /* ── Form grid ──────────────────────────────────────────── */
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: .85rem 1.25rem;
+    }
+    .form-grid .full { grid-column: 1 / -1; }
+    @media (max-width: 540px) {
+      .form-grid { grid-template-columns: 1fr; }
+      .form-grid .full { grid-column: 1; }
+    }
+
+    .field { display: flex; flex-direction: column; gap: .3rem; }
+
+    .field label { font-size: .85rem; font-weight: 600; color: var(--subtext); }
+
+    .field input,
+    .field select {
+      padding: .45rem .7rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: .92rem;
+      font-family: var(--font);
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .field input:focus,
+    .field select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(43,108,176,.25);
+    }
+
+    /* ── Field error state ───────────────────────────────────── */
+    .field input.input-error,
+    .field select.input-error {
+      border-color: var(--error-border);
+      box-shadow: 0 0 0 2px rgba(229,62,62,.18);
+    }
+    .field input.input-ok,
+    .field select.input-ok {
+      border-color: var(--success-border);
+    }
+
+    .field .hint { font-size: .76rem; color: var(--subtext); }
+
+    .field .field-error {
+      display: none;
+      font-size: .76rem;
+      color: var(--error-fg);
+      font-weight: 600;
+      align-items: center;
+      gap: .25rem;
+    }
+    .field .field-error.show { display: flex; }
+    /* ▲ triangle icon before every field error */
+    .field .field-error::before {
+      content: "▲";
+      font-size: .6rem;
+      flex-shrink: 0;
+    }
+
+    /* ── Toggle row ─────────────────────────────────────────── */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: .6rem;
+      margin-bottom: .75rem;
+    }
+    .toggle-row label { font-size: .88rem; font-weight: 600; cursor: pointer; }
+    input[type="checkbox"] {
+      width: 1.1rem;
+      height: 1.1rem;
+      cursor: pointer;
+      accent-color: var(--accent);
+    }
+
+    /* ── Buttons ────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
+      padding: .5rem 1rem;
+      border: none;
+      border-radius: 6px;
+      font-size: .9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s, filter .15s;
+      font-family: var(--font);
+    }
+    .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .btn:disabled { opacity: .55; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover:not(:disabled) { filter: brightness(.95); }
+    .btn-actions {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      flex-wrap: wrap;
+      margin-top: 1rem;
+    }
+
+    /* ── Global toast ───────────────────────────────────────── */
+    .toast {
+      display: none;
+      padding: .75rem 1rem;
+      border-radius: 6px;
+      font-size: .88rem;
+      font-weight: 600;
+      margin-top: .75rem;
+      align-items: flex-start;
+      gap: .5rem;
+    }
+    .toast.show    { display: flex; }
+    .toast.success { background: var(--success-bg); color: var(--success-fg); border: 1px solid var(--success-border); }
+    .toast.error   { background: var(--error-bg);   color: var(--error-fg);   border: 1px solid var(--error-border); }
+    .toast.warning { background: var(--warn-bg);    color: var(--warn-fg);    border: 1px solid var(--warn-border); }
+    .toast-icon  { font-size: 1.1rem; flex-shrink: 0; }
+    .toast-body  { flex: 1; }
+    .toast-note  { font-size: .78rem; font-weight: 400; margin-top: .25rem; opacity: .85; }
+
+    /* ── Save bar ───────────────────────────────────────────── */
+    .save-bar {
+      position: sticky;
+      bottom: 0;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding: .85rem 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      box-shadow: 0 -2px 8px rgba(0,0,0,.07);
+    }
+    .save-bar .save-note { font-size: .8rem; color: var(--subtext); flex: 1; }
+
+    /* ── Test result block ──────────────────────────────────── */
+    .test-result { margin-top: .75rem; display: none; }
+    .test-result.show { display: block; }
+
+    .patient-list {
+      margin-top: .5rem;
+      font-size: .85rem;
+      list-style: none;
+      padding: 0;
+    }
+    .patient-list li { padding: .2rem 0; display: flex; gap: .5rem; align-items: center; }
+
+    /* ── Footer ─────────────────────────────────────────────── */
+    footer {
+      text-align: center;
+      padding: 1rem 1.5rem;
+      font-size: .78rem;
+      color: var(--subtext);
+      border-top: 1px solid var(--border);
+    }
+    footer strong { color: var(--text); }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+         aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+    </svg>
+    Configuración del sistema
+  </h1>
+  <div class="header-right">
+    <a href="/" class="btn-back" aria-label="Volver al dashboard">← Volver al dashboard</a>
+  </div>
+</header>
+
+<main>
+  <div class="page-header">
+    <h2>
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+           aria-hidden="true" focusable="false">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+      Configuración del sistema
+    </h2>
+    <p>Actualiza las conexiones, alertas y notificaciones sin editar archivos manualmente.</p>
+  </div>
+
+  <!-- ── Error summary (shown when there are multiple validation errors) ── -->
+  <div class="error-summary" id="error-summary" role="alert" aria-live="assertive">
+    <strong>
+      <span aria-hidden="true">❌</span>
+      <span>Faltan campos obligatorios o hay errores de validación:</span>
+    </strong>
+    <ul id="error-summary-list"></ul>
+  </div>
+
+  <!-- ── Cuenta LibreLinkUp ──────────────────────────────────── -->
+  <section class="card" id="card-librelinkup" aria-labelledby="section-librelinkup">
+    <div class="card-header">
+      <h3 id="section-librelinkup">🔗 Cuenta LibreLinkUp</h3>
+      <span class="card-desc">Credenciales de acceso a la API de FreeStyle Libre</span>
+      <span class="section-status" id="status-librelinkup" aria-live="polite"></span>
+    </div>
+    <div class="card-body">
+      <div class="form-grid">
+        <div class="field full">
+          <label for="ll-email">Correo electrónico</label>
+          <input type="email" id="ll-email" name="ll-email" autocomplete="email"
+                 placeholder="tu-email@ejemplo.com"
+                 aria-describedby="ll-email-error" />
+          <span class="field-error" id="ll-email-error" role="alert"></span>
+        </div>
+        <div class="field full">
+          <label for="ll-password">Contraseña</label>
+          <input type="password" id="ll-password" name="ll-password" autocomplete="current-password"
+                 placeholder="Dejar vacío para conservar la contraseña actual"
+                 aria-describedby="ll-password-hint ll-password-error" />
+          <span class="hint" id="ll-password-hint"></span>
+          <span class="field-error" id="ll-password-error" role="alert"></span>
+        </div>
+        <div class="field">
+          <label for="ll-region">Región</label>
+          <select id="ll-region" name="ll-region" aria-describedby="ll-region-error">
+            <option value="US">US</option>
+            <option value="EU">EU</option>
+            <option value="EU2">EU2</option>
+            <option value="DE">DE</option>
+            <option value="FR">FR</option>
+            <option value="JP">JP</option>
+            <option value="AP">AP</option>
+            <option value="AU">AU</option>
+            <option value="AE">AE</option>
+            <option value="CA">CA</option>
+            <option value="LA">LA</option>
+            <option value="RU">RU</option>
+          </select>
+          <span class="field-error" id="ll-region-error" role="alert"></span>
+        </div>
+      </div>
+
+      <div class="btn-actions">
+        <button type="button" class="btn btn-secondary" id="test-ll-btn"
+                aria-label="Probar conexión con LibreLinkUp usando los valores actuales del formulario">
+          🔍 Probar conexión con LibreLinkUp
+        </button>
+      </div>
+      <div class="callout-info" id="ll-test-note">
+        <span class="ci-icon" aria-hidden="true">ℹ️</span>
+        <span>La prueba usa los valores <strong>actualmente escritos</strong> en el formulario, incluso si aún no se han guardado.</span>
+      </div>
+
+      <div class="test-result" id="ll-test-result" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <!-- ── Alertas ────────────────────────────────────────────── -->
+  <section class="card" id="card-alertas" aria-labelledby="section-alertas">
+    <div class="card-header">
+      <h3 id="section-alertas">⚠️ Alertas</h3>
+      <span class="card-desc">Umbrales y tiempo de espera entre alertas</span>
+      <span class="section-status" id="status-alertas" aria-live="polite"></span>
+    </div>
+    <div class="card-body">
+      <div class="form-grid">
+        <div class="field">
+          <label for="low-threshold">Umbral bajo (mg/dL)</label>
+          <input type="number" id="low-threshold" name="low-threshold"
+                 min="40" max="300" step="1"
+                 aria-describedby="low-threshold-error" />
+          <span class="hint">Por debajo → alerta de hipoglucemia</span>
+          <span class="field-error" id="low-threshold-error" role="alert"></span>
+        </div>
+        <div class="field">
+          <label for="high-threshold">Umbral alto (mg/dL)</label>
+          <input type="number" id="high-threshold" name="high-threshold"
+                 min="40" max="400" step="1"
+                 aria-describedby="high-threshold-error" />
+          <span class="hint">Por encima → alerta de hiperglucemia</span>
+          <span class="field-error" id="high-threshold-error" role="alert"></span>
+        </div>
+        <div class="field">
+          <label for="cooldown">Minutos entre alertas (cooldown)</label>
+          <input type="number" id="cooldown" name="cooldown"
+                 min="1" max="1440" step="1"
+                 aria-describedby="cooldown-error" />
+          <span class="hint">Tiempo mínimo de espera entre alertas del mismo tipo</span>
+          <span class="field-error" id="cooldown-error" role="alert"></span>
+        </div>
+        <div class="field">
+          <label for="max-age">Antigüedad máxima de lectura (min)</label>
+          <input type="number" id="max-age" name="max-age"
+                 min="1" max="60" step="1"
+                 aria-describedby="max-age-error" />
+          <span class="hint">Lecturas más antiguas que este tiempo se ignoran</span>
+          <span class="field-error" id="max-age-error" role="alert"></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Notificaciones ────────────────────────────────────── -->
+  <section class="card" id="card-notif" aria-labelledby="section-notif">
+    <div class="card-header">
+      <h3 id="section-notif">💬 Notificaciones</h3>
+      <span class="card-desc">Canal de envío de alertas</span>
+      <span class="section-status" id="status-notif" aria-live="polite"></span>
+    </div>
+    <div class="card-body">
+      <div class="toggle-row">
+        <input type="checkbox" id="telegram-enabled" name="telegram-enabled" />
+        <label for="telegram-enabled">Activar Telegram</label>
+      </div>
+
+      <div id="telegram-fields" class="form-grid">
+        <div class="field full">
+          <label for="tg-token">Bot Token</label>
+          <input type="password" id="tg-token" name="tg-token" autocomplete="off"
+                 placeholder="Dejar vacío para conservar el token actual"
+                 aria-describedby="tg-token-hint tg-token-error" />
+          <span class="hint" id="tg-token-hint"></span>
+          <span class="field-error" id="tg-token-error" role="alert"></span>
+        </div>
+        <div class="field full">
+          <label for="tg-chatid">Chat ID</label>
+          <input type="text" id="tg-chatid" name="tg-chatid" autocomplete="off"
+                 placeholder="Ej: -1001234567890"
+                 aria-describedby="tg-chatid-error" />
+          <span class="field-error" id="tg-chatid-error" role="alert"></span>
+        </div>
+      </div>
+
+      <div class="btn-actions">
+        <button type="button" class="btn btn-secondary" id="test-tg-btn"
+                aria-label="Probar Telegram usando los valores actuales del formulario">
+          📨 Probar Telegram
+        </button>
+      </div>
+      <div class="callout-info" id="tg-test-note">
+        <span class="ci-icon" aria-hidden="true">ℹ️</span>
+        <span>La prueba usa los valores <strong>actualmente escritos</strong> en el formulario, incluso si aún no se han guardado.</span>
+      </div>
+
+      <div class="test-result" id="tg-test-result" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <!-- ── Acceso al dashboard ─────────────────────────────────── -->
+  <section class="card" aria-labelledby="section-dashboard-auth">
+    <div class="card-header">
+      <h3 id="section-dashboard-auth">🔐 Acceso al dashboard</h3>
+    </div>
+    <div class="card-body">
+      <p style="font-size:.88rem;color:var(--subtext);">
+        El cambio de usuario y contraseña del dashboard no está disponible en esta pantalla.
+        Para modificarlo, usa el asistente inicial desde
+        <a href="/setup" style="color:var(--accent);">/setup</a>
+        (requiere reconfigurar el sistema completo) o edita manualmente
+        <code>config.yaml</code> con un hash PBKDF2 generado.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── Global feedback toast ─────────────────────────────── -->
+  <div class="toast" id="global-toast" role="status" aria-live="polite">
+    <span class="toast-icon" id="toast-icon" aria-hidden="true">ℹ️</span>
+    <div class="toast-body">
+      <span id="toast-msg"></span>
+      <div class="toast-note" id="toast-note"></div>
+    </div>
+  </div>
+</main>
+
+<!-- ── Sticky save bar ──────────────────────────────────────── -->
+<div class="save-bar" role="region" aria-label="Guardar cambios">
+  <span class="save-note">
+    Los umbrales se aplican inmediatamente; las credenciales de LibreLinkUp en el próximo ciclo de polling; la configuración de Telegram en la próxima alerta.
+  </span>
+  <button type="button" class="btn btn-primary" id="save-btn"
+          aria-label="Guardar todos los cambios de configuración">
+    💾 Guardar cambios
+  </button>
+</div>
+
+<footer>
+  <strong>⚠️ Este no es un dispositivo médico.</strong>
+  Esta herramienta es solo para referencia informativa y no reemplaza la atención médica profesional
+  ni los sistemas de alarma del medidor de glucosa.
+</footer>
+
+<script>
+  // ── CSRF token ──────────────────────────────────────────────
+  function getCsrfToken() {
+    for (const c of document.cookie.split(';')) {
+      const [k, v] = c.trim().split('=');
+      if (k === 'csrf_token') return decodeURIComponent(v);
+    }
+    return '';
+  }
+
+  async function apiFetch(url, options = {}) {
+    const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+    if (options.method && options.method.toUpperCase() !== 'GET') {
+      headers['X-CSRF-Token'] = getCsrfToken();
+    }
+    const resp = await fetch(url, { ...options, headers });
+    if (resp.status === 401 || resp.status === 403) {
+      window.location.href = '/login';
+      return null;
+    }
+    return resp;
+  }
+
+  // ── HTML escaping ───────────────────────────────────────────
+  function escapeHtml(s) {
+    const d = document.createElement('div');
+    d.appendChild(document.createTextNode(String(s ?? '')));
+    return d.innerHTML;
+  }
+
+  // ── Field-level error helpers ────────────────────────────────
+  // Map from server error substrings → { field, section, message }
+  const ERROR_MAP = [
+    { pattern: /librelinkup\.email.*valid/i,       field: 'll-email',       section: 'librelinkup', msg: 'El correo electrónico no tiene un formato válido.' },
+    { pattern: /librelinkup\.email.*required/i,    field: 'll-email',       section: 'librelinkup', msg: 'El correo electrónico es obligatorio.' },
+    { pattern: /librelinkup\.password.*required/i, field: 'll-password',    section: 'librelinkup', msg: 'La contraseña de LibreLinkUp es obligatoria.' },
+    { pattern: /región.*inválida|invalid.*region|región no válida/i, field: 'll-region', section: 'librelinkup', msg: 'Región de LibreLinkUp inválida.' },
+    { pattern: /low_threshold.*less/i,             field: 'low-threshold',  section: 'alertas',     msg: 'El umbral bajo debe ser menor que el umbral alto.' },
+    { pattern: /umbral bajo.*menor/i,              field: 'low-threshold',  section: 'alertas',     msg: 'El umbral bajo debe ser menor que el umbral alto.' },
+    { pattern: /low_threshold/i,                   field: 'low-threshold',  section: 'alertas',     msg: 'El umbral bajo no es válido.' },
+    { pattern: /high_threshold/i,                  field: 'high-threshold', section: 'alertas',     msg: 'El umbral alto no es válido.' },
+    { pattern: /cooldown/i,                        field: 'cooldown',       section: 'alertas',     msg: 'El cooldown no es válido.' },
+    { pattern: /max_reading_age/i,                 field: 'max-age',        section: 'alertas',     msg: 'La antigüedad máxima no es válida.' },
+    { pattern: /telegram.*bot.*token/i,            field: 'tg-token',       section: 'notif',       msg: 'El bot token de Telegram es obligatorio cuando Telegram está activo.' },
+    { pattern: /telegram.*chat.*id/i,              field: 'tg-chatid',      section: 'notif',       msg: 'El chat ID de Telegram es obligatorio cuando Telegram está activo.' },
+    // Fallback for other Telegram config errors (e.g. token format)
+    { pattern: /telegram.*token|token.*bot/i,      field: 'tg-token',       section: 'notif',       msg: 'Error en el token de Telegram.' },
+  ];
+
+  function setFieldError(inputId, message) {
+    const input = document.getElementById(inputId);
+    const errEl = document.getElementById(inputId + '-error');
+    if (!input || !errEl) return;
+    input.classList.add('input-error');
+    input.classList.remove('input-ok');
+    input.setAttribute('aria-invalid', 'true');
+    errEl.textContent = message;
+    errEl.classList.add('show');
+  }
+
+  function clearFieldError(inputId) {
+    const input = document.getElementById(inputId);
+    const errEl = document.getElementById(inputId + '-error');
+    if (!input || !errEl) return;
+    input.classList.remove('input-error');
+    input.removeAttribute('aria-invalid');
+    errEl.textContent = '';
+    errEl.classList.remove('show');
+  }
+
+  function clearAllFieldErrors() {
+    const allFields = ['ll-email','ll-password','ll-region',
+                       'low-threshold','high-threshold','cooldown','max-age',
+                       'tg-token','tg-chatid'];
+    allFields.forEach(id => {
+      clearFieldError(id);
+      const el = document.getElementById(id);
+      if (el) el.classList.remove('input-ok');
+    });
+    // Reset all section states
+    setSectionState('librelinkup', null);
+    setSectionState('alertas', null);
+    setSectionState('notif', null);
+    // Hide error summary
+    document.getElementById('error-summary').classList.remove('show');
+  }
+
+  // ── Section state badge ──────────────────────────────────────
+  function setSectionState(sectionKey, state) {
+    // sectionKey: 'librelinkup' | 'alertas' | 'notif'
+    // state: null | 'ok' | 'err' | 'warn'
+    const badgeId = 'status-' + sectionKey;
+    const cardId  = 'card-' + sectionKey;
+    const badge = document.getElementById(badgeId);
+    const card  = document.getElementById(cardId);
+    if (!badge) return;
+
+    // Remove all state classes
+    badge.classList.remove('ok', 'err', 'warn');
+    if (card) card.classList.remove('card-ok', 'card-error', 'card-warn');
+    badge.classList.remove('show');
+
+    if (!state) return;
+
+    const labels = { ok: '✅ Correcto', err: '❌ Error', warn: '⚠️ Pendiente' };
+    badge.textContent = labels[state] || '';
+    badge.classList.add('show', state);
+
+    if (card) {
+      if (state === 'ok')   card.classList.add('card-ok');
+      if (state === 'err')  card.classList.add('card-error');
+      if (state === 'warn') card.classList.add('card-warn');
+    }
+  }
+
+  // ── Error summary banner ────────────────────────────────────
+  function showErrorSummary(errors) {
+    const summary = document.getElementById('error-summary');
+    const list    = document.getElementById('error-summary-list');
+    if (!errors || errors.length === 0) {
+      summary.classList.remove('show');
+      return;
+    }
+    list.innerHTML = errors.map(e => `<li>${escapeHtml(e)}</li>`).join('');
+    summary.classList.add('show');
+    summary.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  // ── Apply server error list to fields ───────────────────────
+  function applyServerErrors(errors) {
+    if (!Array.isArray(errors)) return;
+    const sectionErrors = { librelinkup: [], alertas: [], notif: [] };
+
+    errors.forEach(msg => {
+      let matched = false;
+      for (const entry of ERROR_MAP) {
+        if (entry.pattern.test(msg)) {
+          setFieldError(entry.field, entry.msg);
+          if (entry.section) sectionErrors[entry.section].push(entry.msg);
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) {
+        // Unmatched error: add to summary only
+      }
+    });
+
+    // Set section states
+    Object.entries(sectionErrors).forEach(([sec, errs]) => {
+      if (errs.length > 0) setSectionState(sec, 'err');
+    });
+
+    // Show summary with all original error messages
+    showErrorSummary(errors);
+  }
+
+  // ── Global toast ─────────────────────────────────────────────
+  function showToast(type, msg, note = '') {
+    const el   = document.getElementById('global-toast');
+    const msgEl = document.getElementById('toast-msg');
+    const noteEl = document.getElementById('toast-note');
+    const icon   = document.getElementById('toast-icon');
+    el.className = `toast show ${type}`;
+    msgEl.textContent = msg;
+    noteEl.textContent = note;
+    icon.textContent = type === 'success' ? '✅' : type === 'error' ? '❌' : '⚠️';
+    // Change aria role: use alert for errors, status for success
+    el.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function hideToast() {
+    document.getElementById('global-toast').classList.remove('show');
+  }
+
+  // ── Test result block ────────────────────────────────────────
+  function showTestResult(containerId, ok, msg, patients) {
+    const el   = document.getElementById(containerId);
+    const type = ok ? 'success' : 'error';
+    const icon = ok ? '✅' : '❌';
+    let html = `<div class="toast show ${type}" role="${ok ? 'status' : 'alert'}">`;
+    html += `<span class="toast-icon" aria-hidden="true">${icon}</span>`;
+    html += `<div class="toast-body"><span>${escapeHtml(msg)}</span>`;
+    if (patients && patients.length > 0) {
+      html += '<ul class="patient-list">' + patients.map(p => {
+        const val = p.value !== null ? `${p.value} mg/dL` : 'sin datos';
+        return `<li>👤 ${escapeHtml(p.name)} — ${escapeHtml(val)} <strong>${escapeHtml(p.status || '')}</strong></li>`;
+      }).join('') + '</ul>';
+    }
+    html += '</div></div>';
+    el.innerHTML = html;
+    el.classList.add('show');
+  }
+
+  function clearTestResult(containerId) {
+    const el = document.getElementById(containerId);
+    el.innerHTML = '';
+    el.classList.remove('show');
+  }
+
+  // ── Load config ──────────────────────────────────────────────
+  async function loadConfig() {
+    const resp = await apiFetch('/api/configuracion');
+    if (!resp) return;
+    if (!resp.ok) {
+      showToast('error', 'No se pudo cargar la configuración actual.');
+      return;
+    }
+    const data = await resp.json();
+
+    // LibreLinkUp
+    document.getElementById('ll-email').value  = data.librelinkup?.email  || '';
+    document.getElementById('ll-region').value = data.librelinkup?.region || 'EU';
+    document.getElementById('ll-password-hint').textContent =
+      data.librelinkup?.has_password ? 'Contraseña guardada (encriptada). Deja vacío para mantenerla.' : '';
+
+    // Alerts
+    const a = data.alerts || {};
+    document.getElementById('low-threshold').value = a.low_threshold  ?? 70;
+    document.getElementById('high-threshold').value = a.high_threshold ?? 180;
+    document.getElementById('cooldown').value       = a.cooldown_minutes ?? 30;
+    document.getElementById('max-age').value        = a.max_reading_age_minutes ?? 15;
+
+    // Telegram
+    const tg = data.telegram || {};
+    document.getElementById('telegram-enabled').checked = !!tg.enabled;
+    document.getElementById('tg-chatid').value = tg.chat_id || '';
+    document.getElementById('tg-token-hint').textContent =
+      tg.has_bot_token ? 'Token guardado. Deja vacío para mantenerlo.' : '';
+
+    toggleTelegramFields();
+  }
+
+  function toggleTelegramFields() {
+    const enabled = document.getElementById('telegram-enabled').checked;
+    const fields  = document.getElementById('telegram-fields');
+    fields.style.opacity = enabled ? '1' : '0.5';
+    fields.querySelectorAll('input').forEach(i => { i.disabled = !enabled; });
+    document.getElementById('test-tg-btn').disabled = !enabled;
+  }
+
+  document.getElementById('telegram-enabled').addEventListener('change', toggleTelegramFields);
+
+  // ── Client-side pre-validation ───────────────────────────────
+  // Returns array of { field, section, msg } objects, or [] if all valid.
+  function validateForm() {
+    const errors = [];
+    const low  = parseInt(document.getElementById('low-threshold').value,  10);
+    const high = parseInt(document.getElementById('high-threshold').value, 10);
+
+    if (isNaN(low))  errors.push({ field: 'low-threshold',  section: 'alertas', msg: 'El umbral bajo es obligatorio y debe ser un número.' });
+    if (isNaN(high)) errors.push({ field: 'high-threshold', section: 'alertas', msg: 'El umbral alto es obligatorio y debe ser un número.' });
+    if (!isNaN(low) && !isNaN(high) && low >= high) {
+      errors.push({ field: 'low-threshold', section: 'alertas', msg: 'El umbral bajo debe ser menor que el umbral alto.' });
+    }
+
+    const cooldown = parseInt(document.getElementById('cooldown').value, 10);
+    if (isNaN(cooldown) || cooldown < 1) {
+      errors.push({ field: 'cooldown', section: 'alertas', msg: 'Los minutos entre alertas deben ser al menos 1.' });
+    }
+
+    const maxAge = parseInt(document.getElementById('max-age').value, 10);
+    if (isNaN(maxAge) || maxAge < 1) {
+      errors.push({ field: 'max-age', section: 'alertas', msg: 'La antigüedad máxima debe ser al menos 1 minuto.' });
+    }
+
+    return errors;
+  }
+
+  // ── Probar LibreLinkUp ───────────────────────────────────────
+  document.getElementById('test-ll-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('test-ll-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Probando…';
+    clearTestResult('ll-test-result');
+
+    const payload = {
+      email:    document.getElementById('ll-email').value.trim(),
+      password: document.getElementById('ll-password').value,
+      region:   document.getElementById('ll-region').value,
+    };
+
+    try {
+      const resp = await apiFetch('/api/configuracion/probar-librelinkup', {
+        method: 'POST', body: JSON.stringify(payload),
+      });
+      if (!resp) return;
+      const data = await resp.json();
+      if (resp.ok) {
+        showTestResult('ll-test-result', data.ok, data.message, data.patients);
+        setSectionState('librelinkup', data.ok ? 'ok' : 'err');
+      } else {
+        const msg = data.detail || 'No se pudo conectar con LibreLinkUp.';
+        showTestResult('ll-test-result', false, msg, []);
+        setSectionState('librelinkup', 'err');
+      }
+    } catch {
+      showTestResult('ll-test-result', false, 'No se pudo conectar con LibreLinkUp por un problema de red.', []);
+      setSectionState('librelinkup', 'err');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🔍 Probar conexión con LibreLinkUp';
+    }
+  });
+
+  // ── Probar Telegram ──────────────────────────────────────────
+  document.getElementById('test-tg-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('test-tg-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Probando…';
+    clearTestResult('tg-test-result');
+
+    const payload = {
+      bot_token: document.getElementById('tg-token').value,
+      chat_id:   document.getElementById('tg-chatid').value.trim(),
+    };
+
+    try {
+      const resp = await apiFetch('/api/configuracion/probar-telegram', {
+        method: 'POST', body: JSON.stringify(payload),
+      });
+      if (!resp) return;
+      const data = await resp.json();
+      if (resp.ok) {
+        showTestResult('tg-test-result', data.ok, data.message, null);
+        setSectionState('notif', data.ok ? 'ok' : 'err');
+      } else {
+        const msg = data.detail || 'No se pudo enviar mensaje de prueba a Telegram.';
+        showTestResult('tg-test-result', false, msg, null);
+        setSectionState('notif', 'err');
+      }
+    } catch {
+      showTestResult('tg-test-result', false, 'No se pudo contactar con Telegram por un problema de red.', null);
+      setSectionState('notif', 'err');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '📨 Probar Telegram';
+    }
+  });
+
+  // ── Guardar cambios ──────────────────────────────────────────
+  document.getElementById('save-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('save-btn');
+    clearAllFieldErrors();
+    hideToast();
+
+    // Client-side validation first
+    const clientErrors = validateForm();
+    if (clientErrors.length > 0) {
+      clientErrors.forEach(e => setFieldError(e.field, e.msg));
+      const sectionsSeen = new Set();
+      clientErrors.forEach(e => {
+        if (!sectionsSeen.has(e.section)) {
+          setSectionState(e.section, 'err');
+          sectionsSeen.add(e.section);
+        }
+      });
+      showErrorSummary(clientErrors.map(e => e.msg));
+      btn.disabled = false;
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Guardando…';
+
+    const tgEnabled = document.getElementById('telegram-enabled').checked;
+    const payload = {
+      librelinkup_email:       document.getElementById('ll-email').value.trim(),
+      librelinkup_password:    document.getElementById('ll-password').value,
+      librelinkup_region:      document.getElementById('ll-region').value,
+      low_threshold:           parseInt(document.getElementById('low-threshold').value, 10),
+      high_threshold:          parseInt(document.getElementById('high-threshold').value, 10),
+      cooldown_minutes:        parseInt(document.getElementById('cooldown').value, 10),
+      max_reading_age_minutes: parseInt(document.getElementById('max-age').value, 10),
+      telegram_enabled:        tgEnabled,
+      telegram_bot_token:      document.getElementById('tg-token').value,
+      telegram_chat_id:        document.getElementById('tg-chatid').value.trim(),
+    };
+
+    try {
+      const resp = await apiFetch('/api/configuracion', {
+        method: 'POST', body: JSON.stringify(payload),
+      });
+      if (!resp) return;
+      const data = await resp.json();
+
+      if (resp.ok && data.success) {
+        showToast('success', data.message, data.note || '');
+        // Elegant success: mark all active sections as ok
+        setSectionState('librelinkup', 'ok');
+        setSectionState('alertas', 'ok');
+        if (tgEnabled) setSectionState('notif', 'ok');
+        // Clear secret fields so they don't linger in the DOM
+        document.getElementById('ll-password').value = '';
+        document.getElementById('tg-token').value = '';
+        await loadConfig();
+      } else {
+        const detail = data.detail;
+        if (detail && typeof detail === 'object' && Array.isArray(detail.errors)) {
+          applyServerErrors(detail.errors);
+          showToast('error', detail.message || 'Faltan campos obligatorios o hay errores de validación.');
+        } else if (typeof detail === 'string') {
+          // Single-field 422 string — try to match to a field
+          const fakeList = [detail];
+          applyServerErrors(fakeList);
+          showToast('error', detail);
+        } else {
+          showToast('error', 'Error desconocido al guardar la configuración.');
+        }
+      }
+    } catch {
+      showToast('error', 'Error de red al guardar la configuración.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '💾 Guardar cambios';
+    }
+  });
+
+  // ── Init ─────────────────────────────────────────────────────
+  loadConfig();
+
+  // ── Reset section badge when fields are edited after a test ──
+  // Prevents a stale "✅ Correcto" badge while the user is modifying credentials.
+  ['ll-email', 'll-password', 'll-region'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', () => setSectionState('librelinkup', null));
+  });
+  ['tg-token', 'tg-chatid'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', () => setSectionState('notif', null));
+  });
+</script>
+</body>
+</html>
