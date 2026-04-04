@@ -14,6 +14,7 @@
 | `LIBRELINKUP_EMAIL` | Email de LibreLinkUp (sobreescribe `config.yaml`). | Sin definir |
 | `LIBRELINKUP_PASSWORD` | Contraseña de LibreLinkUp (sobreescribe `config.yaml`). | Sin definir |
 | `WHATSAPP_ACCESS_TOKEN` | Token de WhatsApp Cloud API (sobreescribe `config.yaml`). | Sin definir |
+| `VAPID_PRIVATE_KEY` | Clave privada VAPID en formato PEM para notificaciones push en el navegador. Si no se define, se genera automáticamente y se persiste en `vapid_private.pem`. | Sin definir (auto-generada) |
 
 ---
 
@@ -70,7 +71,7 @@ echo "API_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> .e
 chmod 600 .env
 
 # Crea los archivos de estado antes del primer arranque:
-touch state.json alert_history.db sessions.db readings_cache.json
+touch state.json alert_history.db sessions.db readings_cache.json push_subscriptions.db
 
 docker build -t family-glucose-monitor .
 docker run --rm --env-file .env \
@@ -79,11 +80,14 @@ docker run --rm --env-file .env \
   -v $(pwd)/alert_history.db:/app/alert_history.db \
   -v $(pwd)/sessions.db:/app/sessions.db \
   -v $(pwd)/readings_cache.json:/app/readings_cache.json \
+  -v $(pwd)/push_subscriptions.db:/app/push_subscriptions.db \
   -p 8080:8080 \
   family-glucose-monitor
 ```
 
-> **Archivos de estado:** Los archivos `state.json`, `alert_history.db`, `sessions.db` y `readings_cache.json` deben existir en el host **antes** del primer arranque. Si no existen, Docker crea un directorio vacío en su lugar y la aplicación falla. Usa `touch` para crearlos vacíos.
+> **Archivos de estado:** Los archivos `state.json`, `alert_history.db`, `sessions.db` y `readings_cache.json` sí deben existir en el host **antes** del primer arranque. Si no existen y se montan con bind mounts de Docker, Docker puede crear un directorio vacío en su lugar y la aplicación falla. Usa `touch` para crearlos vacíos.
+>
+> **Web Push (opcional):** `push_subscriptions.db` se recomienda si quieres persistir las suscripciones de Web Push entre reinicios. Si el archivo no existe o no se monta correctamente, el canal Web Push puede quedar deshabilitado o perder persistencia, pero esto no debería impedir el arranque general de la aplicación.
 
 > **Setup wizard en Docker:** `config.yaml` se monta como solo lectura (`:ro`). El wizard de setup no puede escribir `config.yaml` desde dentro del contenedor. Genera `config.yaml` fuera del contenedor primero (ejecutando el wizard sin Docker o copiando `config.example.yaml`), y luego monta el archivo resultante.
 
@@ -93,7 +97,7 @@ Crea el directorio de datos y los archivos vacíos antes del primer arranque:
 
 ```bash
 mkdir -p data
-touch data/state.json data/alert_history.db data/sessions.db data/readings_cache.json
+touch data/state.json data/alert_history.db data/sessions.db data/readings_cache.json data/push_subscriptions.db
 ```
 
 Genera las claves UNA VEZ y guárdalas en `.env`:
@@ -119,6 +123,7 @@ services:
       - ./data/alert_history.db:/app/alert_history.db
       - ./data/sessions.db:/app/sessions.db
       - ./data/readings_cache.json:/app/readings_cache.json
+      - ./data/push_subscriptions.db:/app/push_subscriptions.db
     ports:
       - "8080:8080"
     restart: unless-stopped
@@ -159,6 +164,7 @@ ALERT_HISTORY_DB=/ruta/a/alert_history.db poetry run alembic upgrade head
 ```
 
 > **Nota:** `sessions.db` no usa Alembic. Su esquema lo crea `src/auth.py` con DDL raw al arrancar. Si el archivo no existe, se crea automáticamente.
+> `push_subscriptions.db` tampoco usa Alembic. Su esquema lo crea `src/push_subscriptions.py` al arrancar. Su ubicación efectiva depende del punto de inicialización: puede crearse junto a `alert_history.db` cuando se usa la resolución de `src/bootstrap.py`, pero también puede resolverse como `<project_root>/push_subscriptions.db`. Si configuras `ALERT_HISTORY_DB` con una ruta personalizada, no asumas que `push_subscriptions.db` quedará en ese mismo directorio salvo que el proceso de arranque use esa misma resolución.
 
 ---
 
@@ -205,8 +211,9 @@ server {
 - [ ] Hacer copia de seguridad de `FGM_MASTER_KEY` (o del archivo `.secret_key` si se usa en local). Sin ella los valores cifrados en `config.yaml` son irrecuperables.
 - [ ] Asegurarse de que `AUTH_DISABLED` **no** esté definido en producción (es ignorado automáticamente si `APP_ENV=production`, pero no definirlo es más seguro).
 - [ ] Asegurarse de que `ALLOW_INSECURE_LOCAL_API` **no** esté definido en producción.
-- [ ] Montar `alert_history.db`, `sessions.db`, `state.json` y `readings_cache.json` como volúmenes persistentes en Docker.
+- [ ] Montar `alert_history.db`, `sessions.db`, `state.json`, `readings_cache.json` y `push_subscriptions.db` como volúmenes persistentes en Docker.
 - [ ] Ejecutar las migraciones de base de datos hasta `head` antes del primer arranque (o tras actualizaciones con cambios de schema en `alert_history.db`), usando el método soportado por el proyecto (por ejemplo, `poetry run alembic upgrade head` en un entorno con dependencias de desarrollo, o el job/imagen específica de migraciones definida en la infraestructura).
 - [ ] Configurar un reverse proxy con HTTPS (Caddy, nginx, Traefik) delante del dashboard y la API.
+- [ ] (Opcional) Generar un par de claves VAPID fijo e inyectar `VAPID_PRIVATE_KEY` como variable de entorno o Docker secret para que las suscripciones push persistan entre reinicios del contenedor.
 - [ ] Revisar que la contraseña del panel de control tenga al menos 8 caracteres.
 - [ ] Verificar que `APP_ENV` sea `production` (o no esté definida) para que las cookies usen `Secure=True`.
