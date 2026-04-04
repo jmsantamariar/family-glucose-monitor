@@ -101,9 +101,16 @@ def decrypt_value(stored: str) -> str:
     token = stored[len(_ENCRYPTED_PREFIX):]
     try:
         return f.decrypt(token.encode("ascii")).decode("utf-8")
-    except InvalidToken:
-        logger.error("Failed to decrypt value — key may have changed")
-        raise
+    except InvalidToken as exc:
+        logger.error(
+            "Failed to decrypt the LibreLinkUp password — the encryption key may have changed "
+            "or the value was corrupted.  "
+            "Edit config.yaml and set the password as plain text so it can be re-encrypted."
+        )
+        raise ValueError(
+            "No se pudo desencriptar la contraseña de LibreLinkUp. "
+            "Edita config.yaml y pon la contraseña en texto plano para que sea reencriptada."
+        ) from exc
 
 
 def is_encrypted(value: str) -> bool:

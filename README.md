@@ -182,6 +182,8 @@ En modo `full`, Uvicorn se ejecuta en el hilo principal (manejo correcto de señ
 
 > ⚠️ Para reportar vulnerabilidades, consulta [SECURITY.md](SECURITY.md).
 
+> ⚠️ **Edición manual de `config.yaml`**: Si necesitas modificar `config.yaml` manualmente, usa siempre la contraseña en **texto plano** en el campo `librelinkup.password`. **No copies** el valor `encrypted:...` que el wizard almacena — al reiniciar, el sistema lo reencriptará automáticamente. Copiar el valor cifrado puede corromperse (por ejemplo, en un heredoc de shell) y causar errores de autenticación.
+
 ### Estructura de archivos
 
 ```
