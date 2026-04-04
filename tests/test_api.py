@@ -409,3 +409,477 @@ class TestPWAHtmlTags:
     def test_setup_has_manifest_link(self, client):
         resp = client.get("/setup")
         assert 'rel="manifest"' in resp.text
+
+
+# ── Configuración button on dashboard ────────────────────────────────────────
+
+class TestDashboardConfiguracionButton:
+    """Dashboard must render the 'Configuración' button with a gear icon."""
+
+    def test_dashboard_has_configuracion_link(self, client):
+        resp = client.get("/")
+        assert resp.status_code == 200
+        assert "/configuracion" in resp.text
+
+    def test_dashboard_configuracion_button_has_label(self, client):
+        resp = client.get("/")
+        assert "Configuración" in resp.text
+
+    def test_dashboard_configuracion_button_before_salir(self, client):
+        resp = client.get("/")
+        idx_settings = resp.text.find("/configuracion")
+        idx_logout = resp.text.find("logout-btn")
+        assert idx_settings != -1, "/configuracion link not found"
+        assert idx_logout != -1, "logout-btn not found"
+        assert idx_settings < idx_logout, "'Configuración' must appear before 'Salir'"
+
+
+# ── /configuracion HTML route ────────────────────────────────────────────────
+
+class TestConfiguracionPage:
+    """The /configuracion route must serve the settings HTML."""
+
+    def test_authenticated_user_gets_200(self, client):
+        resp = client.get("/configuracion")
+        assert resp.status_code == 200
+
+    def test_content_type_is_html(self, client):
+        resp = client.get("/configuracion")
+        assert "text/html" in resp.headers["content-type"]
+
+    def test_page_has_spanish_title(self, client):
+        resp = client.get("/configuracion")
+        assert "Configuración del sistema" in resp.text
+
+    def test_page_has_librelinkup_section(self, client):
+        resp = client.get("/configuracion")
+        assert "LibreLinkUp" in resp.text
+
+    def test_page_has_alertas_section(self, client):
+        resp = client.get("/configuracion")
+        assert "Alertas" in resp.text
+
+    def test_page_has_notificaciones_section(self, client):
+        resp = client.get("/configuracion")
+        assert "Notificaciones" in resp.text
+
+    def test_page_has_back_link(self, client):
+        resp = client.get("/configuracion")
+        assert "Volver al dashboard" in resp.text
+
+    def test_unauthenticated_user_is_redirected(self, client, monkeypatch):
+        import src.api as api_module
+        monkeypatch.setattr(api_module, "_ALLOW_AUTH_DISABLED", False)
+        from src.setup_status import is_setup_complete
+        monkeypatch.setattr("src.api.is_setup_complete", lambda: True)
+        monkeypatch.setattr("src.api.is_configured", lambda: True)
+        resp = client.get("/configuracion", follow_redirects=False)
+        assert resp.status_code in (302, 307)
+        assert "/login" in resp.headers.get("location", "")
+
+
+# ── GET /api/configuracion ───────────────────────────────────────────────────
+
+class TestApiGetConfiguracion:
+    """GET /api/configuracion returns masked config."""
+
+    @pytest.fixture(autouse=True)
+    def with_config(self, monkeypatch):
+        import src.api as api_module
+        from src.crypto import encrypt_value
+        monkeypatch.setattr(api_module, "_config", {
+            "librelinkup": {
+                "email": "test@example.com",
+                "password": encrypt_value("mypassword"),
+                "region": "EU",
+            },
+            "alerts": {
+                "low_threshold": 70,
+                "high_threshold": 180,
+                "cooldown_minutes": 20,
+                "max_reading_age_minutes": 15,
+            },
+            "outputs": [
+                {
+                    "type": "telegram",
+                    "enabled": True,
+                    "bot_token": "abc123",
+                    "chat_id": "111222",
+                }
+            ],
+        })
+
+    def test_returns_200(self, client):
+        resp = client.get("/api/configuracion")
+        assert resp.status_code == 200
+
+    def test_email_returned(self, client):
+        resp = client.get("/api/configuracion")
+        assert resp.json()["librelinkup"]["email"] == "test@example.com"
+
+    def test_password_not_exposed(self, client):
+        resp = client.get("/api/configuracion")
+        data = resp.json()
+        # The actual encrypted/plaintext password value must not be in the response
+        ll = data.get("librelinkup", {})
+        # No 'password' key with a plaintext/encrypted value — only has_password bool
+        assert "password" not in ll, "Raw password key must not be in librelinkup response"
+        # has_password should be True
+        assert ll["has_password"] is True
+
+    def test_alert_thresholds_returned(self, client):
+        resp = client.get("/api/configuracion")
+        a = resp.json()["alerts"]
+        assert a["low_threshold"] == 70
+        assert a["high_threshold"] == 180
+
+    def test_telegram_chat_id_returned(self, client):
+        resp = client.get("/api/configuracion")
+        tg = resp.json()["telegram"]
+        assert tg["chat_id"] == "111222"
+
+    def test_telegram_bot_token_not_exposed(self, client):
+        resp = client.get("/api/configuracion")
+        data = resp.json()
+        assert "abc123" not in str(data)
+        assert data["telegram"]["has_bot_token"] is True
+
+
+# ── POST /api/configuracion ──────────────────────────────────────────────────
+
+class TestApiSaveConfiguracion:
+    """POST /api/configuracion persists changes and handles secrets correctly."""
+
+    @pytest.fixture
+    def config_path(self, tmp_path, monkeypatch):
+        import src.api as api_module
+        from src.crypto import encrypt_value
+        from src.auth import hash_password
+
+        existing = {
+            "librelinkup": {
+                "email": "old@example.com",
+                "password": encrypt_value("oldpassword"),
+                "region": "EU",
+            },
+            "dashboard_auth": {
+                "username": "admin",
+                "password_hash": hash_password("adminpass"),
+            },
+            "alerts": {
+                "low_threshold": 70,
+                "high_threshold": 180,
+                "cooldown_minutes": 20,
+                "max_reading_age_minutes": 15,
+                "messages": {
+                    "low": "LOW {patient_name} {value} {trend}",
+                    "high": "HIGH {patient_name} {value} {trend}",
+                },
+                "trend": {"enabled": True},
+            },
+            "outputs": [
+                {
+                    "type": "telegram",
+                    "enabled": True,
+                    "bot_token": "oldtoken",
+                    "chat_id": "999",
+                }
+            ],
+            "monitoring": {"mode": "cron", "interval_seconds": 300},
+            "dashboard": {"enabled": True, "host": "0.0.0.0", "port": 8080},
+        }
+        monkeypatch.setattr(api_module, "_config", existing)
+        cfg_file = tmp_path / "config.yaml"
+        import yaml
+        cfg_file.write_text(yaml.safe_dump(existing))
+        monkeypatch.setattr(api_module, "PROJECT_ROOT", tmp_path)
+        return cfg_file
+
+    def test_save_returns_success(self, client, config_path):
+        resp = client.post("/api/configuracion", json={
+            "librelinkup_email": "new@example.com",
+            "librelinkup_region": "US",
+            "low_threshold": 80,
+            "high_threshold": 200,
+            "cooldown_minutes": 25,
+            "max_reading_age_minutes": 10,
+        })
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
+
+    def test_saves_to_disk(self, client, config_path):
+        client.post("/api/configuracion", json={
+            "librelinkup_email": "saved@example.com",
+            "librelinkup_region": "US",
+            "low_threshold": 80,
+            "high_threshold": 200,
+            "cooldown_minutes": 25,
+            "max_reading_age_minutes": 10,
+        })
+        import yaml
+        saved = yaml.safe_load(config_path.read_text())
+        assert saved["librelinkup"]["email"] == "saved@example.com"
+
+    def test_empty_password_does_not_overwrite_secret(self, client, config_path):
+        """Sending empty password must preserve the existing encrypted password."""
+        import src.api as api_module
+        from src.crypto import encrypt_value
+
+        original_encrypted = encrypt_value("oldpassword")
+        import src.api as api_module
+        api_module._config["librelinkup"]["password"] = original_encrypted
+
+        client.post("/api/configuracion", json={
+            "librelinkup_email": "test@example.com",
+            "librelinkup_password": "",  # empty → keep existing
+            "librelinkup_region": "EU",
+            "low_threshold": 70,
+            "high_threshold": 180,
+            "cooldown_minutes": 20,
+            "max_reading_age_minutes": 15,
+        })
+
+        import yaml
+        saved = yaml.safe_load(config_path.read_text())
+        # The saved password must NOT be empty
+        assert saved["librelinkup"]["password"], "Password was cleared unexpectedly"
+        # The saved password must still be encrypted
+        from src.crypto import is_encrypted, decrypt_value
+        assert is_encrypted(saved["librelinkup"]["password"])
+        assert decrypt_value(saved["librelinkup"]["password"]) == "oldpassword"
+
+    def test_empty_bot_token_preserves_existing(self, client, config_path):
+        """Sending empty bot_token must preserve the existing Telegram token."""
+        client.post("/api/configuracion", json={
+            "librelinkup_email": "test@example.com",
+            "librelinkup_region": "EU",
+            "low_threshold": 70,
+            "high_threshold": 180,
+            "cooldown_minutes": 20,
+            "max_reading_age_minutes": 10,
+            "telegram_enabled": True,
+            "telegram_bot_token": "",  # empty → keep existing
+            "telegram_chat_id": "999",
+        })
+
+        import yaml
+        saved = yaml.safe_load(config_path.read_text())
+        tg = next((o for o in saved.get("outputs", []) if o.get("type") == "telegram"), {})
+        assert tg.get("bot_token") == "oldtoken"
+
+    def test_invalid_thresholds_rejected(self, client, config_path):
+        resp = client.post("/api/configuracion", json={
+            "low_threshold": 200,
+            "high_threshold": 100,  # low >= high → error
+        })
+        assert resp.status_code == 422
+
+    def test_invalid_region_rejected(self, client, config_path):
+        resp = client.post("/api/configuracion", json={
+            "librelinkup_region": "INVALID",
+        })
+        assert resp.status_code == 422
+
+    def test_telegram_enabled_without_token_rejected(self, client, config_path):
+        import src.api as api_module
+        # Remove bot_token from config so empty field has nothing to fall back on
+        api_module._config["outputs"] = [
+            {"type": "telegram", "enabled": False, "bot_token": "", "chat_id": ""}
+        ]
+        resp = client.post("/api/configuracion", json={
+            "librelinkup_email": "test@example.com",
+            "librelinkup_region": "EU",
+            "low_threshold": 70,
+            "high_threshold": 180,
+            "cooldown_minutes": 20,
+            "max_reading_age_minutes": 15,
+            "telegram_enabled": True,
+            "telegram_bot_token": "",  # no token → should fail
+            "telegram_chat_id": "123",
+        })
+        assert resp.status_code == 422
+
+    def test_no_config_returns_409(self, client, monkeypatch):
+        import src.api as api_module
+        monkeypatch.setattr(api_module, "_config", {})
+        resp = client.post("/api/configuracion", json={"low_threshold": 70})
+        assert resp.status_code == 409
+
+
+# ── POST /api/configuracion/probar-librelinkup ────────────────────────────────
+
+class TestApiProbarLibreLinkUp:
+    """Test LibreLinkUp connection endpoint."""
+
+    @pytest.fixture(autouse=True)
+    def with_ll_config(self, monkeypatch):
+        import src.api as api_module
+        from src.crypto import encrypt_value
+        monkeypatch.setattr(api_module, "_config", {
+            "librelinkup": {
+                "email": "saved@example.com",
+                "password": encrypt_value("savedpassword"),
+                "region": "EU",
+            },
+            "outputs": [],
+        })
+
+    def test_success_result(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "src.api._test_librelinkup",
+            lambda email, password, region: {
+                "ok": True,
+                "message": "Conexión exitosa con LibreLinkUp.",
+                "patients": [{"name": "Ana García", "value": 110, "status": "NORMAL"}],
+            },
+        )
+        resp = client.post("/api/configuracion/probar-librelinkup", json={
+            "email": "test@example.com",
+            "password": "pass",
+            "region": "EU",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert "LibreLinkUp" in data["message"]
+
+    def test_failure_result(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "src.api._test_librelinkup",
+            lambda email, password, region: {
+                "ok": False,
+                "message": "Credenciales inválidas. Verifica email y contraseña.",
+                "patients": [],
+            },
+        )
+        resp = client.post("/api/configuracion/probar-librelinkup", json={
+            "email": "bad@example.com",
+            "password": "wrongpass",
+            "region": "EU",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is False
+        assert "inválidas" in data["message"] or "LibreLinkUp" in data["message"]
+
+    def test_uses_saved_password_when_empty(self, client, monkeypatch):
+        """When password field is empty, the saved (decrypted) password is used."""
+        called_with = {}
+
+        def fake_test(email, password, region):
+            called_with["password"] = password
+            return {"ok": True, "message": "ok", "patients": []}
+
+        monkeypatch.setattr("src.api._test_librelinkup", fake_test)
+        client.post("/api/configuracion/probar-librelinkup", json={
+            "email": "test@example.com",
+            "password": "",  # empty → use saved
+            "region": "EU",
+        })
+        assert called_with.get("password") == "savedpassword"
+
+    def test_missing_email_returns_422(self, client, monkeypatch):
+        import src.api as api_module
+        monkeypatch.setattr(api_module, "_config", {"librelinkup": {}, "outputs": []})
+        resp = client.post("/api/configuracion/probar-librelinkup", json={
+            "email": "",
+            "password": "",
+            "region": "EU",
+        })
+        assert resp.status_code == 422
+
+
+# ── POST /api/configuracion/probar-telegram ──────────────────────────────────
+
+class TestApiProbarTelegram:
+    """Test Telegram endpoint."""
+
+    @pytest.fixture(autouse=True)
+    def with_tg_config(self, monkeypatch):
+        import src.api as api_module
+        monkeypatch.setattr(api_module, "_config", {
+            "librelinkup": {},
+            "outputs": [
+                {
+                    "type": "telegram",
+                    "enabled": True,
+                    "bot_token": "savedtoken",
+                    "chat_id": "savedchat",
+                }
+            ],
+        })
+
+    def test_success_result(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "src.api._test_telegram",
+            lambda bot_token, chat_id: {
+                "ok": True,
+                "message": "Telegram configurado correctamente.",
+            },
+        )
+        resp = client.post("/api/configuracion/probar-telegram", json={
+            "bot_token": "mytoken",
+            "chat_id": "123456",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+
+    def test_failure_result(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "src.api._test_telegram",
+            lambda bot_token, chat_id: {
+                "ok": False,
+                "message": "Token de bot inválido.",
+            },
+        )
+        resp = client.post("/api/configuracion/probar-telegram", json={
+            "bot_token": "badtoken",
+            "chat_id": "123",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is False
+
+    def test_uses_saved_token_when_empty(self, client, monkeypatch):
+        """When bot_token is empty, the saved token is used."""
+        called_with = {}
+
+        def fake_test(bot_token, chat_id):
+            called_with["bot_token"] = bot_token
+            return {"ok": True, "message": "ok"}
+
+        monkeypatch.setattr("src.api._test_telegram", fake_test)
+        client.post("/api/configuracion/probar-telegram", json={
+            "bot_token": "",  # empty → use saved
+            "chat_id": "savedchat",
+        })
+        assert called_with.get("bot_token") == "savedtoken"
+
+    def test_missing_token_and_chat_returns_422(self, client, monkeypatch):
+        import src.api as api_module
+        monkeypatch.setattr(api_module, "_config", {"librelinkup": {}, "outputs": []})
+        resp = client.post("/api/configuracion/probar-telegram", json={
+            "bot_token": "",
+            "chat_id": "",
+        })
+        assert resp.status_code == 422
+
+
+# ── Setup route still works ──────────────────────────────────────────────────
+
+class TestSetupRouteUnchanged:
+    """The /setup route must remain accessible after adding /configuracion."""
+
+    def test_setup_page_returns_200(self, client):
+        resp = client.get("/setup")
+        assert resp.status_code == 200
+
+    def test_setup_page_has_wizard_content(self, client):
+        resp = client.get("/setup")
+        assert "text/html" in resp.headers["content-type"]
+
+    def test_login_page_returns_200(self, client, monkeypatch):
+        monkeypatch.setattr("src.api.is_configured", lambda: True)
+        resp = client.get("/login")
+        assert resp.status_code == 200
