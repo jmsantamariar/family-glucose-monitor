@@ -98,10 +98,9 @@ def test_librelinkup(email: str, password: str, region: str) -> dict:
             client.authenticate()
     except Exception as exc:
         exc_type = type(exc).__name__
+        # Log only the exception type — never the message which might contain credentials
+        logger.warning("LibreLinkUp test auth failed [%s]", exc_type)
         exc_msg = str(exc)
-        # Avoid leaking credentials in the message
-        safe_msg = exc_msg.replace(password, "***") if password else exc_msg
-        logger.warning("LibreLinkUp test auth failed [%s]: %s", exc_type, safe_msg)
         if "credential" in exc_msg.lower() or "unauthorized" in exc_msg.lower() or "401" in exc_msg:
             return {
                 "ok": False,
@@ -227,7 +226,8 @@ def test_telegram(bot_token: str, chat_id: str) -> dict:
             detail = resp.json().get("description", "")
         except Exception:
             detail = ""
-        logger.warning("Telegram test returned %d: %s", resp.status_code, detail)
+        # Log only the status code — the description may contain request details
+        logger.warning("Telegram test returned %d", resp.status_code)
         return {
             "ok": False,
             "message": f"No se pudo enviar mensaje de prueba a Telegram (código {resp.status_code}).",
