@@ -604,8 +604,7 @@
 <!-- ── Sticky save bar ──────────────────────────────────────── -->
 <div class="save-bar" role="region" aria-label="Guardar cambios">
   <span class="save-note">
-    Los cambios en umbrales se aplican inmediatamente.
-    Los cambios en LibreLinkUp y Telegram se usan en el próximo ciclo.
+    Los umbrales se aplican inmediatamente; las credenciales de LibreLinkUp en el próximo ciclo de polling; la configuración de Telegram en la próxima alerta.
   </span>
   <button type="button" class="btn btn-primary" id="save-btn"
           aria-label="Guardar todos los cambios de configuración">
@@ -689,16 +688,6 @@
     errEl.classList.remove('show');
   }
 
-  function markFieldOk(inputId) {
-    const input = document.getElementById(inputId);
-    if (!input) return;
-    input.classList.remove('input-error');
-    input.classList.add('input-ok');
-    input.removeAttribute('aria-invalid');
-    const errEl = document.getElementById(inputId + '-error');
-    if (errEl) { errEl.textContent = ''; errEl.classList.remove('show'); }
-  }
-
   function clearAllFieldErrors() {
     const allFields = ['ll-email','ll-password','ll-region',
                        'low-threshold','high-threshold','cooldown','max-age',
@@ -721,7 +710,7 @@
     // sectionKey: 'librelinkup' | 'alertas' | 'notif'
     // state: null | 'ok' | 'err' | 'warn'
     const badgeId = 'status-' + sectionKey;
-    const cardId  = 'card-' + (sectionKey === 'notif' ? 'notif' : sectionKey);
+    const cardId  = 'card-' + sectionKey;
     const badge = document.getElementById(badgeId);
     const card  = document.getElementById(cardId);
     if (!badge) return;
@@ -779,7 +768,7 @@
 
     // Set section states
     Object.entries(sectionErrors).forEach(([sec, errs]) => {
-      if (errs.length > 0) setSectionState(sec === 'notif' ? 'notif' : sec, 'err');
+      if (errs.length > 0) setSectionState(sec, 'err');
     });
 
     // Show summary with all original error messages
@@ -1050,6 +1039,15 @@
 
   // ── Init ─────────────────────────────────────────────────────
   loadConfig();
+
+  // ── Reset section badge when fields are edited after a test ──
+  // Prevents a stale "✅ Correcto" badge while the user is modifying credentials.
+  ['ll-email', 'll-password', 'll-region'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', () => setSectionState('librelinkup', null));
+  });
+  ['tg-token', 'tg-chatid'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', () => setSectionState('notif', null));
+  });
 </script>
 </body>
 </html>

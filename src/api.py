@@ -1147,7 +1147,8 @@ async def api_save_configuracion(request: Request):
         "applied_hot": True,
         "note": (
             "Los cambios en umbrales se aplican de inmediato. "
-            "Los cambios en credenciales de LibreLinkUp y Telegram se usarán en el próximo ciclo de actualización."
+            "Los cambios en LibreLinkUp se usarán en el próximo ciclo de polling. "
+            "Los cambios en Telegram se usarán en la próxima alerta enviada."
         ),
     }
 
