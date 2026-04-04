@@ -882,3 +882,326 @@ class TestSetupRouteUnchanged:
         monkeypatch.setattr("src.api.is_configured", lambda: True)
         resp = client.get("/login")
         assert resp.status_code == 200
+
+
+# ── Configuración UX — error messages and section states ─────────────────────
+
+class TestConfiguracionPageUxElements:
+    """Verify that the /configuracion page includes all UX-improvement elements."""
+
+    def test_page_has_error_summary_region(self, client):
+        resp = client.get("/configuracion")
+        assert "error-summary" in resp.text
+
+    def test_page_has_section_status_badges(self, client):
+        resp = client.get("/configuracion")
+        assert "section-status" in resp.text
+        assert "status-librelinkup" in resp.text
+        assert "status-alertas" in resp.text
+        assert "status-notif" in resp.text
+
+    def test_page_has_field_error_spans(self, client):
+        resp = client.get("/configuracion")
+        assert "ll-email-error" in resp.text
+        assert "low-threshold-error" in resp.text
+        assert "high-threshold-error" in resp.text
+        assert "tg-token-error" in resp.text
+        assert "tg-chatid-error" in resp.text
+
+    def test_page_has_aria_invalid_attributes(self, client):
+        resp = client.get("/configuracion")
+        assert "aria-describedby" in resp.text
+        assert "aria-invalid" in resp.text or "aria-describedby" in resp.text
+
+    def test_page_has_callout_info_for_test_note(self, client):
+        resp = client.get("/configuracion")
+        assert "callout-info" in resp.text
+
+    def test_page_callout_says_form_values(self, client):
+        resp = client.get("/configuracion")
+        assert "actualmente escritos" in resp.text
+
+    def test_page_has_error_summary_role_alert(self, client):
+        resp = client.get("/configuracion")
+        # error-summary must have role="alert" for accessibility
+        assert 'role="alert"' in resp.text
+
+    def test_page_field_errors_have_role_alert(self, client):
+        resp = client.get("/configuracion")
+        # field-error spans must have role="alert"
+        assert 'role="alert"' in resp.text
+
+    def test_page_has_input_error_css_class(self, client):
+        resp = client.get("/configuracion")
+        assert "input-error" in resp.text
+
+    def test_page_has_section_ok_err_styles(self, client):
+        resp = client.get("/configuracion")
+        assert "card-ok" in resp.text or "card-error" in resp.text
+
+    def test_page_has_card_state_css(self, client):
+        resp = client.get("/configuracion")
+        # The CSS should define section states
+        assert "card-ok" in resp.text
+        assert "card-error" in resp.text
+
+    def test_page_has_setSectionState_function(self, client):
+        resp = client.get("/configuracion")
+        assert "setSectionState" in resp.text
+
+    def test_page_has_setFieldError_function(self, client):
+        resp = client.get("/configuracion")
+        assert "setFieldError" in resp.text
+
+    def test_page_has_showErrorSummary_function(self, client):
+        resp = client.get("/configuracion")
+        assert "showErrorSummary" in resp.text
+
+    def test_page_has_error_map(self, client):
+        resp = client.get("/configuracion")
+        # ERROR_MAP maps server error strings to fields
+        assert "ERROR_MAP" in resp.text
+
+    def test_page_has_specific_error_messages(self, client):
+        resp = client.get("/configuracion")
+        assert "umbral bajo debe ser menor" in resp.text
+        assert "bot token" in resp.text.lower() or "Bot Token" in resp.text
+
+    def test_page_has_aria_live_on_test_results(self, client):
+        resp = client.get("/configuracion")
+        assert 'aria-live="polite"' in resp.text
+
+    def test_page_has_success_state_css(self, client):
+        resp = client.get("/configuracion")
+        # input-ok class for success state on individual fields
+        assert "input-ok" in resp.text
+
+
+class TestConfiguracionSaveFieldErrors:
+    """POST /api/configuracion returns specific 422 messages that map to fields."""
+
+    @pytest.fixture
+    def configured(self, tmp_path, monkeypatch):
+        import src.api as api_module
+        from src.crypto import encrypt_value
+        from src.auth import hash_password
+        import yaml
+        existing = {
+            "librelinkup": {
+                "email": "test@example.com",
+                "password": encrypt_value("pass"),
+                "region": "EU",
+            },
+            "dashboard_auth": {
+                "username": "admin",
+                "password_hash": hash_password("adminpass"),
+            },
+            "alerts": {
+                "low_threshold": 70,
+                "high_threshold": 180,
+                "cooldown_minutes": 20,
+                "max_reading_age_minutes": 15,
+                "messages": {"low": "L {patient_name} {value} {trend}", "high": "H {patient_name} {value} {trend}"},
+                "trend": {"enabled": True},
+            },
+            "outputs": [],
+            "monitoring": {"mode": "dashboard", "interval_seconds": 300},
+            "dashboard": {"enabled": True, "host": "0.0.0.0", "port": 8080},
+        }
+        monkeypatch.setattr(api_module, "_config", existing)
+        cfg = tmp_path / "config.yaml"
+        cfg.write_text(yaml.safe_dump(existing))
+        monkeypatch.setattr(api_module, "PROJECT_ROOT", tmp_path)
+
+    def test_low_ge_high_returns_422_with_message(self, client, configured):
+        resp = client.post("/api/configuracion", json={
+            "low_threshold": 200,
+            "high_threshold": 100,
+        })
+        assert resp.status_code == 422
+        # The error message must reference the threshold relationship
+        detail = resp.json()["detail"]
+        detail_str = str(detail)
+        assert "umbral" in detail_str.lower() or "threshold" in detail_str.lower()
+
+    def test_invalid_region_returns_422_with_region_message(self, client, configured):
+        resp = client.post("/api/configuracion", json={
+            "librelinkup_region": "INVALID",
+        })
+        assert resp.status_code == 422
+        assert "Región" in resp.json()["detail"] or "region" in resp.json()["detail"].lower()
+
+    def test_telegram_enabled_without_token_returns_422(self, client, configured):
+        import src.api as api_module
+        api_module._config["outputs"] = []
+        resp = client.post("/api/configuracion", json={
+            "librelinkup_email": "test@example.com",
+            "librelinkup_region": "EU",
+            "low_threshold": 70,
+            "high_threshold": 180,
+            "cooldown_minutes": 20,
+            "max_reading_age_minutes": 15,
+            "telegram_enabled": True,
+            "telegram_bot_token": "",
+            "telegram_chat_id": "999",
+        })
+        assert resp.status_code == 422
+        assert "token" in resp.json()["detail"].lower()
+
+    def test_telegram_enabled_without_chatid_returns_422(self, client, configured):
+        import src.api as api_module
+        api_module._config["outputs"] = []
+        resp = client.post("/api/configuracion", json={
+            "librelinkup_email": "test@example.com",
+            "librelinkup_region": "EU",
+            "low_threshold": 70,
+            "high_threshold": 180,
+            "cooldown_minutes": 20,
+            "max_reading_age_minutes": 15,
+            "telegram_enabled": True,
+            "telegram_bot_token": "abc123",
+            "telegram_chat_id": "",
+        })
+        assert resp.status_code == 422
+        assert "chat" in resp.json()["detail"].lower()
+
+    def test_valid_save_returns_success_message(self, client, configured):
+        resp = client.post("/api/configuracion", json={
+            "librelinkup_email": "ok@example.com",
+            "librelinkup_region": "EU",
+            "low_threshold": 70,
+            "high_threshold": 180,
+            "cooldown_minutes": 20,
+            "max_reading_age_minutes": 15,
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is True
+        assert "guardada correctamente" in data["message"].lower()
+
+    def test_save_includes_applied_hot_flag(self, client, configured):
+        resp = client.post("/api/configuracion", json={
+            "librelinkup_region": "EU",
+            "low_threshold": 70,
+            "high_threshold": 180,
+            "cooldown_minutes": 20,
+            "max_reading_age_minutes": 15,
+        })
+        assert resp.status_code == 200
+        assert "applied_hot" in resp.json()
+
+    def test_save_includes_note_about_cycles(self, client, configured):
+        resp = client.post("/api/configuracion", json={
+            "librelinkup_region": "EU",
+            "low_threshold": 70,
+            "high_threshold": 180,
+            "cooldown_minutes": 20,
+            "max_reading_age_minutes": 15,
+        })
+        assert resp.status_code == 200
+        assert "note" in resp.json()
+
+
+class TestConfiguracionTestEndpointMessages:
+    """Probar endpoints return specific Spanish error messages."""
+
+    @pytest.fixture(autouse=True)
+    def base_config(self, monkeypatch):
+        import src.api as api_module
+        from src.crypto import encrypt_value
+        monkeypatch.setattr(api_module, "_config", {
+            "librelinkup": {
+                "email": "test@example.com",
+                "password": encrypt_value("pass"),
+                "region": "EU",
+            },
+            "outputs": [{"type": "telegram", "enabled": True, "bot_token": "tok", "chat_id": "123"}],
+        })
+
+    def test_librelinkup_invalid_creds_message(self, client, monkeypatch):
+        monkeypatch.setattr("src.api._test_librelinkup", lambda *a: {
+            "ok": False,
+            "message": "Credenciales inválidas. Verifica email y contraseña.",
+            "patients": [],
+        })
+        resp = client.post("/api/configuracion/probar-librelinkup", json={
+            "email": "bad@example.com", "password": "wrong", "region": "EU",
+        })
+        data = resp.json()
+        assert data["ok"] is False
+        assert "inválidas" in data["message"].lower() or "credenciales" in data["message"].lower()
+
+    def test_librelinkup_network_error_message(self, client, monkeypatch):
+        monkeypatch.setattr("src.api._test_librelinkup", lambda *a: {
+            "ok": False,
+            "message": "Error de red o timeout al conectar con LibreLinkUp.",
+            "patients": [],
+        })
+        resp = client.post("/api/configuracion/probar-librelinkup", json={
+            "email": "test@example.com", "password": "pass", "region": "EU",
+        })
+        data = resp.json()
+        assert "red" in data["message"].lower() or "timeout" in data["message"].lower()
+
+    def test_librelinkup_success_includes_patients(self, client, monkeypatch):
+        monkeypatch.setattr("src.api._test_librelinkup", lambda *a: {
+            "ok": True,
+            "message": "Conexión exitosa con LibreLinkUp.",
+            "patients": [{"name": "María", "value": 110, "status": "NORMAL"}],
+        })
+        resp = client.post("/api/configuracion/probar-librelinkup", json={
+            "email": "test@example.com", "password": "pass", "region": "EU",
+        })
+        data = resp.json()
+        assert data["ok"] is True
+        assert len(data["patients"]) == 1
+        assert data["patients"][0]["name"] == "María"
+
+    def test_telegram_invalid_token_message(self, client, monkeypatch):
+        monkeypatch.setattr("src.api._test_telegram", lambda *a: {
+            "ok": False,
+            "message": "Token de bot inválido.",
+        })
+        resp = client.post("/api/configuracion/probar-telegram", json={
+            "bot_token": "bad", "chat_id": "123",
+        })
+        data = resp.json()
+        assert data["ok"] is False
+        assert "token" in data["message"].lower() or "inválido" in data["message"].lower()
+
+    def test_telegram_invalid_chatid_message(self, client, monkeypatch):
+        monkeypatch.setattr("src.api._test_telegram", lambda *a: {
+            "ok": False,
+            "message": "Chat ID inválido o bot no tiene acceso a ese chat.",
+        })
+        resp = client.post("/api/configuracion/probar-telegram", json={
+            "bot_token": "valid_tok", "chat_id": "bad_id",
+        })
+        data = resp.json()
+        assert data["ok"] is False
+        assert "chat" in data["message"].lower() or "id" in data["message"].lower()
+
+    def test_telegram_success_message(self, client, monkeypatch):
+        monkeypatch.setattr("src.api._test_telegram", lambda *a: {
+            "ok": True,
+            "message": "Telegram configurado correctamente.",
+        })
+        resp = client.post("/api/configuracion/probar-telegram", json={
+            "bot_token": "valid", "chat_id": "123",
+        })
+        data = resp.json()
+        assert data["ok"] is True
+        assert "telegram" in data["message"].lower()
+
+    def test_librelinkup_no_patients_message(self, client, monkeypatch):
+        monkeypatch.setattr("src.api._test_librelinkup", lambda *a: {
+            "ok": True,
+            "message": "Conexión exitosa con LibreLinkUp, pero no hay pacientes vinculados.",
+            "patients": [],
+        })
+        resp = client.post("/api/configuracion/probar-librelinkup", json={
+            "email": "test@example.com", "password": "pass", "region": "EU",
+        })
+        data = resp.json()
+        assert data["ok"] is True
+        assert "pacientes" in data["message"].lower()
