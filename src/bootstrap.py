@@ -23,7 +23,7 @@ class BootstrapError(RuntimeError):
     """Raised when startup storage validation fails fatally."""
 
 
-def bootstrap_storage(config: dict, project_root: Path | None = None) -> None:
+def bootstrap_storage(config: dict) -> None:
     """Create and validate all persistent-storage files required at runtime.
 
     Actions
@@ -40,15 +40,11 @@ def bootstrap_storage(config: dict, project_root: Path | None = None) -> None:
     Parameters
     ----------
     config:
-        The already-validated configuration dictionary.
-    project_root:
-        Override the project root used for resolving relative paths.  Useful
-        in tests; defaults to the value from :mod:`src.paths`.
+        The already-validated configuration dictionary.  Paths inside the
+        config (``state_file``, ``alert_history_db``, ``api.cache_file``) are
+        resolved through :mod:`src.paths`, which honours the matching
+        environment-variable overrides.
     """
-    from src.paths import PROJECT_ROOT as _DEFAULT_ROOT
-
-    root = project_root if project_root is not None else _DEFAULT_ROOT
-
     state_path = get_state_path(config)
     db_path = get_db_path(config)
     cache_path = get_cache_path(config)

@@ -199,7 +199,7 @@ async def loopback_guardrail_middleware(request: Request, call_next):
     """
     if ALLOW_INSECURE_LOCAL_API and API_KEY is None:
         client_host = request.client.host if request.client else None
-        # Allow when client host cannot be determined (e.g. WSGI test clients).
+        # Allow when client host cannot be determined (e.g. in-process test clients).
         if client_host is not None and client_host not in _LOOPBACK_ADDRS:
             from fastapi.responses import JSONResponse
             return JSONResponse(
