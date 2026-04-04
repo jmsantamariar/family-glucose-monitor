@@ -500,6 +500,205 @@ class TestSetupEndpoint:
         assert not (mode & _stat.S_IROTH)
 
 
+# ── /api/setup/telegram/fetch-chat-id ─────────────────────────────────────────
+
+
+class TestTelegramFetchChatId:
+    """Tests for the Telegram chat-ID discovery endpoint used by the setup wizard."""
+
+    @pytest.fixture
+    def client(self):
+        yield TestClient(app)
+
+    def _make_updates(self, *chats):
+        """Build a fake Telegram getUpdates response with the given (id, name) pairs."""
+        updates = []
+        for i, (chat_id, chat_name) in enumerate(chats):
+            updates.append(
+                {
+                    "update_id": 1000 + i,
+                    "message": {
+                        "message_id": i + 1,
+                        "chat": {"id": chat_id, "type": "private", "first_name": chat_name},
+                        "text": "hello",
+                    },
+                }
+            )
+        return {"ok": True, "result": updates}
+
+    def test_missing_bot_token_returns_422(self, client):
+        resp = client.post(
+            "/api/setup/telegram/fetch-chat-id",
+            json={},
+        )
+        assert resp.status_code == 422
+
+    def test_empty_bot_token_returns_422(self, client):
+        resp = client.post(
+            "/api/setup/telegram/fetch-chat-id",
+            json={"bot_token": "   "},
+        )
+        assert resp.status_code == 422
+
+    def test_invalid_json_returns_400(self, client):
+        resp = client.post(
+            "/api/setup/telegram/fetch-chat-id",
+            content=b"not json",
+            headers={"Content-Type": "application/json"},
+        )
+        assert resp.status_code == 400
+
+    def test_invalid_token_returns_422(self, client):
+        from unittest.mock import MagicMock, patch
+
+        mock_resp = MagicMock()
+        mock_resp.ok = False
+        mock_resp.status_code = 401
+        with patch("src.api._requests.get", return_value=mock_resp):
+            resp = client.post(
+                "/api/setup/telegram/fetch-chat-id",
+                json={"bot_token": "bad_token"},
+            )
+        assert resp.status_code == 422
+        assert "inválido" in resp.json()["detail"].lower()
+
+    def test_telegram_api_error_returns_502(self, client):
+        from unittest.mock import MagicMock, patch
+
+        mock_resp = MagicMock()
+        mock_resp.ok = False
+        mock_resp.status_code = 500
+        with patch("src.api._requests.get", return_value=mock_resp):
+            resp = client.post(
+                "/api/setup/telegram/fetch-chat-id",
+                json={"bot_token": "tok"},
+            )
+        assert resp.status_code == 502
+
+    def test_network_error_returns_502(self, client):
+        from unittest.mock import patch
+        import requests as real_requests
+
+        with patch(
+            "src.api._requests.get",
+            side_effect=real_requests.RequestException("timeout"),
+        ):
+            resp = client.post(
+                "/api/setup/telegram/fetch-chat-id",
+                json={"bot_token": "tok"},
+            )
+        assert resp.status_code == 502
+
+    def test_no_updates_returns_empty_chats(self, client):
+        from unittest.mock import MagicMock, patch
+
+        mock_resp = MagicMock()
+        mock_resp.ok = True
+        mock_resp.json.return_value = {"ok": True, "result": []}
+        with patch("src.api._requests.get", return_value=mock_resp):
+            resp = client.post(
+                "/api/setup/telegram/fetch-chat-id",
+                json={"bot_token": "tok"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["chats"] == []
+
+    def test_single_chat_returned(self, client):
+        from unittest.mock import MagicMock, patch
+
+        mock_resp = MagicMock()
+        mock_resp.ok = True
+        mock_resp.json.return_value = self._make_updates((123456789, "Alice"))
+        with patch("src.api._requests.get", return_value=mock_resp):
+            resp = client.post(
+                "/api/setup/telegram/fetch-chat-id",
+                json={"bot_token": "tok"},
+            )
+        assert resp.status_code == 200
+        chats = resp.json()["chats"]
+        assert len(chats) == 1
+        assert chats[0]["id"] == "123456789"
+        assert chats[0]["name"] == "Alice"
+
+    def test_multiple_chats_deduplicated(self, client):
+        from unittest.mock import MagicMock, patch
+
+        # Same chat ID appears in two updates — must be deduplicated.
+        updates = {
+            "ok": True,
+            "result": [
+                {
+                    "update_id": 1,
+                    "message": {
+                        "message_id": 1,
+                        "chat": {"id": -100111, "type": "group", "title": "Family"},
+                        "text": "hi",
+                    },
+                },
+                {
+                    "update_id": 2,
+                    "message": {
+                        "message_id": 2,
+                        "chat": {"id": -100111, "type": "group", "title": "Family"},
+                        "text": "there",
+                    },
+                },
+                {
+                    "update_id": 3,
+                    "message": {
+                        "message_id": 3,
+                        "chat": {"id": 999, "type": "private", "first_name": "Bob"},
+                        "text": "hey",
+                    },
+                },
+            ],
+        }
+        mock_resp = MagicMock()
+        mock_resp.ok = True
+        mock_resp.json.return_value = updates
+        with patch("src.api._requests.get", return_value=mock_resp):
+            resp = client.post(
+                "/api/setup/telegram/fetch-chat-id",
+                json={"bot_token": "tok"},
+            )
+        assert resp.status_code == 200
+        chats = resp.json()["chats"]
+        ids = [c["id"] for c in chats]
+        assert len(ids) == 2
+        assert "-100111" in ids
+        assert "999" in ids
+
+    def test_channel_post_chat_extracted(self, client):
+        from unittest.mock import MagicMock, patch
+
+        updates = {
+            "ok": True,
+            "result": [
+                {
+                    "update_id": 1,
+                    "channel_post": {
+                        "message_id": 1,
+                        "chat": {"id": -100999, "type": "channel", "title": "My Channel"},
+                        "text": "broadcast",
+                    },
+                }
+            ],
+        }
+        mock_resp = MagicMock()
+        mock_resp.ok = True
+        mock_resp.json.return_value = updates
+        with patch("src.api._requests.get", return_value=mock_resp):
+            resp = client.post(
+                "/api/setup/telegram/fetch-chat-id",
+                json={"bot_token": "tok"},
+            )
+        assert resp.status_code == 200
+        chats = resp.json()["chats"]
+        assert len(chats) == 1
+        assert chats[0]["id"] == "-100999"
+        assert chats[0]["name"] == "My Channel"
+
+
 # ── Auth middleware ───────────────────────────────────────────────────────────
 
 
