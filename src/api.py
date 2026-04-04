@@ -536,10 +536,10 @@ async def api_telegram_fetch_chat_id(request: Request):
     url = f"{_TELEGRAM_API_URL}/bot{bot_token}/getUpdates"
     try:
         resp = _requests.get(url, timeout=10)
-    except _requests.RequestException as exc:
+    except _requests.RequestException:
         raise HTTPException(
             status_code=502,
-            detail=f"Error al contactar Telegram: {exc}",
+            detail="Error al contactar Telegram.",
         )
 
     if resp.status_code == 401:
