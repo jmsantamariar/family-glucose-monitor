@@ -15,6 +15,7 @@ from pathlib import Path
 
 from src.alert_history import init_db, validate_schema
 from src.paths import get_cache_path, get_db_path, get_state_path
+import src.push_subscriptions as _push_subs
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +98,15 @@ def bootstrap_storage(config: dict) -> None:
         except OSError as exc:
             # Non-fatal: the daemon will write it on the first polling cycle.
             logger.warning("Could not pre-create readings cache at %s: %s", cache_path, exc)
+
+    # --- Initialise push_subscriptions.db (idempotent) ---
+    push_db_path = str(Path(db_path).parent / "push_subscriptions.db")
+    try:
+        _push_subs.init_db(push_db_path)
+    except Exception as exc:
+        # Non-fatal: browser push notifications will be skipped if the DB is
+        # unavailable, but other alerting channels continue to work.
+        logger.warning("Could not initialise push_subscriptions.db at %s: %s", push_db_path, exc)
 
 
 def check_config_writable(config_path: Path) -> str | None:

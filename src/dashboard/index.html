@@ -373,6 +373,16 @@
   <!-- ── Alert history ────────────────────────────────────────── -->
   <p class="section-title">Historial de alertas</p>
 
+  <!-- ── Push notification subscription ──────────────────────── -->
+  <div id="push-section" style="margin-bottom:1rem;padding:1rem;background:var(--surface);border-radius:8px;border:1px solid var(--border);display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;">
+    <span style="font-size:1.1rem;">🔔 Notificaciones push:</span>
+    <button id="push-btn" style="padding:.35rem .9rem;border-radius:6px;border:none;cursor:pointer;font-size:.9rem;background:#2b6cb0;color:#fff;">
+      Activar notificaciones
+    </button>
+    <span id="push-status" style="font-size:.85rem;color:var(--subtext);"></span>
+  </div>
+  <p class="section-title">Historial de alertas</p>
+
   <div class="history-controls">
     <label for="patient-filter">Paciente:</label>
     <select id="patient-filter">
@@ -885,6 +895,115 @@
 <script>
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js');
+  }
+</script>
+<script>
+  // ── Push notification subscription management ─────────────────────────────
+  const pushBtn = document.getElementById('push-btn');
+  const pushStatus = document.getElementById('push-status');
+
+  function getCsrfToken() {
+    const match = document.cookie.split('; ').find(r => r.startsWith('csrf_token='));
+    return match ? match.split('=')[1] : '';
+  }
+
+  async function getVapidPublicKey() {
+    const resp = await fetch('/api/push/vapid-public-key');
+    if (!resp.ok) throw new Error('No se pudo obtener la clave VAPID');
+    const data = await resp.json();
+    return data.publicKey;
+  }
+
+  function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = atob(base64);
+    return new Uint8Array([...rawData].map(c => c.charCodeAt(0)));
+  }
+
+  async function updatePushButton() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      pushStatus.textContent = 'Tu navegador no soporta notificaciones push.';
+      pushBtn.disabled = true;
+      return;
+    }
+    if (Notification.permission === 'denied') {
+      pushStatus.textContent = '🔕 Notificaciones bloqueadas en el navegador.';
+      pushBtn.disabled = true;
+      return;
+    }
+    const registration = await navigator.serviceWorker.ready;
+    const existing = await registration.pushManager.getSubscription();
+    if (existing) {
+      pushBtn.textContent = 'Desactivar notificaciones';
+      pushBtn.style.background = '#c53030';
+      pushStatus.textContent = '✅ Notificaciones activas en este dispositivo.';
+    } else {
+      pushBtn.textContent = 'Activar notificaciones';
+      pushBtn.style.background = '#2b6cb0';
+      pushStatus.textContent = '';
+    }
+  }
+
+  async function subscribeToPush() {
+    const registration = await navigator.serviceWorker.ready;
+    const publicKey = await getVapidPublicKey();
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey),
+    });
+    const subJson = subscription.toJSON();
+    const csrf = getCsrfToken();
+    const resp = await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify(subJson),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.detail || 'Error al guardar la suscripción');
+    }
+  }
+
+  async function unsubscribeFromPush() {
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    if (!subscription) return;
+    const endpoint = subscription.endpoint;
+    await subscription.unsubscribe();
+    const csrf = getCsrfToken();
+    await fetch('/api/push/unsubscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ endpoint }),
+    });
+  }
+
+  pushBtn.addEventListener('click', async () => {
+    pushBtn.disabled = true;
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const existing = await registration.pushManager.getSubscription();
+      if (existing) {
+        await unsubscribeFromPush();
+        pushStatus.textContent = '🔕 Notificaciones desactivadas.';
+      } else {
+        await subscribeToPush();
+        pushStatus.textContent = '✅ ¡Notificaciones activadas!';
+      }
+      await updatePushButton();
+    } catch (err) {
+      pushStatus.textContent = '⚠️ ' + (err.message || 'Error desconocido');
+    } finally {
+      pushBtn.disabled = false;
+    }
+  });
+
+  if ('serviceWorker' in navigator && 'PushManager' in window) {
+    navigator.serviceWorker.ready.then(() => updatePushButton());
+  } else {
+    pushStatus.textContent = 'Tu navegador no soporta notificaciones push.';
+    pushBtn.disabled = true;
   }
 </script>
 </body>
