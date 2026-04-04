@@ -5,3 +5,4 @@ fastapi==0.115.12
 uvicorn[standard]==0.34.0
 cryptography==46.0.5
 sqlalchemy==2.0.48
+pywebpush==2.3.0

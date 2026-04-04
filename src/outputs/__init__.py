@@ -5,13 +5,20 @@ import os
 from src.outputs.base import BaseOutput
 from src.outputs.telegram import TelegramOutput
 from src.outputs.webhook import WebhookOutput
+from src.outputs.webpush import WebPushOutput
 from src.outputs.whatsapp import WhatsAppOutput
 
 logger = logging.getLogger(__name__)
 
 
 def build_outputs(config: dict) -> list[BaseOutput]:
-    """Instantiate and return all enabled output channels from *config*."""
+    """Instantiate and return all enabled output channels from *config*.
+
+    Always includes a :class:`~src.outputs.webpush.WebPushOutput` so that
+    glucose alerts are delivered to every browser that subscribed to push
+    notifications through the dashboard — even when no other channel is
+    configured.
+    """
     outputs: list[BaseOutput] = []
     for out_cfg in config.get("outputs", []):
         if not out_cfg.get("enabled", False):
@@ -40,4 +47,8 @@ def build_outputs(config: dict) -> list[BaseOutput]:
             ))
         else:
             logger.warning("Unknown output type '%s', skipping", out_type)
+
+    # Always include the web-push channel.  When no browsers have subscribed
+    # it sends nothing; subscriptions are managed at runtime via the dashboard.
+    outputs.append(WebPushOutput())
     return outputs
