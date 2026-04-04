@@ -16,6 +16,7 @@ fastapi = "0.115.12"
 uvicorn = { version = "0.34.0", extras = ["standard"] }
 cryptography = "46.0.5"
 sqlalchemy = "2.0.48"
+pywebpush = "2.3.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "9.0.2"

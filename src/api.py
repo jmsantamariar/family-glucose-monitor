@@ -47,7 +47,9 @@ from src.auth import hash_password, is_configured, session_manager, verify_crede
 from src.bootstrap import check_config_writable
 from src.config_schema import validate_config as schema_validate_config
 from src.crypto import encrypt_value
+from src.outputs.webpush import WebPushOutput, get_vapid_public_key
 from src.paths import get_cache_path
+import src.push_subscriptions as _push_subs
 from src.setup_status import is_setup_complete
 
 logger = logging.getLogger(__name__)
@@ -198,6 +200,13 @@ async def lifespan(application: "FastAPI"):
     except FileNotFoundError:
         logger.warning("config.yaml not found, dashboard will start without active config")
 
+    # Initialise push-subscription database.
+    _push_subs_db = str(PROJECT_ROOT / "push_subscriptions.db")
+    try:
+        _push_subs.init_db(_push_subs_db)
+    except Exception as exc:
+        logger.warning("Could not initialise push subscriptions DB: %s", exc)
+
     def _session_cleanup_loop():
         while True:
             time.sleep(3600)
@@ -229,6 +238,7 @@ _AUTH_EXEMPT_PATHS = {
     "/setup",
     "/manifest.json",
     "/sw.js",
+    "/api/push/vapid-public-key",
 }
 
 _AUTH_EXEMPT_PREFIXES = (
@@ -501,6 +511,89 @@ def pwa_icon(filename: str):
     suffix = path.suffix.lower()
     media_type = _MIME_TYPES.get(suffix, "application/octet-stream")
     return FileResponse(path, media_type=media_type)
+
+
+# ── Web Push notification endpoints ──────────────────────────────────────────
+
+@app.get("/api/push/vapid-public-key", response_class=JSONResponse)
+def push_vapid_public_key():
+    """Return the VAPID public key so browsers can subscribe to push notifications.
+
+    This endpoint is auth-exempt because the public key must be available
+    before the user logs in (e.g., from the login page).
+    """
+    try:
+        key = get_vapid_public_key()
+    except Exception as exc:
+        logger.error("Could not load VAPID public key: %s", exc)
+        raise HTTPException(status_code=500, detail="VAPID keys unavailable")
+    return {"publicKey": key}
+
+
+@app.post("/api/push/subscribe", response_class=JSONResponse)
+async def push_subscribe(request: Request):
+    """Save a browser push subscription from an authenticated user.
+
+    Expects a JSON body matching the ``PushSubscription.toJSON()`` output::
+
+        {
+            "endpoint": "https://...",
+            "keys": {
+                "p256dh": "<base64url>",
+                "auth":   "<base64url>"
+            }
+        }
+    """
+    _validate_csrf(request)
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON inválido")
+
+    endpoint = str(data.get("endpoint", "")).strip()
+    keys = data.get("keys") or {}
+    p256dh = str(keys.get("p256dh", "")).strip()
+    auth = str(keys.get("auth", "")).strip()
+
+    if not endpoint or not p256dh or not auth:
+        raise HTTPException(
+            status_code=422,
+            detail="endpoint, keys.p256dh y keys.auth son obligatorios",
+        )
+
+    try:
+        _push_subs.save_subscription(endpoint, p256dh, auth)
+    except Exception as exc:
+        logger.error("Failed to save push subscription: %s", exc)
+        raise HTTPException(status_code=500, detail="No se pudo guardar la suscripción")
+
+    return {"message": "✅ Suscripción guardada"}
+
+
+@app.post("/api/push/unsubscribe", response_class=JSONResponse)
+async def push_unsubscribe(request: Request):
+    """Remove a browser push subscription.
+
+    Expects a JSON body with ``{"endpoint": "<url>"}``.
+    """
+    _validate_csrf(request)
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON inválido")
+
+    endpoint = str(data.get("endpoint", "")).strip()
+    if not endpoint:
+        raise HTTPException(status_code=422, detail="endpoint es obligatorio")
+
+    try:
+        _push_subs.delete_subscription(endpoint)
+    except Exception as exc:
+        logger.error("Failed to delete push subscription: %s", exc)
+        raise HTTPException(status_code=500, detail="No se pudo eliminar la suscripción")
+
+    return {"message": "✅ Suscripción eliminada"}
+
 
 
 @app.get("/api/setup/status", response_class=JSONResponse)

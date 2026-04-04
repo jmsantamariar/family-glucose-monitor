@@ -18,3 +18,5 @@ readings_cache.json
 alert_history.db
 # Encryption key for sensitive config values
 .secret_key
+# VAPID private key for Web Push notifications
+vapid_private.pem

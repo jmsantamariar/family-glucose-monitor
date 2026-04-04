@@ -5,6 +5,10 @@
  *   - On install, pre-cache the three app-shell pages.
  *   - On fetch, try the network first; fall back to the cache when offline.
  *   - Cache is versioned so that a new deployment purges stale entries.
+ *
+ * Push notifications (Web Push API):
+ *   - Handles "push" events to display glucose alert notifications.
+ *   - Handles "notificationclick" to focus or open the dashboard window.
  */
 
 const CACHE_NAME = "fgm-shell-v1";
@@ -99,5 +103,50 @@ self.addEventListener("fetch", (event) => {
           );
         })
       )
+  );
+});
+
+// ── Push: display glucose alert notifications ────────────────────────────────
+self.addEventListener("push", (event) => {
+  let data = {};
+  if (event.data) {
+    try {
+      data = event.data.json();
+    } catch {
+      data = { title: "🔔 Alerta de glucosa", body: event.data.text() };
+    }
+  }
+
+  const title = data.title || "🔔 Alerta de glucosa";
+  const options = {
+    body: data.body || "",
+    icon: data.icon || "/icons/icon-192.svg",
+    badge: "/icons/icon-192.svg",
+    tag: "glucose-alert",
+    renotify: true,
+    data: data,
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// ── Notification click: focus or open the dashboard ──────────────────────────
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+
+  const urlToOpen = self.location.origin + "/";
+
+  event.waitUntil(
+    clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((windowClients) => {
+        const existing = windowClients.find((c) =>
+          c.url.startsWith(urlToOpen)
+        );
+        if (existing) {
+          return existing.focus();
+        }
+        return clients.openWindow(urlToOpen);
+      })
   );
 });
