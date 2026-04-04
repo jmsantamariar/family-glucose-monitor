@@ -217,6 +217,32 @@
     .notif-section { display: none; margin-top: .75rem; }
     .notif-section.visible { display: block; }
 
+    .tg-guide {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: .85rem 1rem;
+      margin-bottom: .85rem;
+      font-size: .875rem;
+    }
+
+    .tg-guide p { margin-bottom: .5rem; color: var(--subtext); }
+
+    .tg-steps {
+      padding-left: 1.4rem;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: .35rem;
+      color: var(--text);
+    }
+
+    .tg-steps a { color: var(--accent); text-decoration: none; }
+    .tg-steps a:hover { text-decoration: underline; }
+
+    .tg-chat-id-msg-success { color: var(--success-fg); }
+    .tg-chat-id-msg-error   { color: var(--error-fg); }
+
     /* ── Buttons ──────────────────────────────────────────────────── */
     .btn-row {
       display: flex;
@@ -411,13 +437,28 @@
 
         <!-- Telegram fields -->
         <div class="notif-section" id="sec-telegram">
+          <div class="tg-guide">
+            <p>Sigue estos pasos para configurar las notificaciones de Telegram:</p>
+            <ol class="tg-steps">
+              <li>Habla con <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer">@BotFather</a> → escribe <code>/newbot</code> → copia el <strong>token</strong> en el campo de abajo.</li>
+              <li>Abre tu bot nuevo en Telegram y envíale cualquier mensaje (por ejemplo, <em>Hola</em>).</li>
+              <li>Haz clic en <strong>"📥 Obtener Chat ID"</strong> para que se rellene automáticamente.</li>
+            </ol>
+          </div>
           <div class="form-group">
             <label for="tgToken">🤖 Token del bot de Telegram</label>
             <input type="text" id="tgToken" placeholder="123456789:ABCDEFGabcdefg..." autocomplete="off" />
           </div>
           <div class="form-group">
-            <label for="tgChatId">💬 Chat ID</label>
+            <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem">
+              <label for="tgChatId" style="margin:0">💬 Chat ID</label>
+              <button type="button" class="btn btn-secondary" id="fetchChatIdBtn" onclick="fetchTelegramChatId()" style="padding:.3rem .8rem;font-size:.82rem;">
+                📥 Obtener Chat ID
+              </button>
+            </div>
             <input type="text" id="tgChatId" placeholder="-100123456789" autocomplete="off" />
+            <div id="tgChatIdMsg" style="display:none;font-size:.85rem;margin-top:.35rem;"></div>
+            <div id="tgChatSelect" style="display:none;margin-top:.5rem;"></div>
           </div>
         </div>
 
@@ -528,6 +569,77 @@
     function hideAlert() {
       const box = document.getElementById('alertBox');
       box.style.display = 'none';
+    }
+
+    async function fetchTelegramChatId() {
+      const token = document.getElementById('tgToken').value.trim();
+      const msg = document.getElementById('tgChatIdMsg');
+      const sel = document.getElementById('tgChatSelect');
+
+      if (!token) {
+        msg.textContent = '⚠️ Ingresa primero el token del bot.';
+        msg.className = 'tg-chat-id-msg-error';
+        msg.style.display = 'block';
+        return;
+      }
+
+      const btn = document.getElementById('fetchChatIdBtn');
+      btn.disabled = true;
+      btn.textContent = '⏳ Buscando…';
+      msg.style.display = 'none';
+      sel.style.display = 'none';
+
+      try {
+        const res = await fetch('/api/setup/telegram/fetch-chat-id', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bot_token: token }),
+        });
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          msg.textContent = '⚠️ ' + (data.detail || 'Error al obtener el Chat ID.');
+          msg.className = 'tg-chat-id-msg-error';
+          msg.style.display = 'block';
+        } else if (!data.chats || data.chats.length === 0) {
+          msg.textContent = '⚠️ No se encontraron mensajes. Envía un mensaje a tu bot y vuelve a intentarlo.';
+          msg.className = '';
+          msg.style.color = 'var(--subtext)';
+          msg.style.display = 'block';
+        } else if (data.chats.length === 1) {
+          document.getElementById('tgChatId').value = data.chats[0].id;
+          const label = data.chats[0].name ? ` (${data.chats[0].name})` : '';
+          msg.textContent = `✅ Chat ID obtenido: ${data.chats[0].id}${label}`;
+          msg.className = 'tg-chat-id-msg-success';
+          msg.style.color = '';
+          msg.style.display = 'block';
+        } else {
+          // Multiple chats found — render a selector
+          let html = '<label style="font-size:.85rem;font-weight:600">Selecciona el chat:</label>'
+            + '<select style="width:100%;margin-top:.3rem;padding:.45rem .75rem;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:.9rem"'
+            + ' onchange="document.getElementById(\'tgChatId\').value=this.value">';
+          for (const chat of data.chats) {
+            const label = chat.name ? `${chat.name} (${chat.id})` : chat.id;
+            html += `<option value="${chat.id}">${label}</option>`;
+          }
+          html += '</select>';
+          sel.innerHTML = html;
+          sel.style.display = 'block';
+          document.getElementById('tgChatId').value = data.chats[0].id;
+          msg.textContent = `✅ Se encontraron ${data.chats.length} chats. Selecciona el correcto arriba.`;
+          msg.className = 'tg-chat-id-msg-success';
+          msg.style.color = '';
+          msg.style.display = 'block';
+        }
+      } catch {
+        msg.textContent = '⚠️ Error de conexión al obtener el Chat ID.';
+        msg.className = 'tg-chat-id-msg-error';
+        msg.style.color = '';
+        msg.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '📥 Obtener Chat ID';
+      }
     }
 
     async function submitSetup() {
