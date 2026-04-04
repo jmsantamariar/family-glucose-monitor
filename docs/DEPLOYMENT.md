@@ -162,7 +162,7 @@ ALERT_HISTORY_DB=/ruta/a/alert_history.db poetry run alembic upgrade head
 ```
 
 > **Nota:** `sessions.db` no usa Alembic. Su esquema lo crea `src/auth.py` con DDL raw al arrancar. Si el archivo no existe, se crea automáticamente.
-> `push_subscriptions.db` tampoco usa Alembic. Su esquema lo crea `src/push_subscriptions.py` (invocado desde `src/bootstrap.py`) al arrancar. Se crea automáticamente en el mismo directorio que `alert_history.db`.
+> `push_subscriptions.db` tampoco usa Alembic. Su esquema lo crea `src/push_subscriptions.py` al arrancar. Su ubicación efectiva depende del punto de inicialización: puede crearse junto a `alert_history.db` cuando se usa la resolución de `src/bootstrap.py`, pero también puede resolverse como `<project_root>/push_subscriptions.db`. Si configuras `ALERT_HISTORY_DB` con una ruta personalizada, no asumas que `push_subscriptions.db` quedará en ese mismo directorio salvo que el proceso de arranque use esa misma resolución.
 
 ---
 
