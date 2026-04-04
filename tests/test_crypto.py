@@ -99,7 +99,7 @@ def test_key_file_created_with_restricted_permissions(tmp_path):
 
 
 def test_decrypt_with_wrong_key_raises(tmp_path):
-    """Decrypting with a different key must raise cryptography.fernet.InvalidToken."""
+    """Decrypting with a different key must raise ValueError with an actionable message."""
     key_file_a = tmp_path / ".secret_key_a"
     key_file_b = tmp_path / ".secret_key_b"
 
@@ -109,7 +109,7 @@ def test_decrypt_with_wrong_key_raises(tmp_path):
 
     # Attempt to decrypt with key B (a fresh, different key)
     with patch.object(crypto_module, "_SECRET_KEY_FILE", key_file_b):
-        with pytest.raises(InvalidToken):
+        with pytest.raises(ValueError, match="contraseña"):
             decrypt_value(encrypted)
 
 
