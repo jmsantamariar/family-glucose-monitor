@@ -283,3 +283,102 @@ class TestLoadAndEnrichCache:
         with api_module._cache_lock:
             assert api_module._readings_cache == {}
 
+
+
+# ── PWA static assets ────────────────────────────────────────────────────────
+
+class TestPWAManifest:
+    def test_returns_200(self, client):
+        resp = client.get("/manifest.json")
+        assert resp.status_code == 200
+
+    def test_content_type_is_json(self, client):
+        resp = client.get("/manifest.json")
+        assert "json" in resp.headers["content-type"]
+
+    def test_manifest_has_name(self, client):
+        resp = client.get("/manifest.json")
+        data = resp.json()
+        assert data["name"] == "Monitor de Glucosa Familiar"
+
+    def test_manifest_has_standalone_display(self, client):
+        resp = client.get("/manifest.json")
+        assert resp.json()["display"] == "standalone"
+
+    def test_manifest_has_icons(self, client):
+        resp = client.get("/manifest.json")
+        assert len(resp.json()["icons"]) >= 2
+
+
+class TestPWAServiceWorker:
+    def test_returns_200(self, client):
+        resp = client.get("/sw.js")
+        assert resp.status_code == 200
+
+    def test_content_type_is_javascript(self, client):
+        resp = client.get("/sw.js")
+        assert "javascript" in resp.headers["content-type"]
+
+    def test_sw_contains_cache_name(self, client):
+        resp = client.get("/sw.js")
+        assert "fgm-shell" in resp.text
+
+
+class TestPWAIcons:
+    def test_icon_192_returns_200(self, client):
+        resp = client.get("/icons/icon-192.svg")
+        assert resp.status_code == 200
+
+    def test_icon_512_returns_200(self, client):
+        resp = client.get("/icons/icon-512.svg")
+        assert resp.status_code == 200
+
+    def test_icon_content_type_is_svg(self, client):
+        resp = client.get("/icons/icon-192.svg")
+        assert "svg" in resp.headers["content-type"]
+
+    def test_unknown_icon_returns_404(self, client):
+        resp = client.get("/icons/nonexistent.png")
+        assert resp.status_code == 404
+
+    def test_path_traversal_rejected(self, client):
+        # FastAPI normalises /icons/../manifest.json → /manifest.json at the
+        # routing layer, so the pwa_icon handler never executes.  The response
+        # will be the manifest (200), not an escape from the icons/ directory.
+        resp = client.get("/icons/../manifest.json")
+        # The pwa_manifest route handles the normalised URL; our icons handler
+        # never runs, so no arbitrary-file escape is possible.
+        assert resp.status_code == 200
+        assert resp.json().get("name") == "Monitor de Glucosa Familiar"
+
+    def test_dotdot_in_filename_rejected(self, client):
+        # Directly pass a filename containing '..' to trigger our guard.
+        # Whether FastAPI decodes %2F before routing (→ 404) or passes the raw
+        # value to the handler (→ 400 from our guard), neither is a successful
+        # file read, so both outcomes are acceptable.
+        resp = client.get("/icons/..%2Fmanifest.json")
+        assert resp.status_code in (400, 404)
+
+
+class TestPWAHtmlTags:
+    """Verify that the HTML pages include PWA meta tags."""
+
+    def test_dashboard_has_manifest_link(self, client):
+        resp = client.get("/")
+        assert 'rel="manifest"' in resp.text
+
+    def test_dashboard_has_theme_color(self, client):
+        resp = client.get("/")
+        assert 'name="theme-color"' in resp.text
+
+    def test_dashboard_has_sw_registration(self, client):
+        resp = client.get("/")
+        assert "serviceWorker" in resp.text
+
+    def test_login_has_manifest_link(self, client):
+        resp = client.get("/login")
+        assert 'rel="manifest"' in resp.text
+
+    def test_setup_has_manifest_link(self, client):
+        resp = client.get("/setup")
+        assert 'rel="manifest"' in resp.text

@@ -37,7 +37,7 @@ from typing import Optional
 
 import yaml
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi import Query
 
 from src import alert_engine
@@ -441,6 +441,57 @@ def setup_page():
     if not html_path.exists():
         raise HTTPException(status_code=500, detail="Setup HTML not found")
     return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+
+# ── PWA static assets ────────────────────────────────────────────────────────
+
+_DASHBOARD_DIR = Path(__file__).parent / "dashboard"
+
+_MIME_TYPES: dict[str, str] = {
+    ".json": "application/json",
+    ".js":   "application/javascript",
+    ".svg":  "image/svg+xml",
+    ".png":  "image/png",
+    ".ico":  "image/x-icon",
+}
+
+
+@app.get("/manifest.json")
+def pwa_manifest():
+    """Serve the Web App Manifest so browsers can offer 'Add to Home Screen'."""
+    path = _DASHBOARD_DIR / "manifest.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="manifest.json not found")
+    return FileResponse(path, media_type="application/manifest+json")
+
+
+@app.get("/sw.js")
+def pwa_service_worker():
+    """Serve the PWA service worker script."""
+    path = _DASHBOARD_DIR / "sw.js"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="sw.js not found")
+    return FileResponse(path, media_type="application/javascript")
+
+
+@app.get("/icons/{filename}")
+def pwa_icon(filename: str):
+    """Serve PWA icon assets from the dashboard/icons/ directory."""
+    icons_dir = _DASHBOARD_DIR / "icons"
+    # Prevent path traversal: reject any filename containing path separators.
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid icon filename")
+    path = (icons_dir / filename).resolve()
+    # Double-check that the resolved path is still inside icons_dir.
+    try:
+        path.relative_to(icons_dir.resolve())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid icon filename")
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Icon '{filename}' not found")
+    suffix = path.suffix.lower()
+    media_type = _MIME_TYPES.get(suffix, "application/octet-stream")
+    return FileResponse(path, media_type=media_type)
+
 
 @app.get("/api/setup/status", response_class=JSONResponse)
 def setup_status():
