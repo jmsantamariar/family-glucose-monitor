@@ -1046,9 +1046,7 @@
     const manuallyExpanded = new Set();
     tbody.querySelectorAll('.patient-row.expanded').forEach(row => {
       // Only persist manual expansions; alert rows are always auto-expanded
-      if (!row.classList.contains('row-danger') &&
-          !row.classList.contains('row-danger-low') &&
-          !row.classList.contains('row-warning')) {
+      if (!isAlertRowClass(row)) {
         manuallyExpanded.add(row.dataset.patientId);
       }
     });
