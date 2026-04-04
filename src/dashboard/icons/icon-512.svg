@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="80" fill="#1a365d"/>
+  <!-- Blood drop shape -->
+  <path d="M256 88 C256 88 152 210 152 280 C152 338.9 199.1 386 256 386 C312.9 386 360 338.9 360 280 C360 210 256 88 256 88Z" fill="#ffffff" opacity="0.95"/>
+  <!-- Glucose reading text -->
+  <text x="256" y="304" font-family="system-ui, -apple-system, sans-serif" font-size="72" font-weight="700" fill="#1a365d" text-anchor="middle">G</text>
+  <!-- Small chart line at bottom -->
+  <polyline points="88,430 152,410 216,420 280,396 344,408 424,384" fill="none" stroke="#63b3ed" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
