@@ -108,7 +108,7 @@ def decrypt_value(stored: str) -> str:
             "Edit config.yaml and set the password as plain text so it can be re-encrypted."
         )
         raise ValueError(
-            "Error: no se pudo desencriptar la contraseña de LibreLinkUp. "
+            "No se pudo desencriptar la contraseña de LibreLinkUp. "
             "Edita config.yaml y pon la contraseña en texto plano para que sea reencriptada."
         ) from exc
 
