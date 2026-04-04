@@ -22,6 +22,7 @@ Para **familias** donde uno o varios miembros usan un sensor FreeStyle Libre y t
 - ⚠️ Alertas configurables por umbral bajo/alto con cooldown anti-spam
 - 📈 Alertas por tendencia (subiendo rápido, bajando rápido, etc.)
 - 💬 Salidas: **Telegram**, **Webhook** (Pushover-compatible), **WhatsApp Cloud API**
+- 🔔 Notificaciones push en el navegador (Web Push / VAPID) — suscripción desde el dashboard
 - 🖥️ Dashboard web autenticado con semáforo de colores y gráficos por paciente
 - 🔐 Autenticación con sesiones persistentes (SQLite) y contraseñas PBKDF2
 - 🔒 Credenciales de LibreLinkUp encriptadas en disco (Fernet/AES-128-CBC + HMAC-SHA256)
@@ -130,7 +131,8 @@ main.py ─── run_once() ─── evalúa umbrales y tendencias
        │                         │
        ├──► outputs/telegram.py  ──► Bot de Telegram
        ├──► outputs/webhook.py   ──► HTTP POST (Pushover)
-       └──► outputs/whatsapp.py  ──► WhatsApp Cloud API
+       ├──► outputs/whatsapp.py  ──► WhatsApp Cloud API
+       └──► outputs/webpush.py   ──► Web Push (navegadores suscritos)
        │
        ├──► readings_cache.json (fuente única de verdad)
        │         │
@@ -174,6 +176,7 @@ En modo `full`, Uvicorn se ejecuta en el hilo principal (manejo correcto de señ
 | **CORS restringido** | API externa sin orígenes permitidos por defecto. Configurable via `CORS_ALLOWED_ORIGINS`. |
 | **CSRF** | Patrón double-submit cookie (`csrf_token` + `X-CSRF-Token`) en todos los endpoints POST autenticados del dashboard. |
 | **API segura por defecto** | La API externa requiere `Authorization: Bearer <API_KEY>`. Sin `API_KEY` configurada y sin `ALLOW_INSECURE_LOCAL_API=1`, todas las peticiones son rechazadas con 401. |
+| **VAPID (Web Push)** | Las notificaciones push del navegador usan claves VAPID (RFC 8292). Las claves se generan automáticamente en `vapid_private.pem` si no se suministran vía `VAPID_PRIVATE_KEY`. `vapid_private.pem` está en `.gitignore`. |
 | **Separación de credenciales** | Credenciales de LibreLinkUp independientes de las del dashboard. |
 
 > ⚠️ Para reportar vulnerabilidades, consulta [SECURITY.md](SECURITY.md).
@@ -195,6 +198,7 @@ src/
   crypto.py              ← cifrado/descifrado Fernet para credenciales sensibles
   db.py                  ← fábrica centralizada de conexiones SQLite (WAL, FK, timeout)
   setup_status.py        ← detección de setup completo vs. modo wizard inicial
+  push_subscriptions.py  ← persistencia de suscripciones Web Push (push_subscriptions.db)
   models/
     __init__.py          ← dataclasses de dominio: GlucoseReading, AlertsConfig, PatientState
     db_models.py         ← modelos SQLAlchemy ORM: SessionToken, LoginAttempt, AlertHistory
@@ -205,8 +209,10 @@ src/
     telegram.py          ← Bot API de Telegram
     webhook.py           ← Webhook HTTP (Pushover-compatible)
     whatsapp.py          ← WhatsApp Cloud API
+    webpush.py           ← Web Push (notificaciones en navegador vía VAPID)
   dashboard/
-    index.html           ← interfaz principal del dashboard (SPA)
+    index.html           ← interfaz principal del dashboard (SPA, incluye botón de push)
+    sw.js                ← Service Worker: maneja eventos push y notificationclick
     login.html           ← página de login
     setup.html           ← wizard de configuración inicial
 tests/
@@ -371,7 +377,7 @@ echo "API_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> .e
 chmod 600 .env
 
 # Crea los archivos de estado antes del primer arranque:
-touch state.json alert_history.db sessions.db readings_cache.json
+touch state.json alert_history.db sessions.db readings_cache.json push_subscriptions.db
 
 docker build -t family-glucose-monitor .
 docker run --rm --env-file .env \
@@ -380,13 +386,16 @@ docker run --rm --env-file .env \
   -v $(pwd)/alert_history.db:/app/alert_history.db \
   -v $(pwd)/sessions.db:/app/sessions.db \
   -v $(pwd)/readings_cache.json:/app/readings_cache.json \
+  -v $(pwd)/push_subscriptions.db:/app/push_subscriptions.db \
   -p 8080:8080 \
   family-glucose-monitor
 ```
 
 > **Nota:** El Dockerfile expone el puerto 8080 y arranca con `python -m src.main`. Para el modo `full` o `dashboard`, asegúrate de que `monitoring.mode` esté configurado correctamente en `config.yaml`.
 >
-> **Archivos de estado:** Los archivos `state.json`, `alert_history.db`, `sessions.db` y `readings_cache.json` deben existir en el host **antes** del primer arranque. Si no existen, Docker crea un directorio vacío en su lugar y la aplicación falla. Usa `touch` para crearlos vacíos.
+> **Archivos de estado:** Los archivos `state.json`, `alert_history.db`, `sessions.db`, `readings_cache.json` y `push_subscriptions.db` conviene crearlos en el host **antes** del primer arranque. Si no existen, Docker puede crear un directorio vacío en su lugar al hacer el bind-mount, lo que rompe la persistencia esperada y puede provocar errores. Usa `touch` para crearlos vacíos.
+> 
+> En particular, `push_subscriptions.db` debe existir si quieres persistir las suscripciones web push y evitar que Docker monte un directorio en su lugar. Si falta, la funcionalidad de push puede no inicializarse correctamente, pero no debería bloquear el arranque del resto de canales de notificación.
 >
 > **Setup wizard en Docker:** `config.yaml` se monta como solo lectura (`:ro`). El wizard de setup no puede escribir `config.yaml` desde dentro del contenedor. Genera `config.yaml` fuera del contenedor primero (ejecutando el wizard sin Docker o copiando `config.example.yaml`), y luego monta el archivo resultante.
 
@@ -510,6 +519,7 @@ El sistema incluye un dashboard web en tiempo real que muestra el estado de todo
 - **Filtros**: Por paciente y por período de tiempo
 - **Modo oscuro**: Adaptación automática al tema del sistema
 - **Auto-actualización**: Los datos se refrescan automáticamente
+- **Notificaciones push**: Botón de suscripción/desuscripción en el dashboard; las alertas llegan al navegador aunque la pestaña esté en segundo plano (requiere HTTPS en producción)
 
 ### Ejecutar el Dashboard
 
@@ -549,6 +559,7 @@ La lógica de detección está en `src/setup_status.py`, que verifica: existenci
 | `readings_cache.json` | `src/main.py` (escritura) / `src/api.py`, `src/api_server.py` (lectura) | Caché de lecturas más recientes. Lo escribe `src/main.py` de forma atómica y lo consumen el dashboard y la API; para que ambos vean exactamente los mismos datos deben usar la misma ruta de caché. Actualmente `src/api_server.py` lee `PROJECT_ROOT/readings_cache.json`, por lo que puede divergir si `api.cache_file` apunta a otro archivo. |
 | `alert_history.db` | `src/alert_history.py` | Historial de alertas enviadas (SQLite, tabla `alerts`). Gestionado con SQLAlchemy ORM. Migraciones con Alembic. |
 | `sessions.db` | `src/auth.py` | Sesiones del dashboard (tabla `sessions`) y log de intentos de login (tabla `login_attempts`). SQLite con SQLAlchemy ORM para sesiones, `text()` para login_attempts. |
+| `push_subscriptions.db` | `src/push_subscriptions.py` | Suscripciones Web Push de los navegadores (tabla `push_subscriptions`). Creado automáticamente al arrancar. |
 | `config.yaml` | Varios módulos | Configuración principal. Generado por el wizard o manualmente. Permisos `0600`. |
 | `.secret_key` | `src/crypto.py` | Clave maestra local para cifrado Fernet (dev/local). En producción se usa `FGM_MASTER_KEY`. |
 
@@ -570,6 +581,58 @@ La lógica de detección está en `src/setup_status.py`, que verifica: existenci
    - **`daemon`**: adquiere file lock, construye `MultiNotifier` una vez, bucle `run_once()` con sleep
    - **`cron`** (default): adquiere file lock, ejecuta `run_once()` una sola vez
 8. En modos con bucle (`daemon`, `full`), el `MultiNotifier` se construye una sola vez y se reutiliza en cada ciclo
+
+---
+
+## 🔔 Notificaciones Push en el Navegador (Web Push / VAPID)
+
+El dashboard incluye soporte de notificaciones push nativas del navegador. Una vez suscrito, recibirás alertas de glucosa aunque la pestaña del dashboard esté en segundo plano o cerrada.
+
+### Cómo funciona
+
+1. El Service Worker (`sw.js`) registrado por el dashboard escucha eventos `push` y muestra la notificación del sistema.
+2. Al hacer clic en "Activar notificaciones" en el dashboard, el navegador llama a `pushManager.subscribe()` con la clave VAPID pública del servidor.
+3. La suscripción (endpoint + claves de cifrado) se guarda en `push_subscriptions.db` vía `POST /api/push/subscribe`.
+4. En cada ciclo de alerta, `WebPushOutput` obtiene todas las suscripciones activas y las llama vía `pywebpush`. Las suscripciones expiradas (HTTP 404/410) se eliminan automáticamente.
+
+> **Nota HTTPS:** Las notificaciones push del navegador requieren HTTPS en producción. En desarrollo local, `localhost` funciona sin HTTPS.
+
+### Gestión de claves VAPID
+
+Las claves VAPID (RFC 8292) se resuelven en este orden:
+
+1. Variable de entorno `VAPID_PRIVATE_KEY` (PEM con saltos de línea reales).
+2. Archivo `vapid_private.pem` en la raíz del proyecto.
+3. Auto-generación en primer arranque → guardado en `vapid_private.pem` (permisos `0600`). La clave pública se loguea a nivel INFO para configurar los clientes.
+
+> **Importante:** `VAPID_PRIVATE_KEY` debe contener un PEM válido con saltos de línea reales; el formato con `\n` literales no está documentado como soportado. Si tu plataforma no maneja bien variables multilínea, usa `vapid_private.pem` (por ejemplo, montándolo como archivo o secret).
+La clave pública se sirve dinámicamente en `GET /api/push/vapid-public-key` (exento de autenticación), por lo que los clientes siempre usan la clave correcta.
+
+### Endpoints Web Push (`src/api.py`)
+
+| Method | Path | Auth | Descripción |
+|--------|------|------|-------------|
+| `GET` | `/api/push/vapid-public-key` | Libre | Devuelve la clave pública VAPID (base64url) |
+| `POST` | `/api/push/subscribe` | Sesión + CSRF | Guarda una suscripción push del navegador |
+| `POST` | `/api/push/unsubscribe` | Sesión + CSRF | Elimina una suscripción push por endpoint |
+
+### Configurar VAPID en producción
+
+```bash
+# Genera un par de claves VAPID:
+python -c "
+from py_vapid import Vapid
+from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, PublicFormat, NoEncryption
+import base64
+v = Vapid(); v.generate_keys()
+priv = v.private_key.private_bytes(Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()).decode()
+pub = base64.urlsafe_b64encode(v.public_key.public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)).rstrip(b'=').decode()
+print('VAPID_PRIVATE_KEY=' + priv.replace('\n', '\\n'))
+print('VAPID_PUBLIC_KEY=' + pub)
+"
+```
+
+Añade `VAPID_PRIVATE_KEY` a tu `.env` o como variable de entorno/Docker secret. Consulta `.env.example` para el formato completo.
 
 ---
 
@@ -637,6 +700,7 @@ poetry run alembic history
 - [robberwick/pylibrelinkup](https://github.com/robberwick/pylibrelinkup) — cliente Python para LibreLinkUp
 - [rreal/glucose-actions](https://github.com/rreal/glucose-actions) — arquitectura de alertas
 - [DiaKEM/libre-link-up-api-client](https://github.com/DiaKEM/libre-link-up-api-client) — referencia de la API
+- [StefanNedelchev/pwa-push-example](https://github.com/StefanNedelchev/pwa-push-example) — patrón de referencia para Web Push en PWAs
 
 ---
 
