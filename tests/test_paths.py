@@ -1,10 +1,5 @@
 """Tests for src/paths.py — centralized path resolution helpers."""
-import os
 from pathlib import Path
-from unittest.mock import patch
-
-import pytest
-
 from src.paths import (
     DEFAULT_CACHE_FILENAME,
     DEFAULT_DB_FILENAME,
