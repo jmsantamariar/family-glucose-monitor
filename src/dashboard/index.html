@@ -876,9 +876,10 @@
       '↓': { cls: 'trend-down-fast', label: 'Bajando rápido' },
     };
     const key = trendName || '';
-    const cfg = map[key] || (arrow && charFallback[arrow]) || { cls: 'trend-stable', label: '' };
-    const ch  = map[key] ? map[key].char : (arrow || '→');
-    return `<span class="trend-arrow-icon ${cfg.cls}" title="${cfg.label}" aria-label="${cfg.label}">${ch}</span>`;
+    const mapped = map[key] || null;
+    const legacy = arrow && charFallback[arrow] ? { char: arrow, ...charFallback[arrow] } : null;
+    const cfg = mapped || legacy || { char: '→', cls: 'trend-stable', label: '' };
+    return `<span class="trend-arrow-icon ${cfg.cls}" title="${cfg.label}" aria-label="${cfg.label}">${cfg.char}</span>`;
   }
 
   function getGlucoseTrendClass(trendAlert) {
