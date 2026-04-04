@@ -41,8 +41,9 @@ def validate_schema(db_path: str) -> list[str]:
     * the database file does not exist yet (bootstrap will create it), or
     * the ``alerts`` table has all required columns.
 
-    Each error string describes a missing or mismatched column so the caller
-    can emit a clear, actionable message before failing.
+    Each error string describes a missing required column, or reports that the
+    ``alerts`` table itself is missing, so the caller can emit a clear,
+    actionable message before failing.
     """
     db_file = Path(db_path)
     if not db_file.exists():
