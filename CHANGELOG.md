@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Notificaciones Web Push en el navegador** — El dashboard incluye un botón de suscripción/desuscripción para recibir alertas de glucosa como notificaciones del sistema. Funciona aunque la pestaña esté en segundo plano. Implementado con el patrón [StefanNedelchev/pwa-push-example](https://github.com/StefanNedelchev/pwa-push-example) adaptado a FastAPI/Python. (PR #45)
+  - `src/push_subscriptions.py` — persistencia de suscripciones en `push_subscriptions.db` (SQLite, WAL, upsert por endpoint, limpieza automática de expiradas).
+  - `src/outputs/webpush.py` — `WebPushOutput(BaseOutput)` que despacha a todos los navegadores suscritos vía `pywebpush` + VAPID. Las suscripciones expiradas (HTTP 404/410) se eliminan automáticamente.
+  - `src/bootstrap.py` — `push_subscriptions.db` inicializado al arrancar junto a `alert_history.db`.
+  - Tres nuevos endpoints en `src/api.py`: `GET /api/push/vapid-public-key` (libre), `POST /api/push/subscribe` (sesión + CSRF), `POST /api/push/unsubscribe` (sesión + CSRF).
+  - `src/dashboard/sw.js` — Service Worker que gestiona eventos `push` (muestra notificación) y `notificationclick` (lleva al dashboard).
+  - `src/dashboard/index.html` — Botón de suscripción con estado en vivo; `urlBase64ToUint8Array` para la clave VAPID.
+  - `pywebpush==2.3.0` añadido como dependencia principal.
+- **Gestión de claves VAPID** — `VAPID_PRIVATE_KEY` env var (PEM) > `vapid_private.pem` > auto-generación en primer arranque. `vapid_private.pem` en `.gitignore`. `.env.example` documenta el formato y el comando de generación.
+
 ### Security
 
 - **API externa segura por defecto** — `api_server.py` ahora requiere `Authorization: Bearer <API_KEY>` en todos los endpoints. El modo sin autenticación solo está disponible con `ALLOW_INSECURE_LOCAL_API=1`. Sin `API_KEY` y sin ese flag, todas las peticiones son rechazadas con 401. Corrige comportamiento anterior donde la ausencia de `API_KEY` resultaba en acceso público.

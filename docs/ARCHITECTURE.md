@@ -18,7 +18,8 @@ flowchart TD
     K --> L[outputs/telegram.py]
     K --> M[outputs/webhook.py]
     K --> N[outputs/whatsapp.py]
-    L & M & N --> O[state.py\nactualizar estado\ny guardar JSON atómico]
+    K --> NP[outputs/webpush.py]
+    L & M & N & NP --> O[state.py\nactualizar estado\ny guardar JSON atómico]
     O --> P[alert_history.py\nlog en SQLite via ORM]
     B --> Q[_save_readings_cache\nreadings_cache.json\nescritura atómica]
     Q --> R[api.py :8080\ndashboard autenticado\nrecarga por mtime]
@@ -88,7 +89,7 @@ Gestiona la autenticación del dashboard web. Responsabilidades:
 
 ### `src/db.py` — Conexión centralizada a SQLite
 
-Fábrica de conexiones SQLite compartida por `src/auth.py` y `src/alert_history.py`.
+Fábrica de conexiones SQLite compartida por `src/auth.py`, `src/alert_history.py` y `src/push_subscriptions.py`.
 Aplica `PRAGMA journal_mode=WAL`, `PRAGMA foreign_keys=ON` y `timeout=10` de forma consistente.
 Todos los módulos usan `connect_db()` en lugar de `sqlite3.connect()` directo.
 
@@ -151,10 +152,29 @@ Patrón Strategy con clase base abstracta `BaseOutput`. El módulo `src/outputs/
 | `TelegramOutput` | `telegram.py` | Envía mensajes via Telegram Bot API |
 | `WebhookOutput` | `webhook.py` | HTTP POST compatible con Pushover |
 | `WhatsAppOutput` | `whatsapp.py` | WhatsApp Cloud API (Meta) |
+| `WebPushOutput` | `webpush.py` | Notificaciones push en navegadores suscritos (Web Push / VAPID); se añade siempre vía `build_outputs()` |
+
+### `src/push_subscriptions.py` — Persistencia de suscripciones Web Push
+
+Gestiona las suscripciones de navegadores al servicio Web Push. Responsabilidades:
+- Inicializar `push_subscriptions.db` (idempotente, llamado desde `src/bootstrap.py`)
+- `save_subscription(endpoint, p256dh, auth)` — persiste o actualiza una suscripción con upsert
+- `delete_subscription(endpoint)` — elimina una suscripción por endpoint URL
+- `get_all_subscriptions()` — devuelve todas las suscripciones activas para despacho
+
+Usa `connect_db()` para todas las conexiones SQLite (WAL, FK, timeout).
+
+### `src/outputs/webpush.py` — Salida Web Push
+
+Implementa `BaseOutput` para entregar alertas de glucosa como notificaciones push en el navegador. Responsabilidades:
+- Cargar o generar el par de claves VAPID (env var → archivo PEM → auto-generación)
+- `send_alert(message, glucose_value, level)` — envía a todos los navegadores suscritos vía `pywebpush`
+- Limpia automáticamente suscripciones expiradas (HTTP 404/410 del push service)
+- `get_vapid_public_key()` — devuelve la clave pública VAPID como base64url sin padding (para servir al frontend)
+
+`WebPushOutput` se añade incondicionalmente a la lista de outputs en `build_outputs()`: funciona sin configuración explícita, simplemente no envía nada si no hay suscripciones activas.
 
 ---
-
-## Gestión de secretos y variables de entorno
 
 La resolución de secretos sigue una jerarquía de prioridad:
 
@@ -171,6 +191,7 @@ Variable de entorno  >  config.yaml  >  valor por defecto / error
 | `LIBRELINKUP_EMAIL` | Email de LibreLinkUp (sobreescribe `config.yaml`) | Opcional |
 | `LIBRELINKUP_PASSWORD` | Contraseña de LibreLinkUp (sobreescribe `config.yaml`) | Opcional |
 | `WHATSAPP_ACCESS_TOKEN` | Token de WhatsApp Cloud API | Si usa WhatsApp |
+| `VAPID_PRIVATE_KEY` | Clave privada VAPID en formato PEM (notificaciones push) | Si usa Web Push en producción |
 
 ### Variables de configuración opcionales
 
@@ -201,12 +222,13 @@ Consulta `.env.example` para la lista completa y ejemplos de generación.
 
 ## Bases de datos SQLite
 
-El sistema usa dos bases de datos SQLite independientes:
+El sistema usa tres bases de datos SQLite independientes:
 
 | Archivo | Módulo propietario | Contenido |
 |---------|--------------------|-----------|
 | `alert_history.db` | `src/alert_history.py` | Historial de alertas enviadas (tabla `alerts`) |
 | `sessions.db` | `src/auth.py` | Sesiones de dashboard (tabla `sessions`) y log de intentos de login fallidos (tabla `login_attempts`) |
+| `push_subscriptions.db` | `src/push_subscriptions.py` | Suscripciones de navegadores para Web Push (tabla `push_subscriptions`) |
 
 El arranque normal crea las tablas base con `IF NOT EXISTS` sin alterar bases de datos existentes.
 Los cambios de schema entre versiones de `alert_history.db` se gestionan con Alembic (`alembic.ini`, directorio `migrations/`) y deben aplicarse manualmente con `poetry run alembic upgrade head`. `sessions.db` no usa Alembic: su DDL lo gestiona `src/auth.py` directamente.
