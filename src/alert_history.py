@@ -14,12 +14,60 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session
 
 from src.models.db_models import AlertHistory, get_engine
 
 logger = logging.getLogger(__name__)
+
+# Required columns in the ``alerts`` table (column name → SQLite type keyword).
+_REQUIRED_COLUMNS: dict[str, str] = {
+    "id": "INTEGER",
+    "timestamp": "TEXT",
+    "patient_id": "TEXT",
+    "patient_name": "TEXT",
+    "glucose_value": "INTEGER",
+    "level": "TEXT",
+    "trend_arrow": "TEXT",
+    "message": "TEXT",
+}
+
+
+def validate_schema(db_path: str) -> list[str]:
+    """Return a list of schema errors for an existing ``alert_history.db``.
+
+    Returns an empty list when:
+    * the database file does not exist yet (bootstrap will create it), or
+    * the ``alerts`` table has all required columns.
+
+    Each error string describes a missing or mismatched column so the caller
+    can emit a clear, actionable message before failing.
+    """
+    db_file = Path(db_path)
+    if not db_file.exists():
+        return []
+
+    errors: list[str] = []
+    try:
+        engine = _get_engine(db_path)
+        with engine.connect() as conn:
+            rows = conn.execute(text("PRAGMA table_info(alerts)")).fetchall()
+        if not rows:
+            errors.append(
+                f"alerts table is missing in {db_path}; "
+                "re-initialise the database or delete the file and restart."
+            )
+            return errors
+        existing: dict[str, str] = {row[1]: row[2].upper() for row in rows}
+        for col, expected_type in _REQUIRED_COLUMNS.items():
+            if col not in existing:
+                errors.append(
+                    f"Column '{col}' ({expected_type}) is missing from the alerts table in {db_path}."
+                )
+    except Exception as exc:
+        errors.append(f"Could not inspect schema of {db_path}: {exc}")
+    return errors
 
 _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS alerts (
