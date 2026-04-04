@@ -194,9 +194,9 @@ def test_telegram(bot_token: str, chat_id: str) -> dict:
             "message": "Faltan campos obligatorios: bot token y chat ID.",
         }
 
-    test_text = "✅ <b>Family Glucose Monitor</b> — Telegram configurado correctamente."
+    test_text = "✅ Monitor de Glucosa Familiar: prueba de conexión exitosa. Las alertas de glucosa se enviarán a este chat."
     url = f"{_TELEGRAM_API}/bot{bot_token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": test_text, "parse_mode": "HTML"}
+    payload = {"chat_id": chat_id, "text": test_text}
 
     try:
         resp = _requests.post(url, json=payload, timeout=10)
