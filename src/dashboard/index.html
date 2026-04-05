@@ -1142,13 +1142,6 @@ if (!isNaN(cg) && cg > 0) {
     pts.push({ t: currentNow, v: cg });
   }
 }
-Regla simple
-El primer const now = Date.now(); se queda igual.
-
-El segundo const now = Date.now(); se renombra a const currentNow = Date.now(); y también cambias sus referencias debajo.
-
-Haz scroll un poco más abajo hasta donde dice const cg = Number(currentGlucose);, edita ahí, y luego guarda con Commit changes….
-
 
 
     if (pts.length < 2) {
