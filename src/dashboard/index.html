@@ -1045,9 +1045,13 @@
   function calcTIR(values) {
     if (!values.length) return { high: 0, range: 100, low: 0 };
     const n = values.length;
-    const high  = Math.round(values.filter(v => v > MINI_HIGH).length / n * 100);
-    const low   = Math.round(values.filter(v => v < MINI_LOW).length  / n * 100);
-    const range = 100 - high - low;
+    const highCount = values.filter(v => v > MINI_HIGH).length;
+    const lowCount = values.filter(v => v < MINI_LOW).length;
+    const rangeCount = n - highCount - lowCount;
+
+    const high = Math.floor(highCount / n * 100);
+    const low = Math.floor(lowCount / n * 100);
+    const range = Math.max(0, 100 - high - low);
     return { high, range, low };
   }
 
