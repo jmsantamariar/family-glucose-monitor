@@ -1103,24 +1103,36 @@
       `</svg>`;
   }
 
-  // Cache of fetched mini-chart data: patientId → { ts: epoch, pts: [{t,v}] }
+  // Cache of fetched mini-chart data: patientId → { ts: epoch ms, pts: [{t,v}] }
   const _miniChartCache = {};
+  const _MINI_CHART_CACHE_TTL_MS = 60_000; // 60 seconds
 
-  /** Async: fetch real history from API, render SVG + stats into the container. */
+  /** Async: fetch real history from API, render SVG + stats into the container.
+   *  Results are cached per patient for _MINI_CHART_CACHE_TTL_MS to avoid
+   *  repeated API calls on every poll cycle. */
   async function _loadMiniChart(patientId, currentGlucose) {
-    const container   = document.getElementById(`mini-chart-${String(patientId)}`);
+    const container = document.getElementById(`mini-chart-${String(patientId)}`);
     if (!container) return;
 
     let pts = [];
-    try {
-      const resp = await fetch(`/api/patients/${encodeURIComponent(patientId)}/history?hours=3`);
-      if (resp.ok) {
-        const data = await resp.json();
-        pts = data
-          .filter(r => r.glucose_value > 0)
-          .map(r => ({ t: new Date(r.timestamp).getTime(), v: Number(r.glucose_value) }));
-      }
-    } catch (err) { console.debug('Failed to fetch history for patient', patientId, err); }
+    const now = Date.now();
+    const cached = _miniChartCache[patientId];
+
+    if (cached && (now - cached.ts) < _MINI_CHART_CACHE_TTL_MS) {
+      // Use cached history; still append the freshest current reading below
+      pts = cached.pts.slice();
+    } else {
+      try {
+        const resp = await fetch(`/api/patients/${encodeURIComponent(patientId)}/history?hours=3`);
+        if (resp.ok) {
+          const data = await resp.json();
+          pts = data
+            .filter(r => r.glucose_value > 0)
+            .map(r => ({ t: new Date(r.timestamp).getTime(), v: Number(r.glucose_value) }));
+          _miniChartCache[patientId] = { ts: now, pts: pts.slice() };
+        }
+      } catch (err) { console.debug('Failed to fetch history for patient', patientId, err); }
+    }
 
     // Append current reading if it is meaningfully newer than the last stored point
     const cg = Number(currentGlucose);
@@ -1294,11 +1306,16 @@
       });
     });
 
-    // Load sparklines for all visible expanded panels
+    // Load sparklines only for rows that are already expanded (e.g. alert rows
+    // auto-expanded on this render).  All other sparklines are loaded lazily
+    // when the user expands a row via _toggleExpanded.
     patients.forEach(p => {
       const pid = String(p.patient_id);
-      const glucose = p.glucose_value ?? p.value ?? null;
-      _loadMiniChart(pid, glucose);
+      const detailsRow = tbody.querySelector(`.expanded-details-row.visible[data-patient-id="${pid}"]`);
+      if (detailsRow) {
+        const glucose = p.glucose_value ?? p.value ?? null;
+        _loadMiniChart(pid, glucose);
+      }
     });
   }
 
@@ -1308,6 +1325,13 @@
     const nowExpanded = detailsRow.classList.toggle('visible');
     row.classList.toggle('expanded', nowExpanded);
     row.setAttribute('aria-expanded', String(nowExpanded));
+    if (nowExpanded) {
+      // Load (or refresh from cache) the sparkline for this patient
+      const pid = row.dataset.patientId;
+      const patient = (_lastPatients || []).find(p => String(p.patient_id) === pid);
+      const glucose = patient ? (patient.glucose_value ?? patient.value ?? null) : null;
+      _loadMiniChart(pid, glucose);
+    }
   }
 
   // ── Chart instances ──────────────────────────────────────────────
@@ -1568,7 +1592,6 @@
                 el.textContent = `${val} mg/dL — ${zoneLabel} — ${label}`;
                 el.style.color   = zoneColor(zone);
                 el.style.opacity = '1';
-                const pos = chart.canvas.getBoundingClientRect();
                 const x   = tooltip.caretX;
                 const y   = tooltip.caretY;
                 const elW = el.offsetWidth || 180;
