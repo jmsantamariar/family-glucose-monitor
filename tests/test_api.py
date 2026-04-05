@@ -283,6 +283,76 @@ class TestLoadAndEnrichCache:
         with api_module._cache_lock:
             assert api_module._readings_cache == {}
 
+    def test_cold_start_with_existing_cache_file(self, tmp_cache):
+        """Cold start: if readings_cache.json already exists, _load_and_enrich_cache()
+        must populate the in-memory cache even when _last_mtime is 0.0 (first call).
+
+        Regression test: the lifespan now calls _load_and_enrich_cache() at startup
+        so that the dashboard shows data immediately without requiring a manual
+        navigation or waiting for the next polling cycle.
+        """
+        _write_readings(tmp_cache, [
+            {"patient_id": "p1", "patient_name": "Leticia Rodriguez", "value": 110, "trend_arrow": "→"},
+            {"patient_id": "p2", "patient_name": "Jose Mario Santamaria", "value": 184, "trend_arrow": "↑"},
+        ])
+
+        # Simulate cold start: mtime marker is 0.0 (fresh process)
+        api_module._last_mtime = 0.0
+        with api_module._cache_lock:
+            api_module._readings_cache.clear()
+
+        # This is what the lifespan now calls at startup
+        api_module._load_and_enrich_cache()
+
+        with api_module._cache_lock:
+            patients = dict(api_module._readings_cache)
+
+        assert "p1" in patients, "Patient p1 must be loaded on cold start"
+        assert "p2" in patients, "Patient p2 must be loaded on cold start"
+        assert patients["p1"]["glucose_value"] == 110
+        assert patients["p2"]["glucose_value"] == 184
+
+    def test_lifespan_preloads_cache_so_first_request_returns_data(self, tmp_path, monkeypatch):
+        """Integration: after lifespan startup with an existing cache file, the very
+        first /api/patients request must return patient data (not an empty list).
+
+        This guards against the 'Cargando datos' bug where _readings_cache was empty
+        until the first polling cycle completed or the user navigated manually.
+        """
+        cache_file = tmp_path / "readings_cache.json"
+        cache_file.write_text(json.dumps({
+            "readings": [
+                {
+                    "patient_id": "startup-patient",
+                    "patient_name": "Startup Patient",
+                    "value": 115,
+                    "trend_arrow": "→",
+                }
+            ],
+            "updated_at": "2024-01-01T00:00:00+00:00",
+        }))
+
+        config = dict(_MINIMAL_CONFIG)
+        config["api"] = {"cache_file": str(cache_file)}
+
+        # Simulate cold start state
+        api_module._last_mtime = 0.0
+        with api_module._cache_lock:
+            api_module._readings_cache.clear()
+
+        # Patch load_config so the lifespan uses our test config
+        monkeypatch.setattr("src.api.load_config", lambda path="config.yaml": config)
+
+        with TestClient(app) as client:
+            # The lifespan pre-loads the cache; the first request must see data
+            resp = client.get("/api/patients")
+            assert resp.status_code == 200
+            data = resp.json()
+            patient_ids = [p["patient_id"] for p in data["patients"]]
+            assert "startup-patient" in patient_ids, (
+                "Dashboard must show patient data immediately after startup "
+                "without requiring manual navigation"
+            )
 
 
 # ── PWA auth-exempt ──────────────────────────────────────────────────────────

@@ -226,6 +226,16 @@ async def lifespan(application: "FastAPI"):
 
     cleanup_thread = threading.Thread(target=_session_cleanup_loop, daemon=True)
     cleanup_thread.start()
+
+    # Pre-populate the in-memory cache from any existing cache file so that
+    # the dashboard shows data immediately on first request without requiring
+    # a manual navigation or waiting for the first polling cycle to complete.
+    # _last_mtime is 0.0 at startup so this always loads the file if it exists.
+    try:
+        _load_and_enrich_cache()
+    except Exception as exc:
+        logger.warning("Could not pre-load readings cache at startup: %s", exc)
+
     yield
 
 app = FastAPI(title="Family Glucose Monitor", version="1.0.0", lifespan=lifespan)
