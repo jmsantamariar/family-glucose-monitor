@@ -511,7 +511,91 @@
       vertical-align: middle;
     }
 
-    /* ── Expandable patient row ─────────────────────────────────── */
+    /* ── Expanded panel sparkline area ──────────────────────────── */
+    .expanded-body {
+      display: flex;
+      gap: 1rem;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+
+    .expanded-mini-chart {
+      flex: 1 1 200px;
+      min-width: 160px;
+    }
+
+    .mini-chart-no-data {
+      font-size: .82rem;
+      color: var(--subtext);
+      padding: .6rem 0;
+      text-align: center;
+    }
+
+    .mini-chart-stats {
+      display: flex;
+      gap: .9rem;
+      margin-top: .45rem;
+      font-size: .78rem;
+      font-variant-numeric: tabular-nums;
+      color: var(--subtext);
+    }
+
+    .mini-chart-stats span { white-space: nowrap; }
+
+    /* ── Glucose chart wrapper with stats sidebar ────────────────── */
+    .glucose-chart-wrapper {
+      display: flex;
+      align-items: stretch;
+      gap: .5rem;
+    }
+
+    .glucose-chart-stats-col {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: .35rem;
+      padding: .5rem .6rem;
+      background: var(--bg);
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      font-size: .78rem;
+      font-variant-numeric: tabular-nums;
+      color: var(--subtext);
+      white-space: nowrap;
+      min-width: 72px;
+    }
+
+    .glucose-chart-stats-col .gs-val { font-weight: 700; color: var(--text); }
+
+    .glucose-chart-canvas-wrap { flex: 1; min-width: 0; }
+
+    /* ── Time-in-range bar ───────────────────────────────────────── */
+    .time-in-range {
+      margin-top: .6rem;
+    }
+
+    .tir-bar {
+      display: flex;
+      height: 10px;
+      border-radius: 5px;
+      overflow: hidden;
+    }
+
+    .tir-seg-high  { background: #fc8181; }
+    .tir-seg-range { background: #68d391; }
+    .tir-seg-low   { background: #63b3ed; }
+
+    .tir-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: .3rem;
+      font-size: .72rem;
+      color: var(--subtext);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .tir-range-pct { font-weight: 700; color: var(--text); }
+
     .patient-row {
       cursor: pointer;
       user-select: none;
@@ -607,8 +691,6 @@
       .trend-arrow-icon { font-size: 1.6rem; }
       thead th.col-trend-alert,
       tbody td.col-trend-alert { display: none; }  /* hide trend alert col on small screens */
-      thead th.col-sparkline,
-      tbody td.col-sparkline { display: none; }    /* hide sparkline col on small screens */
       table { font-size: .88rem; }
       tbody td { padding: .7rem .6rem; }
     }
@@ -685,12 +767,11 @@
           <th>Nivel</th>
           <th class="col-trend-alert">Alerta tendencia</th>
           <th>Última lectura</th>
-          <th class="col-sparkline" aria-label="Mini-gráfica glucosa últimas 3 horas">Últimas 3 h</th>
         </tr>
       </thead>
       <tbody id="patients-body">
         <tr>
-          <td colspan="7">
+          <td colspan="6">
             <div class="no-data">
               <span class="icon">⏳</span>
               <p>Cargando datos…</p>
@@ -936,57 +1017,153 @@
   const MINI_YMIN = 40;   // display min
   const MINI_YMAX = 300;  // display max
 
-  function buildMiniChart(patientId, currentGlucose) {
-    const W = 120, H = 36;
+  // ── Shared glucose helpers ────────────────────────────────────────
+  /** Classify a glucose value into 'high' | 'range' | 'low'. */
+  function glucoseZone(v) {
+    if (v > MINI_HIGH) return 'high';
+    if (v < MINI_LOW)  return 'low';
+    return 'range';
+  }
+
+  /** Point color by zone, matching the dashboard palette. */
+  function zoneColor(zone) {
+    if (zone === 'high') return '#fc8181';
+    if (zone === 'low')  return '#63b3ed';
+    return '#68d391';
+  }
+
+  /** Compute {max, avg, min} from an array of numbers.  Returns null for empty arrays. */
+  function calcStats(values) {
+    if (!values.length) return null;
+    const max = Math.max(...values);
+    const min = Math.min(...values);
+    const avg = Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+    return { max, avg, min };
+  }
+
+  /** Compute time-in-range percentages {high, range, low} from values array. */
+  function calcTIR(values) {
+    if (!values.length) return { high: 0, range: 100, low: 0 };
+    const n = values.length;
+    const highCount = values.filter(v => v > MINI_HIGH).length;
+    const lowCount = values.filter(v => v < MINI_LOW).length;
+    const rangeCount = n - highCount - lowCount;
+
+    const high = Math.floor(highCount / n * 100);
+    const low = Math.floor(lowCount / n * 100);
+    const range = Math.max(0, 100 - high - low);
+    return { high, range, low };
+  }
+
+  /** Line dash pattern by patient index (deterministic). */
+  function patientLineDash(patientId) {
+    const idx = _patientColorIdx[patientId] ?? 0;
+    const patterns = [[], [3, 3], [8, 4], [2, 2], [10, 3, 3, 3], [6, 3]];
+    return patterns[idx % patterns.length];
+  }
+
+  /** Format an ISO timestamp to short time, e.g. "13:11". */
+  function formatShortTime(isoTimestamp) {
+    return new Date(isoTimestamp).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  /**
+   * Build the mini SVG sparkline from an array of {t, v} points.
+   * Returns an SVG string (full-width of the container) plus stats HTML.
+   */
+  function buildMiniChartSVG(pts) {
+    if (pts.length < 2) return null;
+
+    const W = 260, H = 56;
     const now           = Date.now();
     const threeHoursAgo = now - THREE_HOURS_MS;
 
-    // Collect alert points for this patient in the last 3 hours
-    const pts = _alertsData
-      .filter(a => a.patient_id === patientId && new Date(a.timestamp).getTime() >= threeHoursAgo)
-      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
-      .map(a => ({ t: new Date(a.timestamp).getTime(), v: Number(a.glucose_value) }));
+    const tMin = Math.min(...pts.map(p => p.t));
+    const tMax = Math.max(now, Math.max(...pts.map(p => p.t)));
+    const tRange = Math.max(tMax - tMin, 1);
 
-    // Append current reading if it is sufficiently newer than the last stored point
+    const toY = v => H - Math.max(0, Math.min(H, ((v - MINI_YMIN) / (MINI_YMAX - MINI_YMIN)) * H));
+    const toX = t => Math.max(0, Math.min(W, ((t - tMin) / tRange) * W));
+
+    const highY = toY(MINI_HIGH);
+    const lowY  = toY(MINI_LOW);
+
+    const mapped = pts.map(p => ({ x: toX(p.t), y: toY(p.v), zone: glucoseZone(p.v) }));
+    const path   = mapped.map((p, i) => (i === 0 ? `M${p.x.toFixed(1)},${p.y.toFixed(1)}` : `L${p.x.toFixed(1)},${p.y.toFixed(1)}`)).join(' ');
+    const dots   = mapped.map(p =>
+      `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.5" fill="${zoneColor(p.zone)}"/>`
+    ).join('');
+
+    return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" style="border-radius:4px;overflow:hidden;display:block;" aria-hidden="true">` +
+      `<rect x="0" y="0" width="${W}" height="${highY.toFixed(1)}" fill="var(--red-bg)" opacity=".7"/>` +
+      `<rect x="0" y="${highY.toFixed(1)}" width="${W}" height="${Math.max(0, lowY - highY).toFixed(1)}" fill="var(--green-bg)" opacity=".7"/>` +
+      `<rect x="0" y="${lowY.toFixed(1)}" width="${W}" height="${Math.max(0, H - lowY).toFixed(1)}" fill="var(--blue-bg)" opacity=".7"/>` +
+      `<path d="${path}" fill="none" stroke="var(--subtext)" stroke-width="1.5" stroke-linejoin="round"/>` +
+      dots +
+      `</svg>`;
+  }
+
+  // Cache of fetched mini-chart data: patientId → { ts: epoch ms, pts: [{t,v}] }
+  const _miniChartCache = {};
+  const _MINI_CHART_CACHE_TTL_MS = 60_000; // 60 seconds
+
+  /** Async: fetch real history from API, render SVG + stats into the container.
+   *  Results are cached per patient for _MINI_CHART_CACHE_TTL_MS to avoid
+   *  repeated API calls on every poll cycle. */
+  async function _loadMiniChart(patientId, currentGlucose) {
+    const container = document.getElementById(`mini-chart-${String(patientId)}`);
+    if (!container) return;
+
+    let pts = [];
+    const now = Date.now();
+    const cached = _miniChartCache[patientId];
+
+    if (cached && (now - cached.ts) < _MINI_CHART_CACHE_TTL_MS) {
+      // Use cached history; still append the freshest current reading below
+      pts = cached.pts.slice();
+    } else {
+      try {
+        const resp = await fetch(`/api/patients/${encodeURIComponent(patientId)}/history?hours=3`);
+        if (resp.ok) {
+          const data = await resp.json();
+          pts = data
+            .filter(r => r.glucose_value > 0)
+            .map(r => ({ t: new Date(r.timestamp).getTime(), v: Number(r.glucose_value) }));
+          _miniChartCache[patientId] = { ts: now, pts: pts.slice() };
+        }
+      } catch (err) { console.debug('Failed to fetch history for patient', patientId, err); }
+    }
+
+    // Append current reading if it is meaningfully newer than the last stored point
     const cg = Number(currentGlucose);
+    const now = Date.now();
     if (!isNaN(cg) && cg > 0) {
       if (!pts.length || (now - pts[pts.length - 1].t) > CURRENT_READING_MIN_GAP_MS) {
         pts.push({ t: now, v: cg });
       }
     }
 
-    const toY = v => H - Math.max(0, Math.min(H, ((v - MINI_YMIN) / (MINI_YMAX - MINI_YMIN)) * H));
-    const toX = t => Math.max(0, Math.min(W, ((t - threeHoursAgo) / (now - threeHoursAgo)) * W));
-
-    const highY = toY(MINI_HIGH);
-    const lowY  = toY(MINI_LOW);
-
-    // When fewer than 2 points exist (no history, or only the current reading)
-    // synthesise a gentle wave around the current glucose value so the chart
-    // always shows a meaningful waveform shape.
     if (pts.length < 2) {
-      const base = (!isNaN(cg) && cg > 0) ? cg : 110;
-      const STEPS = 12;                  // 13 points (0..12) ≈ one per 15 min over 3 h
-      const WAVE_AMPLITUDE = 15;         // ±15 mg/dL oscillation around base value
-      pts.length = 0;                    // discard the lone current-reading point if present
-      for (let i = 0; i <= STEPS; i++) {
-        const t = threeHoursAgo + (i / STEPS) * THREE_HOURS_MS;
-        const v = base + WAVE_AMPLITUDE * Math.sin((i / STEPS) * 2 * Math.PI);
-        pts.push({ t, v });
-      }
+      container.innerHTML = `<span class="mini-chart-no-data">Sin datos suficientes</span>`;
+      return;
     }
 
-    const mapped = pts.map(p => ({ x: toX(p.t), y: toY(p.v) }));
-    const path   = mapped.map((p, i) => (i === 0 ? `M${p.x.toFixed(1)},${p.y.toFixed(1)}` : `L${p.x.toFixed(1)},${p.y.toFixed(1)}`)).join(' ');
-    const dots   = mapped.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="1.5" style="fill:var(--text)"/>`).join('');
+    const svgHtml = buildMiniChartSVG(pts);
+    if (!svgHtml) {
+      container.innerHTML = `<span class="mini-chart-no-data">Sin datos suficientes</span>`;
+      return;
+    }
 
-    return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" preserveAspectRatio="none" style="border-radius:4px;overflow:hidden;display:block;">` +
-      `<rect x="0" y="0" width="${W}" height="${highY.toFixed(1)}" style="fill:var(--red-bg)"/>` +
-      `<rect x="0" y="${highY.toFixed(1)}" width="${W}" height="${Math.max(0, lowY - highY).toFixed(1)}" style="fill:var(--green-bg)"/>` +
-      `<rect x="0" y="${lowY.toFixed(1)}" width="${W}" height="${Math.max(0, H - lowY).toFixed(1)}" style="fill:var(--blue-bg)"/>` +
-      `<path d="${path}" fill="none" style="stroke:var(--text)" stroke-width="1.5" stroke-linejoin="round"/>` +
-      dots +
-      `</svg>`;
+    const stats = calcStats(pts.map(p => p.v));
+    const statsHtml = stats
+      ? `<div class="mini-chart-stats">
+           <span>↑ ${stats.max} máx</span>
+           <span>∅ ${stats.avg} prom</span>
+           <span>↓ ${stats.min} mín</span>
+         </div>`
+      : '';
+
+    container.innerHTML = svgHtml + statsHtml;
   }
 
   // ── Alert strip counters ─────────────────────────────────────────
@@ -1040,7 +1217,7 @@
 
     if (!patients || patients.length === 0) {
       tbody.innerHTML = `
-        <tr><td colspan="7">
+        <tr><td colspan="6">
           <div class="no-data">
             <span class="icon">📭</span>
             <p>Sin datos — esperando lecturas…</p>
@@ -1066,7 +1243,6 @@
       const level         = levelLabel(p.level);
       const trendAlert    = trendAlertLabel(p.trend_alert);
       const timeSince     = formatTimeSince(p.fetched_at || p.timestamp);
-      const miniChart     = buildMiniChart(p.patient_id, glucose);
       const glucoseClass  = getGlucoseTrendClass(p.trend_alert);
       const pid           = escapeHtml(String(p.patient_id));
 
@@ -1089,23 +1265,27 @@
           <td><span class="level-badge">${escapeHtml(level)}</span></td>
           <td class="trend-alert-text col-trend-alert">${trendAlert}</td>
           <td class="time-text">${escapeHtml(timeSince)}</td>
-          <td class="col-sparkline">${miniChart}</td>
         </tr>
         <tr class="expanded-details-row${isExpanded ? ' visible' : ''}" data-patient-id="${pid}">
-          <td colspan="7">
+          <td colspan="6">
             <div class="expanded-panel">
-              <div class="expanded-stats">
-                <div class="stat-box">
-                  <span class="stat-value">${escapeHtml(glucoseStr)}</span>
-                  <span class="stat-label">mg/dL actual</span>
+              <div class="expanded-body">
+                <div class="expanded-stats">
+                  <div class="stat-box">
+                    <span class="stat-value">${escapeHtml(glucoseStr)}</span>
+                    <span class="stat-label">mg/dL actual</span>
+                  </div>
+                  <div class="stat-box">
+                    <span class="stat-value">${escapeHtml(level)}</span>
+                    <span class="stat-label">Nivel</span>
+                  </div>
+                  <div class="stat-box">
+                    <span class="stat-value">${escapeHtml(timeSince)}</span>
+                    <span class="stat-label">Última lectura</span>
+                  </div>
                 </div>
-                <div class="stat-box">
-                  <span class="stat-value">${escapeHtml(level)}</span>
-                  <span class="stat-label">Nivel</span>
-                </div>
-                <div class="stat-box">
-                  <span class="stat-value">${escapeHtml(timeSince)}</span>
-                  <span class="stat-label">Última lectura</span>
+                <div class="expanded-mini-chart" id="mini-chart-${pid}" aria-label="Mini-gráfica glucosa últimas 3 horas">
+                  <span class="mini-chart-no-data">⏳ Cargando…</span>
                 </div>
               </div>
               <p class="expanded-trend-note">
@@ -1125,6 +1305,18 @@
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _toggleExpanded(row); }
       });
     });
+
+    // Load sparklines only for rows that are already expanded (e.g. alert rows
+    // auto-expanded on this render).  All other sparklines are loaded lazily
+    // when the user expands a row via _toggleExpanded.
+    patients.forEach(p => {
+      const pid = String(p.patient_id);
+      const detailsRow = tbody.querySelector(`.expanded-details-row.visible[data-patient-id="${pid}"]`);
+      if (detailsRow) {
+        const glucose = p.glucose_value ?? p.value ?? null;
+        _loadMiniChart(pid, glucose);
+      }
+    });
   }
 
   function _toggleExpanded(row) {
@@ -1133,6 +1325,13 @@
     const nowExpanded = detailsRow.classList.toggle('visible');
     row.classList.toggle('expanded', nowExpanded);
     row.setAttribute('aria-expanded', String(nowExpanded));
+    if (nowExpanded) {
+      // Load (or refresh from cache) the sparkline for this patient
+      const pid = row.dataset.patientId;
+      const patient = (_lastPatients || []).find(p => String(p.patient_id) === pid);
+      const glucose = patient ? (patient.glucose_value ?? patient.value ?? null) : null;
+      _loadMiniChart(pid, glucose);
+    }
   }
 
   // ── Chart instances ──────────────────────────────────────────────
@@ -1207,6 +1406,7 @@
         backgroundColor: color.bg,
         borderColor: color.border,
         borderWidth: 1,
+        borderDash: patientLineDash(pid),
       };
     });
 
@@ -1225,38 +1425,40 @@
       },
     });
 
-    // ── Chart 2: distribution by level (only for a specific patient) ──
+    // ── Chart 2: distribution by level — always visible ─────────
     const levelContainer = document.getElementById('level-chart-container');
-    if (selectedPid) {
-      levelContainer.style.display = '';
-      const levelCounts = { low: 0, high: 0, trend: 0 };
-      alerts.forEach(a => {
-        if (a.level === 'low')       levelCounts.low++;
-        else if (a.level === 'high') levelCounts.high++;
-        else                         levelCounts.trend++;
-      });
-      const ctxLevel = document.getElementById('chart-by-level').getContext('2d');
-      if (chartByLevel) chartByLevel.destroy();
-      chartByLevel = new Chart(ctxLevel, {
-        type: 'doughnut',
-        data: {
-          labels: ['Baja', 'Alta', 'Tendencia'],
-          datasets: [{
-            data: [levelCounts.low, levelCounts.high, levelCounts.trend],
-            backgroundColor: ['rgba(252,129,129,.8)', 'rgba(246,224,94,.8)', 'rgba(154,230,180,.8)'],
-            borderColor:     ['rgba(252,129,129,1)',  'rgba(246,224,94,1)',  'rgba(154,230,180,1)'],
-            borderWidth: 1,
-          }],
-        },
-        options: {
-          responsive: true,
-          plugins: { legend: { position: 'bottom' } },
-        },
-      });
-    } else {
-      levelContainer.style.display = 'none';
-      if (chartByLevel) { chartByLevel.destroy(); chartByLevel = null; }
+    levelContainer.style.display = '';
+    const levelCounts = { low: 0, high: 0, trend: 0 };
+    alerts.forEach(a => {
+      if (a.level === 'low')       levelCounts.low++;
+      else if (a.level === 'high') levelCounts.high++;
+      else                         levelCounts.trend++;
+    });
+    // Update subtitle to clarify scope
+    const levelTitle = levelContainer.querySelector('h3');
+    if (levelTitle) {
+      levelTitle.textContent = selectedPid
+        ? `Distribución por nivel — ${_knownPatients[selectedPid] || selectedPid}`
+        : 'Distribución por nivel — Global';
     }
+    const ctxLevel = document.getElementById('chart-by-level').getContext('2d');
+    if (chartByLevel) chartByLevel.destroy();
+    chartByLevel = new Chart(ctxLevel, {
+      type: 'doughnut',
+      data: {
+        labels: ['Baja', 'Alta', 'Tendencia'],
+        datasets: [{
+          data: [levelCounts.low, levelCounts.high, levelCounts.trend],
+          backgroundColor: ['rgba(252,129,129,.8)', 'rgba(246,224,94,.8)', 'rgba(154,230,180,.8)'],
+          borderColor:     ['rgba(252,129,129,1)',  'rgba(246,224,94,1)',  'rgba(154,230,180,1)'],
+          borderWidth: 1,
+        }],
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { position: 'bottom' } },
+      },
+    });
 
     // ── Chart 3: glucose values per patient (separate chart each) ──
     const glucoseSection = document.getElementById('glucose-charts-section');
@@ -1288,30 +1490,76 @@
 
       const color       = getPatientColor(pid);
       const patientName = _knownPatients[pid] || pid;
+      const values      = patAlerts.map(a => a.glucose_value);
+      const stats       = calcStats(values);
+      const tir         = calcTIR(values);
 
-      const card   = document.createElement('div');
+      const card = document.createElement('div');
       card.className = 'chart-card';
 
-      const title  = document.createElement('h3');
+      // Title
+      const title = document.createElement('h3');
       title.textContent = patientName;
+      card.appendChild(title);
 
+      // Chart wrapper: stats col + canvas
+      const wrapper = document.createElement('div');
+      wrapper.className = 'glucose-chart-wrapper';
+
+      if (stats) {
+        const statsCol = document.createElement('div');
+        statsCol.className = 'glucose-chart-stats-col';
+        statsCol.innerHTML =
+          `<span>↑ <span class="gs-val">${stats.max}</span> máx</span>` +
+          `<span>∅ <span class="gs-val">${stats.avg}</span> prom</span>` +
+          `<span>↓ <span class="gs-val">${stats.min}</span> mín</span>`;
+        wrapper.appendChild(statsCol);
+      }
+
+      const canvasWrap = document.createElement('div');
+      canvasWrap.className = 'glucose-chart-canvas-wrap';
       const canvas = document.createElement('canvas');
       canvas.id = `chart-glucose-${String(pid).replace(/[^a-z0-9_-]/gi, '_')}`;
+      canvasWrap.appendChild(canvas);
+      wrapper.appendChild(canvasWrap);
+      card.appendChild(wrapper);
 
-      card.appendChild(title);
-      card.appendChild(canvas);
+      // Time-in-range bar
+      if (values.length >= 2) {
+        const tirEl = document.createElement('div');
+        tirEl.className = 'time-in-range';
+        tirEl.innerHTML =
+          `<div class="tir-bar">` +
+            `<div class="tir-seg-high"  style="flex:${tir.high}"></div>` +
+            `<div class="tir-seg-range" style="flex:${tir.range}"></div>` +
+            `<div class="tir-seg-low"   style="flex:${tir.low}"></div>` +
+          `</div>` +
+          `<div class="tir-labels">` +
+            `<span>Alta ${tir.high}%</span>` +
+            `<span class="tir-range-pct">${tir.range}% en rango</span>` +
+            `<span>Baja ${tir.low}%</span>` +
+          `</div>`;
+        card.appendChild(tirEl);
+      }
+
       glucoseGrid.appendChild(card);
+
+      // Per-point colors
+      const pointColors = patAlerts.map(a => zoneColor(glucoseZone(a.glucose_value)));
 
       _glucoseCharts[pid] = new Chart(canvas.getContext('2d'), {
         type: 'line',
         data: {
-          labels: patAlerts.map(a => formatDateTime(a.timestamp)),
+          labels: patAlerts.map(a => formatShortTime(a.timestamp)),
           datasets: [{
             label: `${patientName} (mg/dL)`,
             data: patAlerts.map(a => a.glucose_value),
-            backgroundColor: color.bg,
-            borderColor: color.border,
+            backgroundColor: pointColors,
+            borderColor: 'rgba(150,150,150,.6)',
             borderWidth: 2,
+            borderDash: patientLineDash(pid),
+            pointBackgroundColor: pointColors,
+            pointBorderColor: pointColors,
             pointRadius: 4,
             pointHoverRadius: 6,
             fill: false,
@@ -1322,13 +1570,71 @@
           responsive: true,
           plugins: {
             legend: { display: false },
-            tooltip: { callbacks: { label: ctx => `${ctx.parsed.y} mg/dL` } },
+            tooltip: {
+              enabled: false,
+              external(context) {
+                const { chart, tooltip } = context;
+                let el = chart.canvas.parentNode.querySelector('.custom-tooltip');
+                if (!el) {
+                  el = document.createElement('div');
+                  el.className = 'custom-tooltip';
+                  el.style.cssText = 'position:absolute;pointer-events:none;font-size:1.1rem;font-weight:700;color:var(--text);background:none;border:none;padding:0;white-space:nowrap;';
+                  chart.canvas.parentNode.style.position = 'relative';
+                  chart.canvas.parentNode.appendChild(el);
+                }
+                if (tooltip.opacity === 0) { el.style.opacity = '0'; return; }
+                const dp = tooltip.dataPoints?.[0];
+                if (!dp) return;
+                const val   = dp.parsed.y;
+                const label = dp.label;
+                const zone  = glucoseZone(val);
+                const zoneLabel = zone === 'high' ? 'ALTA' : zone === 'low' ? 'BAJA' : 'EN RANGO';
+                el.textContent = `${val} mg/dL — ${zoneLabel} — ${label}`;
+                el.style.color   = zoneColor(zone);
+                el.style.opacity = '1';
+                const x   = tooltip.caretX;
+                const y   = tooltip.caretY;
+                const elW = el.offsetWidth || 180;
+                const cW  = chart.canvas.offsetWidth;
+                el.style.left = `${Math.min(Math.max(0, x - elW / 2), cW - elW)}px`;
+                el.style.top  = `${Math.max(0, y - 28)}px`;
+              },
+            },
+            annotation: {},
           },
           scales: {
-            x: { ticks: { maxTicksLimit: 8, maxRotation: 45 } },
-            y: { beginAtZero: false },
+            x: { ticks: { maxTicksLimit: 8, maxRotation: 0 } },
+            y: {
+              beginAtZero: false,
+              min: 40,
+              ticks: { maxTicksLimit: 6 },
+            },
           },
         },
+        plugins: [{
+          // Draw reference lines at MINI_HIGH and MINI_LOW after chart render
+          id: 'refLines',
+          afterDraw(chart) {
+            const { ctx, chartArea: { left, right }, scales: { y } } = chart;
+            if (!y) return;
+            const drawRef = (val, color, dash) => {
+              const yPx = y.getPixelForValue(val);
+              if (yPx < y.top || yPx > y.bottom) return;
+              ctx.save();
+              ctx.strokeStyle = color;
+              ctx.lineWidth = 1.5;
+              ctx.setLineDash(dash);
+              ctx.globalAlpha = 0.7;
+              ctx.beginPath();
+              ctx.moveTo(left, yPx);
+              ctx.lineTo(right, yPx);
+              ctx.stroke();
+              ctx.restore();
+            };
+            drawRef(MINI_HIGH, '#fc8181', [6, 3]);
+            drawRef(MINI_LOW,  '#f6ad55', [6, 3]);
+          },
+        }],
       });
     });
   }
@@ -1383,8 +1689,15 @@
   // ── Patient filter selector ──────────────────────────────────────
   const _knownPatients = {};
 
-  function updatePatientFilter(alerts) {
-    alerts.forEach(a => {
+  function updatePatientFilter(sourceList) {
+    // Accept either alert objects ({patient_id, patient_name}) or patient
+    // reading objects ({patient_id, patient_name}).  Union with _lastPatients
+    // so patients with readings but no alerts always appear in the filter.
+    const sources = [
+      ...(sourceList || []),
+      ...(_lastPatients || []),
+    ];
+    sources.forEach(a => {
       if (a.patient_id && !_knownPatients[a.patient_id]) {
         _knownPatients[a.patient_id] = a.patient_name || a.patient_id;
       }

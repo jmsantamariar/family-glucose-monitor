@@ -4,9 +4,10 @@ Priority for every path: environment variable > config key > project default.
 
 Environment variables
 ---------------------
-* ``READINGS_CACHE_FILE`` — override the readings cache JSON path.
-* ``ALERT_HISTORY_DB``    — override the alert history SQLite DB path.
-* ``STATE_FILE``          — override the state JSON path.
+* ``READINGS_CACHE_FILE``  — override the readings cache JSON path.
+* ``ALERT_HISTORY_DB``     — override the alert history SQLite DB path.
+* ``READING_HISTORY_DB``   — override the reading history SQLite DB path.
+* ``STATE_FILE``           — override the state JSON path.
 
 These are checked at *call time* so tests can set them via ``monkeypatch.setenv``
 without reloading the module.
@@ -19,11 +20,13 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # Environment variable names
 _CACHE_ENV_VAR = "READINGS_CACHE_FILE"
 _DB_ENV_VAR = "ALERT_HISTORY_DB"
+_READING_DB_ENV_VAR = "READING_HISTORY_DB"
 _STATE_ENV_VAR = "STATE_FILE"
 
 # Default filenames (relative to PROJECT_ROOT)
 DEFAULT_CACHE_FILENAME = "readings_cache.json"
 DEFAULT_DB_FILENAME = "alert_history.db"
+DEFAULT_READING_DB_FILENAME = "reading_history.db"
 DEFAULT_STATE_FILENAME = "state.json"
 
 
@@ -67,6 +70,20 @@ def get_db_path(config: dict | None = None) -> str:
     if isinstance(config, dict):
         cfg_value = config.get("alert_history_db") or None
     return _resolve(_DB_ENV_VAR, cfg_value, DEFAULT_DB_FILENAME)
+
+
+def get_reading_history_db_path(config: dict | None = None) -> str:
+    """Return the absolute path to the reading history SQLite database.
+
+    Resolution order:
+    1. ``READING_HISTORY_DB`` environment variable.
+    2. ``config["reading_history_db"]`` (relative paths resolved against PROJECT_ROOT).
+    3. ``<PROJECT_ROOT>/reading_history.db``.
+    """
+    cfg_value: str | None = None
+    if isinstance(config, dict):
+        cfg_value = config.get("reading_history_db") or None
+    return _resolve(_READING_DB_ENV_VAR, cfg_value, DEFAULT_READING_DB_FILENAME)
 
 
 def get_state_path(config: dict | None = None) -> str:

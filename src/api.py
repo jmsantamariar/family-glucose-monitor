@@ -50,8 +50,9 @@ from src.connection_tester import test_librelinkup as _test_librelinkup
 from src.connection_tester import test_telegram as _test_telegram
 from src.crypto import decrypt_value, encrypt_value, is_encrypted
 from src.outputs.webpush import WebPushOutput, get_vapid_public_key
-from src.paths import get_cache_path
+from src.paths import get_cache_path, get_reading_history_db_path
 import src.push_subscriptions as _push_subs
+from src import reading_history as _reading_history
 from src.setup_status import is_setup_complete
 
 logger = logging.getLogger(__name__)
@@ -370,6 +371,23 @@ def _load_and_enrich_cache() -> None:
             _last_mtime = mtime
     logger.debug("Loaded %d readings from cache file", len(new_cache))
 
+    # Persist readings to history DB for sparkline time-series (best-effort).
+    if new_cache:
+        try:
+            rh_path = get_reading_history_db_path(_config)
+            _reading_history.init_db(rh_path)
+            readings_to_log = []
+            for r in new_cache.values():
+                pid = r.get("patient_id", "")
+                pname = r.get("patient_name", pid)
+                gval = r.get("glucose_value") or r.get("value", 0)
+                if pid and gval:
+                    readings_to_log.append((pid, pname, int(gval)))
+            if readings_to_log:
+                _reading_history.log_readings(rh_path, readings_to_log)
+        except Exception as exc:
+            logger.warning("Failed to persist readings to history DB: %s", exc)
+
 
 def _get_color(level: str, trend_alert: str) -> str:
     """Return semaphore color: red, yellow, green."""
@@ -396,6 +414,20 @@ def get_patient(patient_id: str):
     if not reading:
         raise HTTPException(status_code=404, detail="Patient not found")
     return reading
+
+
+@app.get("/api/patients/{patient_id}/history", response_class=JSONResponse)
+def get_patient_history(patient_id: str, hours: int = Query(default=3, ge=1, le=24)):
+    """Return recent glucose readings for *patient_id* within the last *hours* hours.
+
+    Readings are sampled at each polling cycle (~5 min) and stored in
+    ``reading_history.db``.  Returns an empty list when no history exists yet.
+    Unlike ``/api/alerts``, this endpoint returns **all** readings, not just
+    those that triggered an alert, making it suitable for sparkline visualisation.
+    """
+    rh_path = get_reading_history_db_path(_config)
+    readings = _reading_history.get_readings(rh_path, patient_id=patient_id, hours=hours)
+    return readings
 
 @app.get("/api/health", response_class=JSONResponse)
 def health_check():

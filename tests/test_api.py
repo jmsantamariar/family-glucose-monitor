@@ -1208,3 +1208,77 @@ class TestConfiguracionTestEndpointMessages:
         data = resp.json()
         assert data["ok"] is True
         assert "pacientes" in data["message"].lower()
+
+
+# ── /api/patients/{id}/history ────────────────────────────────────────────────
+
+class TestPatientHistoryEndpoint:
+    """Tests for GET /api/patients/{patient_id}/history."""
+
+    @pytest.fixture
+    def rh_db(self, tmp_path, monkeypatch):
+        """Provide a temporary reading_history.db, pointed at via env var so the
+        endpoint picks it up regardless of how ``_config`` is patched by other
+        fixtures (e.g. ``tmp_cache``).
+        """
+        import src.reading_history as rh
+        db_file = tmp_path / "reading_history.db"
+        rh.init_db(str(db_file))
+        rh._engines.pop(str(db_file), None)
+        rh.init_db(str(db_file))
+        # Use the env-var override so this takes precedence over _config
+        monkeypatch.setenv("READING_HISTORY_DB", str(db_file))
+        return db_file
+
+    def test_returns_empty_list_when_no_db(self, client, tmp_path, monkeypatch, tmp_cache):
+        monkeypatch.setenv("READING_HISTORY_DB", str(tmp_path / "nonexistent.db"))
+        resp = client.get("/api/patients/p1/history")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    def test_returns_empty_list_for_unknown_patient(self, client, rh_db, tmp_cache):
+        resp = client.get("/api/patients/unknown/history")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    def test_returns_readings_for_patient(self, client, rh_db, tmp_cache):
+        import src.reading_history as rh
+        rh.log_reading(str(rh_db), "p1", "Ana", 120)
+        resp = client.get("/api/patients/p1/history")
+        assert resp.status_code == 200
+        data = resp.json()
+        # Filter to only the reading we explicitly logged (glucose=120)
+        matching = [r for r in data if r["glucose_value"] == 120 and r["patient_name"] == "Ana"]
+        assert len(matching) == 1
+        assert matching[0]["patient_id"] == "p1"
+
+    def test_default_window_is_3_hours(self, client, rh_db, tmp_cache):
+        import src.reading_history as rh
+        rh.log_reading(str(rh_db), "p1", "Ana", 115)
+        resp = client.get("/api/patients/p1/history")
+        assert resp.status_code == 200
+        # At least one result (the one we just logged)
+        assert any(r["glucose_value"] == 115 for r in resp.json())
+
+    def test_only_returns_readings_for_requested_patient(self, client, rh_db, tmp_cache):
+        import src.reading_history as rh
+        rh.log_reading(str(rh_db), "p1", "Ana", 110)
+        rh.log_reading(str(rh_db), "p2", "Juan", 130)
+        resp = client.get("/api/patients/p1/history")
+        data = resp.json()
+        assert all(r["patient_id"] == "p1" for r in data)
+
+    def test_result_shape_has_required_fields(self, client, rh_db, tmp_cache):
+        import src.reading_history as rh
+        rh.log_reading(str(rh_db), "p1", "Ana", 100)
+        resp = client.get("/api/patients/p1/history")
+        data = resp.json()
+        assert len(data) >= 1
+        keys = set(data[0].keys())
+        assert {"timestamp", "patient_id", "patient_name", "glucose_value"}.issubset(keys)
+
+    def test_hours_ge_1_le_24_validation(self, client, rh_db, tmp_cache):
+        resp_low = client.get("/api/patients/p1/history?hours=0")
+        assert resp_low.status_code == 422
+        resp_high = client.get("/api/patients/p1/history?hours=25")
+        assert resp_high.status_code == 422
