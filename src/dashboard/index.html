@@ -504,17 +504,11 @@
       text-align: center;
     }
 
-    /* ── Mini sparkline in expanded panel ──────────────────────── */
-    .expanded-sparkline {
-      margin-bottom: .75rem;
-    }
-
-    .expanded-sparkline-label {
-      font-size: .65rem;
-      text-transform: uppercase;
-      letter-spacing: .04em;
-      color: var(--subtext);
-      margin-bottom: .35rem;
+    /* ── Inline sparkline column ────────────────────────────────── */
+    .col-sparkline {
+      width: 130px;
+      padding: .35rem .5rem;
+      vertical-align: middle;
     }
 
     /* ── Expandable patient row ─────────────────────────────────── */
@@ -613,6 +607,8 @@
       .trend-arrow-icon { font-size: 1.6rem; }
       thead th:nth-child(5),
       tbody td.col-trend-alert { display: none; }  /* hide trend alert col on small screens */
+      thead th.col-sparkline,
+      tbody td.col-sparkline { display: none; }    /* hide sparkline col on small screens */
       table { font-size: .88rem; }
       tbody td { padding: .7rem .6rem; }
     }
@@ -689,11 +685,12 @@
           <th>Nivel</th>
           <th class="col-trend-alert">Alerta tendencia</th>
           <th>Última lectura</th>
+          <th class="col-sparkline" aria-label="Mini-gráfica glucosa últimas 3 horas">Últimas 3 h</th>
         </tr>
       </thead>
       <tbody id="patients-body">
         <tr>
-          <td colspan="6">
+          <td colspan="7">
             <div class="no-data">
               <span class="icon">⏳</span>
               <p>Cargando datos…</p>
@@ -940,7 +937,7 @@
   const MINI_YMAX = 300;  // display max
 
   function buildMiniChart(patientId, currentGlucose) {
-    const W = 300, H = 56;
+    const W = 120, H = 36;
     const now           = Date.now();
     const threeHoursAgo = now - THREE_HOURS_MS;
 
@@ -981,13 +978,13 @@
 
     const mapped = pts.map(p => ({ x: toX(p.t), y: toY(p.v) }));
     const path   = mapped.map((p, i) => (i === 0 ? `M${p.x.toFixed(1)},${p.y.toFixed(1)}` : `L${p.x.toFixed(1)},${p.y.toFixed(1)}`)).join(' ');
-    const dots   = mapped.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.5" style="fill:var(--text)"/>`).join('');
+    const dots   = mapped.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="1.5" style="fill:var(--text)"/>`).join('');
 
-    return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="border-radius:6px;border:1px solid var(--border);display:block;width:100%;height:56px">` +
+    return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" preserveAspectRatio="none" style="border-radius:4px;overflow:hidden;display:block;">` +
       `<rect x="0" y="0" width="${W}" height="${highY.toFixed(1)}" style="fill:var(--red-bg)"/>` +
       `<rect x="0" y="${highY.toFixed(1)}" width="${W}" height="${Math.max(0, lowY - highY).toFixed(1)}" style="fill:var(--green-bg)"/>` +
       `<rect x="0" y="${lowY.toFixed(1)}" width="${W}" height="${Math.max(0, H - lowY).toFixed(1)}" style="fill:var(--blue-bg)"/>` +
-      `<path d="${path}" fill="none" style="stroke:var(--text)" stroke-width="2" stroke-linejoin="round"/>` +
+      `<path d="${path}" fill="none" style="stroke:var(--text)" stroke-width="1.5" stroke-linejoin="round"/>` +
       dots +
       `</svg>`;
   }
@@ -1092,14 +1089,11 @@
           <td><span class="level-badge">${escapeHtml(level)}</span></td>
           <td class="trend-alert-text col-trend-alert">${trendAlert}</td>
           <td class="time-text">${escapeHtml(timeSince)}</td>
+          <td class="col-sparkline">${miniChart}</td>
         </tr>
         <tr class="expanded-details-row${isExpanded ? ' visible' : ''}" data-patient-id="${pid}">
-          <td colspan="6">
+          <td colspan="7">
             <div class="expanded-panel">
-              <div class="expanded-sparkline">
-                <div class="expanded-sparkline-label">📈 Últimas 3 horas</div>
-                ${miniChart}
-              </div>
               <div class="expanded-stats">
                 <div class="stat-box">
                   <span class="stat-value">${escapeHtml(glucoseStr)}</span>
