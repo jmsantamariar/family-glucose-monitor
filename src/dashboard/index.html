@@ -1135,13 +1135,21 @@
     }
 
     // Append current reading if it is meaningfully newer than the last stored point
-    const cg = Number(currentGlucose);
-    const now = Date.now();
-    if (!isNaN(cg) && cg > 0) {
-      if (!pts.length || (now - pts[pts.length - 1].t) > CURRENT_READING_MIN_GAP_MS) {
-        pts.push({ t: now, v: cg });
-      }
-    }
+   const cg = Number(currentGlucose);
+const currentNow = Date.now();
+if (!isNaN(cg) && cg > 0) {
+  if (!pts.length || (currentNow - pts[pts.length - 1].t) > CURRENT_READING_MIN_GAP_MS) {
+    pts.push({ t: currentNow, v: cg });
+  }
+}
+Regla simple
+El primer const now = Date.now(); se queda igual.
+
+El segundo const now = Date.now(); se renombra a const currentNow = Date.now(); y también cambias sus referencias debajo.
+
+Haz scroll un poco más abajo hasta donde dice const cg = Number(currentGlucose);, edita ahí, y luego guarda con Commit changes….
+
+
 
     if (pts.length < 2) {
       container.innerHTML = `<span class="mini-chart-no-data">Sin datos suficientes</span>`;
