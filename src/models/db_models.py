@@ -33,6 +33,13 @@ Physical table schemas (raw reference — not changed by this module):
   - trend_arrow TEXT NOT NULL DEFAULT ''
   - message TEXT NOT NULL DEFAULT ''
 
+``readings`` (reading_history.db)
+  - id INTEGER PRIMARY KEY AUTOINCREMENT
+  - timestamp TEXT NOT NULL
+  - patient_id TEXT NOT NULL
+  - patient_name TEXT NOT NULL
+  - glucose_value INTEGER NOT NULL
+
 TODO (Iteration 4 / ongoing):
   - Migrate ``login_attempts`` to full ORM once a PK column is added.
 """
@@ -117,6 +124,31 @@ class AlertHistory(Base):
         return (
             f"<AlertHistory id={self.id} patient={self.patient_id!r} "
             f"level={self.level!r} glucose={self.glucose_value}>"
+        )
+
+
+class ReadingHistory(Base):
+    """Historical record of periodic glucose readings (sampled at each polling cycle).
+
+    Mirrors the ``readings`` table in ``reading_history.db``.
+    Used to power the mini sparkline in the expanded patient panel.
+    """
+
+    __tablename__ = "readings"
+    __table_args__ = (
+        Index("idx_readings_patient_ts", "patient_id", "timestamp"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    timestamp = Column(Text, nullable=False)
+    patient_id = Column(Text, nullable=False)
+    patient_name = Column(Text, nullable=False)
+    glucose_value = Column(Integer, nullable=False)
+
+    def __repr__(self) -> str:
+        return (
+            f"<ReadingHistory id={self.id} patient={self.patient_id!r} "
+            f"glucose={self.glucose_value}>"
         )
 
 
