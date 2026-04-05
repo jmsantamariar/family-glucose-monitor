@@ -1,5 +1,4 @@
 """Unit tests for src/reading_history.py."""
-import time
 from datetime import datetime, timedelta, timezone
 
 import pytest

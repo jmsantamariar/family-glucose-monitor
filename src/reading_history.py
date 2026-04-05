@@ -84,7 +84,7 @@ def log_reading(
             )
         )
         session.commit()
-    logger.debug("Reading logged for %s: %d mg/dL", patient_name, glucose_value)
+    logger.debug("Reading logged for patient %s: %d mg/dL", patient_id, glucose_value)
 
 
 def get_readings(
@@ -123,7 +123,8 @@ def get_readings(
             }
             for row in rows
         ]
-    except Exception:
+    except Exception as exc:
+        logger.warning("Failed to query reading history for patient %s: %s", patient_id, exc)
         return []
 
 
@@ -146,7 +147,8 @@ def cleanup_old_readings(db_path: str, max_days: int = 3) -> int:
             )
             conn.commit()
             deleted = result.rowcount
-    except Exception:
+    except Exception as exc:
+        logger.warning("Failed to clean up reading history: %s", exc)
         return 0
 
     if deleted:

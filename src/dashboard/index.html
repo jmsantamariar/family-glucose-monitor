@@ -1116,7 +1116,7 @@
           .filter(r => r.glucose_value > 0)
           .map(r => ({ t: new Date(r.timestamp).getTime(), v: Number(r.glucose_value) }));
       }
-    } catch (_) { /* network error — pts stays empty */ }
+    } catch (err) { console.debug('Failed to fetch history for patient', patientId, err); }
 
     // Append current reading if it is meaningfully newer than the last stored point
     const cg = Number(currentGlucose);
