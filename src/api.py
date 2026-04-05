@@ -376,12 +376,15 @@ def _load_and_enrich_cache() -> None:
         try:
             rh_path = get_reading_history_db_path(_config)
             _reading_history.init_db(rh_path)
+            readings_to_log = []
             for r in new_cache.values():
                 pid = r.get("patient_id", "")
                 pname = r.get("patient_name", pid)
                 gval = r.get("glucose_value") or r.get("value", 0)
                 if pid and gval:
-                    _reading_history.log_reading(rh_path, pid, pname, int(gval))
+                    readings_to_log.append((pid, pname, int(gval)))
+            if readings_to_log:
+                _reading_history.log_readings(rh_path, readings_to_log)
         except Exception as exc:
             logger.warning("Failed to persist readings to history DB: %s", exc)
 
