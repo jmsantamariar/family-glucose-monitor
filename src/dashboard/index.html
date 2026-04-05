@@ -606,9 +606,17 @@
       .glucose-value { font-size: 1.3rem; }
       .trend-arrow-icon { font-size: 1.6rem; }
       thead th.col-trend-alert,
-      tbody td.col-trend-alert { display: none; }  /* hide trend alert col on small screens */
+      tbody td.col-trend-alert,
       thead th.col-sparkline,
-      tbody td.col-sparkline { display: none; }    /* hide sparkline col on small screens */
+      tbody td.col-sparkline {
+        width: 0 !important;
+        max-width: 0;
+        padding: 0 !important;
+        overflow: hidden;
+        visibility: hidden;
+        border: 0;
+        white-space: nowrap;
+      }
       table { font-size: .88rem; }
       tbody td { padding: .7rem .6rem; }
     }
@@ -980,7 +988,7 @@
     const path   = mapped.map((p, i) => (i === 0 ? `M${p.x.toFixed(1)},${p.y.toFixed(1)}` : `L${p.x.toFixed(1)},${p.y.toFixed(1)}`)).join(' ');
     const dots   = mapped.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="1.5" style="fill:var(--text)"/>`).join('');
 
-    return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" preserveAspectRatio="none" style="border-radius:4px;overflow:hidden;display:block;">` +
+    return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" preserveAspectRatio="none" aria-hidden="true" focusable="false" style="border-radius:4px;overflow:hidden;display:block;">` +
       `<rect x="0" y="0" width="${W}" height="${highY.toFixed(1)}" style="fill:var(--red-bg)"/>` +
       `<rect x="0" y="${highY.toFixed(1)}" width="${W}" height="${Math.max(0, lowY - highY).toFixed(1)}" style="fill:var(--green-bg)"/>` +
       `<rect x="0" y="${lowY.toFixed(1)}" width="${W}" height="${Math.max(0, H - lowY).toFixed(1)}" style="fill:var(--blue-bg)"/>` +
