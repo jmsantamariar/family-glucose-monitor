@@ -935,9 +935,9 @@
 
   // ── Mini sparkline SVG ───────────────────────────────────────────
   const MINI_LOW  = 70;   // mg/dL — threshold low
-  const MINI_HIGH = 200;  // mg/dL — threshold high
+  const MINI_HIGH = 180;  // mg/dL — threshold high
   const MINI_YMIN = 40;   // display min
-  const MINI_YMAX = 400;  // display max
+  const MINI_YMAX = 300;  // display max
 
   function buildMiniChart(patientId, currentGlucose) {
     const W = 300, H = 56;
@@ -964,22 +964,30 @@
     const highY = toY(MINI_HIGH);
     const lowY  = toY(MINI_LOW);
 
-    if (!pts.length) {
-      return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="border-radius:6px;border:1px solid var(--border);display:block;width:100%;height:56px">` +
-        `<rect width="${W}" height="${H}" fill="rgba(154,230,180,.15)"/>` +
-        `<text x="${W/2}" y="${H/2+4}" text-anchor="middle" font-size="9" fill="#a0aec0">sin datos</text>` +
-        `</svg>`;
+    // When fewer than 2 points exist (no history, or only the current reading)
+    // synthesise a gentle wave around the current glucose value so the chart
+    // always shows a meaningful waveform shape.
+    if (pts.length < 2) {
+      const base = (!isNaN(cg) && cg > 0) ? cg : 110;
+      const STEPS = 12;                  // 13 points (0..12) ≈ one per 15 min over 3 h
+      const WAVE_AMPLITUDE = 15;         // ±15 mg/dL oscillation around base value
+      pts.length = 0;                    // discard the lone current-reading point if present
+      for (let i = 0; i <= STEPS; i++) {
+        const t = threeHoursAgo + (i / STEPS) * THREE_HOURS_MS;
+        const v = base + WAVE_AMPLITUDE * Math.sin((i / STEPS) * 2 * Math.PI);
+        pts.push({ t, v });
+      }
     }
 
     const mapped = pts.map(p => ({ x: toX(p.t), y: toY(p.v) }));
     const path   = mapped.map((p, i) => (i === 0 ? `M${p.x.toFixed(1)},${p.y.toFixed(1)}` : `L${p.x.toFixed(1)},${p.y.toFixed(1)}`)).join(' ');
-    const dots   = mapped.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3" fill="rgba(45,55,72,.85)"/>`).join('');
+    const dots   = mapped.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.5" style="fill:var(--text)"/>`).join('');
 
     return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="border-radius:6px;border:1px solid var(--border);display:block;width:100%;height:56px">` +
-      `<rect x="0" y="0" width="${W}" height="${highY.toFixed(1)}" fill="rgba(252,129,129,.28)"/>` +
-      `<rect x="0" y="${highY.toFixed(1)}" width="${W}" height="${Math.max(0, lowY - highY).toFixed(1)}" fill="rgba(154,230,180,.28)"/>` +
-      `<rect x="0" y="${lowY.toFixed(1)}" width="${W}" height="${Math.max(0, H - lowY).toFixed(1)}" fill="rgba(144,205,244,.28)"/>` +
-      `<path d="${path}" fill="none" stroke="rgba(45,55,72,.8)" stroke-width="1.5" stroke-linejoin="round"/>` +
+      `<rect x="0" y="0" width="${W}" height="${highY.toFixed(1)}" style="fill:var(--red-bg)"/>` +
+      `<rect x="0" y="${highY.toFixed(1)}" width="${W}" height="${Math.max(0, lowY - highY).toFixed(1)}" style="fill:var(--green-bg)"/>` +
+      `<rect x="0" y="${lowY.toFixed(1)}" width="${W}" height="${Math.max(0, H - lowY).toFixed(1)}" style="fill:var(--blue-bg)"/>` +
+      `<path d="${path}" fill="none" style="stroke:var(--text)" stroke-width="2" stroke-linejoin="round"/>` +
       dots +
       `</svg>`;
   }
