@@ -90,5 +90,7 @@
   "alert_level.low": "LOW",
   "alert_level.high": "HIGH",
   "alert_level.trend": "TREND",
-  "lang.toggle": "Change language"
+  "lang.toggle": "Change language",
+  "header.settings_aria_label": "Go to system settings",
+  "header.logout_title": "Log out"
 }

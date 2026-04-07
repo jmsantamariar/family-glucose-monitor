@@ -105,6 +105,8 @@
       'alert_level.high': 'ALTA',
       'alert_level.trend': 'TENDENCIA',
       'lang.toggle': 'Cambiar idioma',
+      'header.settings_aria_label': 'Ir a Configuración del sistema',
+      'header.logout_title': 'Cerrar sesión',
     },
     en: {
       'header.last_update_prefix': 'Last update: ',
@@ -199,6 +201,8 @@
       'alert_level.high': 'HIGH',
       'alert_level.trend': 'TREND',
       'lang.toggle': 'Change language',
+      'header.settings_aria_label': 'Go to system settings',
+      'header.logout_title': 'Log out',
     },
   };
 
@@ -229,10 +233,19 @@
   }
 
   // ── DOM application ────────────────────────────────────────────────────────
+  // Note: elements with data-i18n must contain only text — textContent replaces
+  // all child nodes.  For attribute translation, use data-i18n-aria-label or
+  // data-i18n-title instead.
   function applyTranslations() {
     document.querySelectorAll('[data-i18n]').forEach(function (el) {
       var key = el.getAttribute('data-i18n');
       el.textContent = t(key);
+    });
+    document.querySelectorAll('[data-i18n-aria-label]').forEach(function (el) {
+      el.setAttribute('aria-label', t(el.getAttribute('data-i18n-aria-label')));
+    });
+    document.querySelectorAll('[data-i18n-title]').forEach(function (el) {
+      el.setAttribute('title', t(el.getAttribute('data-i18n-title')));
     });
     document.documentElement.lang = _locale;
     _syncToggleBtn();
