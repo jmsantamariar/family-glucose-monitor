@@ -256,6 +256,7 @@ _AUTH_EXEMPT_PATHS = {
 
 _AUTH_EXEMPT_PREFIXES = (
     "/icons/",
+    "/i18n/",
 )
 
 @app.middleware("http")
@@ -554,7 +555,24 @@ def pwa_icon(filename: str):
     return FileResponse(path, media_type=media_type)
 
 
-# ── Web Push notification endpoints ──────────────────────────────────────────
+@app.get("/i18n/{filename}")
+def i18n_asset(filename: str):
+    """Serve i18n translation assets (JS helper and JSON locale files)."""
+    i18n_dir = _DASHBOARD_DIR / "i18n"
+    # Prevent path traversal: reject any filename containing path separators.
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid i18n filename")
+    path = (i18n_dir / filename).resolve()
+    # Double-check that the resolved path is still inside i18n_dir.
+    try:
+        path.relative_to(i18n_dir.resolve())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid i18n filename")
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail=f"i18n file '{filename}' not found")
+    suffix = path.suffix.lower()
+    media_type = _MIME_TYPES.get(suffix, "application/octet-stream")
+    return FileResponse(path, media_type=media_type)
 
 @app.get("/api/push/vapid-public-key", response_class=JSONResponse)
 def push_vapid_public_key():
