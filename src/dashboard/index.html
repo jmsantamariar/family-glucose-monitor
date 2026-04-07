@@ -1099,6 +1099,8 @@
       // Use cached history; still append the freshest current reading below
       pts = cached.pts.slice();
     } else {
+      // Show loading placeholder while the fetch is in progress
+      container.innerHTML = `<span class="mini-chart-no-data">⏳ Cargando…</span>`;
       try {
         const resp = await fetch(`/api/patients/${encodeURIComponent(patientId)}/history?hours=3`);
         if (resp.ok) {
