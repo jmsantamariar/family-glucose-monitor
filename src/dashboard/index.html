@@ -891,12 +891,16 @@
 </footer>
 
 <script>
+  // ── i18n helper: map app locale code to a JS Intl locale string ────────────
+  function jsLocale() {
+    return i18n.getLocale() === 'es' ? 'es-ES' : 'en-US';
+  }
+
   // ── Clock ───────────────────────────────────────────────────────
   function updateClock() {
     const now = new Date();
-    const locale = i18n.getLocale() === 'es' ? 'es-ES' : 'en-US';
     document.getElementById('clock').textContent =
-      now.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      now.toLocaleTimeString(jsLocale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   }
   setInterval(updateClock, 1000);
   updateClock();
@@ -944,7 +948,7 @@
   function formatDateTime(isoTimestamp) {
     if (!isoTimestamp) return '—';
     const d = new Date(isoTimestamp);
-    const locale = i18n.getLocale() === 'es' ? 'es-ES' : 'en-US';
+    const locale = jsLocale();
     return d.toLocaleString(locale, {
       month: '2-digit', day: '2-digit',
       hour: '2-digit', minute: '2-digit'
@@ -1040,7 +1044,7 @@
     const el = document.getElementById('last-update');
     if (!el || !isoTimestamp) return;
     const d = new Date(isoTimestamp);
-    const locale = i18n.getLocale() === 'es' ? 'es-ES' : 'en-US';
+    const locale = jsLocale();
     el.textContent = i18n.t('header.last_update_prefix') + d.toLocaleString(locale, {
       month: '2-digit', day: '2-digit',
       hour: '2-digit', minute: '2-digit',
@@ -1100,7 +1104,7 @@
 
   /** Format an ISO timestamp to short time, e.g. "13:11". */
   function formatShortTime(isoTimestamp) {
-    const locale = i18n.getLocale() === 'es' ? 'es-ES' : 'en-US';
+    const locale = jsLocale();
     return new Date(isoTimestamp).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
   }
 
@@ -1170,7 +1174,7 @@ if (!isNaN(cg) && cg > 0) {
 
     const labels      = pts.map(p => {
       const d = new Date(p.t);
-      const locale = i18n.getLocale() === 'es' ? 'es-ES' : 'en-US';
+      const locale = jsLocale();
       return d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
     });
     const values      = pts.map(p => p.v);
