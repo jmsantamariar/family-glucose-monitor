@@ -559,8 +559,13 @@ def pwa_icon(filename: str):
 def i18n_asset(filename: str):
     """Serve i18n translation assets (JS helper and JSON locale files)."""
     i18n_dir = _DASHBOARD_DIR / "i18n"
-    # Prevent path traversal: reject any filename containing path separators.
+    # Allowlist: only permit known-safe extensions (.js, .json) and reject any
+    # filename containing path separators or parent-directory references.
+    _ALLOWED_I18N_EXTENSIONS = {".js", ".json"}
     if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid i18n filename")
+    suffix = Path(filename).suffix.lower() if "." in filename else ""
+    if suffix not in _ALLOWED_I18N_EXTENSIONS:
         raise HTTPException(status_code=400, detail="Invalid i18n filename")
     path = (i18n_dir / filename).resolve()
     # Double-check that the resolved path is still inside i18n_dir.
@@ -570,7 +575,6 @@ def i18n_asset(filename: str):
         raise HTTPException(status_code=400, detail="Invalid i18n filename")
     if not path.is_file():
         raise HTTPException(status_code=404, detail=f"i18n file '{filename}' not found")
-    suffix = path.suffix.lower()
     media_type = _MIME_TYPES.get(suffix, "application/octet-stream")
     return FileResponse(path, media_type=media_type)
 
