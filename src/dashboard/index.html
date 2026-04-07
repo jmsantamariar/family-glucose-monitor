@@ -1394,7 +1394,8 @@ if (!isNaN(cg) && cg > 0) {
     const chartByHourEl = document.getElementById('chart-by-hour');
     const heatmapContainer = chartByHourEl?.parentElement;
     if (chartByHourEl) chartByHourEl.style.display = 'none';  // hide legacy element; heatmap is rendered as SVG
-    heatmapContainer?.querySelectorAll('svg.heatmap-svg').forEach(svg => svg.remove());
+    if (!heatmapContainer) return;
+    heatmapContainer.querySelectorAll('svg.heatmap-svg').forEach(svg => svg.remove());
 
     // Count alerts per hour slot (0–23)
     const heatSlots = Array.from({ length: 24 }, () => ({ count: 0, hasHigh: false, hasLow: false }));
