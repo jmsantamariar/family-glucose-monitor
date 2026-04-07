@@ -533,6 +533,8 @@
     .expanded-mini-chart {
       flex: 1 1 200px;
       min-width: 160px;
+      height: 80px;        /* increased from 56px to match new Chart.js canvas */
+      position: relative;  /* required for Chart.js responsive canvas */
     }
 
     .mini-chart-no-data {
@@ -1078,48 +1080,6 @@
     return new Date(isoTimestamp).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
   }
 
-  /**
-   * Build the mini SVG sparkline from an array of {t, v} points.
-   * Returns an SVG string (full-width of the container) plus stats HTML.
-   */
-  function buildMiniChartSVG(pts) {
-    if (pts.length < 2) return null;
-
-    const W = 260, H = 56;
-    const now           = Date.now();
-    const threeHoursAgo = now - THREE_HOURS_MS;
-
-    const tMin = Math.min(...pts.map(p => p.t));
-    const tMax = Math.max(now, Math.max(...pts.map(p => p.t)));
-    const tRange = Math.max(tMax - tMin, 1);
-
-    const toY = v => H - Math.max(0, Math.min(H, ((v - MINI_YMIN) / (MINI_YMAX - MINI_YMIN)) * H));
-    const toX = t => Math.max(0, Math.min(W, ((t - tMin) / tRange) * W));
-
-    const highY = toY(MINI_HIGH);
-    const lowY  = toY(MINI_LOW);
-
-    const mapped = pts.map(p => ({ x: toX(p.t), y: toY(p.v), zone: glucoseZone(p.v) }));
-    const path   = mapped.map((p, i) => (i === 0 ? `M${p.x.toFixed(1)},${p.y.toFixed(1)}` : `L${p.x.toFixed(1)},${p.y.toFixed(1)}`)).join(' ');
-    const dots   = mapped.map(p =>
-      `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.5" fill="${zoneColor(p.zone)}"/>`
-    ).join('');
-
-    const last = mapped[mapped.length - 1];
-    const lastDot = `<circle cx="${last.x.toFixed(1)}" cy="${last.y.toFixed(1)}" r="4" fill="${zoneColor(last.zone)}" stroke="white" stroke-width="1.2"/>`;
-
-    return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" style="border-radius:4px;overflow:hidden;display:block;" aria-hidden="true">` +
-      `<rect x="0" y="0" width="${W}" height="${highY.toFixed(1)}" fill="rgba(239,68,68,0.12)"/>` +
-      `<rect x="0" y="${highY.toFixed(1)}" width="${W}" height="${Math.max(0, lowY - highY).toFixed(1)}" fill="rgba(34,197,94,0.08)"/>` +
-      `<rect x="0" y="${lowY.toFixed(1)}" width="${W}" height="${Math.max(0, H - lowY).toFixed(1)}" fill="rgba(96,165,250,0.12)"/>` +
-      `<line x1="0" y1="${highY.toFixed(1)}" x2="${W}" y2="${highY.toFixed(1)}" stroke="rgba(239,68,68,0.4)" stroke-width="1" stroke-dasharray="3,3"/>` +
-      `<line x1="0" y1="${lowY.toFixed(1)}" x2="${W}" y2="${lowY.toFixed(1)}" stroke="rgba(96,165,250,0.4)" stroke-width="1" stroke-dasharray="3,3"/>` +
-      `<path d="${path}" fill="none" stroke="rgba(99,179,237,0.9)" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>` +
-      dots +
-      lastDot +
-      `</svg>`;
-  }
-
   // Cache of fetched mini-chart data: patientId → { ts: epoch ms, pts: [{t,v}] }
   const _miniChartCache = {};
   const _MINI_CHART_CACHE_TTL_MS = 60_000; // 60 seconds
@@ -1139,6 +1099,8 @@
       // Use cached history; still append the freshest current reading below
       pts = cached.pts.slice();
     } else {
+      // Show loading placeholder while the fetch is in progress
+      container.innerHTML = `<span class="mini-chart-no-data">⏳ Cargando…</span>`;
       try {
         const resp = await fetch(`/api/patients/${encodeURIComponent(patientId)}/history?hours=3`);
         if (resp.ok) {
@@ -1161,27 +1123,135 @@ if (!isNaN(cg) && cg > 0) {
 }
 
 
+    // Destroy previous chart instance if exists (do this before any early return
+    // so stale instances are always cleaned up, even when pts.length < 2)
+    if (_miniCharts[patientId]) {
+      _miniCharts[patientId].destroy();
+      delete _miniCharts[patientId];
+    }
+
     if (pts.length < 2) {
       container.innerHTML = `<span class="mini-chart-no-data">Sin datos suficientes</span>`;
       return;
     }
 
-    const svgHtml = buildMiniChartSVG(pts);
-    if (!svgHtml) {
-      container.innerHTML = `<span class="mini-chart-no-data">Sin datos suficientes</span>`;
-      return;
+    // Clear container and inject a canvas
+    container.innerHTML = '';
+    const canvas = document.createElement('canvas');
+    canvas.style.width  = '100%';
+    container.appendChild(canvas);
+
+    // Sort pts by time ascending
+    pts.sort((a, b) => a.t - b.t);
+
+    const labels      = pts.map(p => {
+      const d = new Date(p.t);
+      return d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    });
+    const values      = pts.map(p => p.v);
+    const pointColors = pts.map(p => zoneColor(glucoseZone(p.v)));
+    const pointRadii  = pts.map((_, i) => i === pts.length - 1 ? 5 : 0);
+    // Interior points: invisible (too dense to show dots)
+    // Last point: highlighted to show current reading
+
+    const stats = calcStats(values);
+
+    _miniCharts[patientId] = new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          data: values,
+          borderColor: 'rgba(99,179,237,0.9)',
+          borderWidth: 1.5,
+          pointBackgroundColor: pointColors,
+          pointBorderColor: pointColors,
+          pointRadius: pointRadii,
+          pointHoverRadius: pointRadii.map(radius => Math.max(radius, 4)),
+          fill: false,
+          tension: 0.4,
+          borderDash: [],
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: ctx => {
+                const zone = glucoseZone(ctx.parsed.y);
+                const zoneLabel = zone === 'high' ? 'ALTA' : zone === 'low' ? 'BAJA' : 'EN RANGO';
+                return `${ctx.parsed.y} mg/dL — ${zoneLabel}`;
+              },
+            },
+            backgroundColor: 'rgba(15,23,42,0.92)',
+            titleColor: '#94a3b8',
+            bodyColor: '#f1f5f9',
+            borderColor: 'rgba(255,255,255,0.1)',
+            borderWidth: 1,
+          },
+          annotation: {
+            annotations: {
+              highZone: {
+                type: 'box', yMin: 180, yMax: 300,
+                backgroundColor: 'rgba(239,68,68,0.08)', borderWidth: 0,
+              },
+              normalZone: {
+                type: 'box', yMin: 70, yMax: 180,
+                backgroundColor: 'rgba(34,197,94,0.06)', borderWidth: 0,
+              },
+              lowZone: {
+                type: 'box', yMin: 40, yMax: 70,
+                backgroundColor: 'rgba(96,165,250,0.10)', borderWidth: 0,
+              },
+              highLine: {
+                type: 'line', yMin: 180, yMax: 180,
+                borderColor: 'rgba(239,68,68,0.45)', borderWidth: 1,
+                borderDash: [3, 3],
+                label: {
+                  content: '180', display: true, position: 'start',
+                  font: { size: 9 }, color: 'rgba(239,68,68,0.7)',
+                  backgroundColor: 'transparent',
+                },
+              },
+              lowLine: {
+                type: 'line', yMin: 70, yMax: 70,
+                borderColor: 'rgba(96,165,250,0.45)', borderWidth: 1,
+                borderDash: [3, 3],
+                label: {
+                  content: '70', display: true, position: 'start',
+                  font: { size: 9 }, color: 'rgba(96,165,250,0.7)',
+                  backgroundColor: 'transparent',
+                },
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            display: false,
+          },
+          y: {
+            min: 40,
+            max: 300,
+            display: false,
+          },
+        },
+      },
+    });
+
+    if (stats) {
+      const statsEl = document.createElement('div');
+      statsEl.className = 'mini-chart-stats';
+      statsEl.innerHTML =
+        `<span>↑ ${stats.max} máx</span>` +
+        `<span>∅ ${stats.avg} prom</span>` +
+        `<span>↓ ${stats.min} mín</span>`;
+      container.appendChild(statsEl);
     }
-
-    const stats = calcStats(pts.map(p => p.v));
-    const statsHtml = stats
-      ? `<div class="mini-chart-stats">
-           <span>↑ ${stats.max} máx</span>
-           <span>∅ ${stats.avg} prom</span>
-           <span>↓ ${stats.min} mín</span>
-         </div>`
-      : '';
-
-    container.innerHTML = svgHtml + statsHtml;
   }
 
   // ── Alert strip counters ─────────────────────────────────────────
@@ -1349,6 +1419,15 @@ if (!isNaN(cg) && cg > 0) {
       const patient = (_lastPatients || []).find(p => String(p.patient_id) === pid);
       const glucose = patient ? (patient.glucose_value ?? patient.value ?? null) : null;
       _loadMiniChart(pid, glucose);
+    } else {
+      // Destroy mini-chart instance to prevent memory leaks
+      const pid = row.dataset.patientId;
+      if (_miniCharts[pid]) {
+        _miniCharts[pid].destroy();
+        delete _miniCharts[pid];
+      }
+      const container = document.getElementById(`mini-chart-${String(pid)}`);
+      if (container) container.innerHTML = '';
     }
   }
 
@@ -1356,6 +1435,7 @@ if (!isNaN(cg) && cg > 0) {
   let chartByHour  = null;
   let chartByLevel = null;
   const _glucoseCharts = {}; // patientId -> Chart instance
+  const _miniCharts    = {}; // patientId -> Chart instance (mini sparkline)
 
   // ── Patient color palette ────────────────────────────────────────
   const PATIENT_PALETTE = [
