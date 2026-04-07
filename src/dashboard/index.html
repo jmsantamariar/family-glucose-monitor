@@ -1420,11 +1420,11 @@ if (!isNaN(cg) && cg > 0) {
     } else {
       // Destroy mini-chart instance to prevent memory leaks
       const pid = row.dataset.patientId;
-      const container = document.getElementById(`mini-chart-${String(pid)}`);
       if (_miniCharts[pid]) {
         _miniCharts[pid].destroy();
         delete _miniCharts[pid];
       }
+      const container = document.getElementById(`mini-chart-${String(pid)}`);
       if (container) container.innerHTML = '';
     }
   }
