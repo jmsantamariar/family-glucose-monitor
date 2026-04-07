@@ -218,7 +218,10 @@
   /** Look up a translation key.  {0}, {1}, … are replaced with positional args. */
   function t(key) {
     var dict = TRANSLATIONS[_locale] || TRANSLATIONS['es'];
-    var str = (key in dict) ? dict[key] : (TRANSLATIONS['es'][key] !== undefined ? TRANSLATIONS['es'][key] : key);
+    var fallbackDict = TRANSLATIONS['es'];
+    var str = Object.prototype.hasOwnProperty.call(dict, key)
+      ? dict[key]
+      : (Object.prototype.hasOwnProperty.call(fallbackDict, key) ? fallbackDict[key] : key);
     for (var i = 1; i < arguments.length; i++) {
       str = str.replace(new RegExp('\\{' + (i - 1) + '\\}', 'g'), String(arguments[i]));
     }
