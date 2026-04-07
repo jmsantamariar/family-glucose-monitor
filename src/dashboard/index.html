@@ -997,8 +997,13 @@
     const mapped = map[key] || null;
     const legacy = arrow && charFallback[arrow] ? { char: arrow, ...charFallback[arrow] } : null;
     const cfg = mapped || legacy || { char: '→', cls: 'trend-stable', labelKey: 'trend.flat' };
-    const label = escapeHtml(i18n.t(cfg.labelKey)).replace(/"/g, '&quot;');
-    return `<span class="trend-arrow-icon ${cfg.cls}" title="${label}" aria-label="${label}">${cfg.char}</span>`;
+    const label = i18n.t(cfg.labelKey);
+    const span = document.createElement('span');
+    span.className = 'trend-arrow-icon ' + cfg.cls;
+    span.setAttribute('title', label);
+    span.setAttribute('aria-label', label);
+    span.textContent = cfg.char;
+    return span.outerHTML;
   }
 
   function getGlucoseTrendClass(trendAlert) {
