@@ -1106,7 +1106,7 @@
     ).join('');
 
     const last = mapped[mapped.length - 1];
-    const lastDot = `<circle cx="${last.x.toFixed(1)}" cy="${last.y.toFixed(1)}" r="4" fill="${zoneColor(last.zone)}" stroke="white" stroke-width="1"/>`;
+    const lastDot = `<circle cx="${last.x.toFixed(1)}" cy="${last.y.toFixed(1)}" r="4" fill="${zoneColor(last.zone)}" stroke="white" stroke-width="1.2"/>`;
 
     return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" style="border-radius:4px;overflow:hidden;display:block;" aria-hidden="true">` +
       `<rect x="0" y="0" width="${W}" height="${highY.toFixed(1)}" fill="rgba(239,68,68,0.12)"/>` +
@@ -1376,20 +1376,8 @@ if (!isNaN(cg) && cg > 0) {
   }
 
   function renderCharts(alerts) {
-    const HOUR_IN_MS  = 3600000;
     const now         = Date.now();
     const selectedPid = document.getElementById('patient-filter').value;
-
-    // ── Chart 1: alerts per hour, stacked by patient ─────────────
-    const hourBuckets = {}; // key -> { label }
-    for (let h = 23; h >= 0; h--) {
-      const d   = new Date(now - h * HOUR_IN_MS);
-      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}T${String(d.getHours()).padStart(2,'0')}`;
-      hourBuckets[key] = { label: d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) };
-    }
-
-    const hourKeys   = Object.keys(hourBuckets);
-    const hourLabels = hourKeys.map(k => hourBuckets[k].label);
 
     // Collect unique patient IDs that appear in these alerts (preserving discovery order)
     const patientIds = [];
@@ -1402,35 +1390,12 @@ if (!isNaN(cg) && cg > 0) {
       }
     });
 
-    // Per-patient hour counts
-    const patientHourCounts = {};
-    patientIds.forEach(pid => {
-      patientHourCounts[pid] = {};
-      hourKeys.forEach(k => { patientHourCounts[pid][k] = 0; });
-    });
-    alerts.forEach(a => {
-      const ts  = new Date(a.timestamp);
-      const key = `${ts.getFullYear()}-${String(ts.getMonth()+1).padStart(2,'0')}-${String(ts.getDate()).padStart(2,'0')}T${String(ts.getHours()).padStart(2,'0')}`;
-      if (key in hourBuckets && a.patient_id && patientHourCounts[a.patient_id]) {
-        patientHourCounts[a.patient_id][key]++;
-      }
-    });
-
-    const hourDatasets = patientIds.map(pid => {
-      const color = getPatientColor(pid);
-      return {
-        label: _knownPatients[pid] || pid,
-        data: hourKeys.map(k => patientHourCounts[pid][k]),
-        backgroundColor: color.bg,
-        borderColor: color.border,
-        borderWidth: 1,
-        borderDash: patientLineDash(pid),
-      };
-    });
-
-    const heatmapContainer = document.getElementById('chart-by-hour').parentElement;
-    heatmapContainer.querySelector('canvas')?.remove();
-    if (chartByHour) { chartByHour.destroy(); chartByHour = null; }
+    // ── Chart 1: alerts heatmap by hour ──────────────────────────
+    const chartByHourEl = document.getElementById('chart-by-hour');
+    const heatmapContainer = chartByHourEl?.parentElement;
+    if (chartByHourEl) chartByHourEl.style.display = 'none';  // hide legacy element; heatmap is rendered as SVG
+    if (!heatmapContainer) return;
+    heatmapContainer.querySelectorAll('svg.heatmap-svg').forEach(svg => svg.remove());
 
     // Count alerts per hour slot (0–23)
     const heatSlots = Array.from({ length: 24 }, () => ({ count: 0, hasHigh: false, hasLow: false }));
@@ -1464,7 +1429,7 @@ if (!isNaN(cg) && cg > 0) {
       if (label) cells += `<text x="${x + CELL_W/2}" y="${CELL_H + 12}" text-anchor="middle" font-size="9" fill="rgba(255,255,255,0.4)">${label}</text>`;
     });
 
-    const heatSvg = `<svg viewBox="0 0 ${totalW} ${CELL_H + 16}" width="100%" style="overflow:visible" aria-label="Mapa de calor de alertas por hora">
+    const heatSvg = `<svg class="heatmap-svg" viewBox="0 0 ${totalW} ${CELL_H + 16}" width="100%" style="overflow:visible" aria-label="Mapa de calor de alertas por hora">
       ${cells}
     </svg>`;
     heatmapContainer.insertAdjacentHTML('beforeend', heatSvg);
