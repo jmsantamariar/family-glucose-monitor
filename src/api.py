@@ -516,6 +516,15 @@ _MIME_TYPES: dict[str, str] = {
     ".ico":  "image/x-icon",
 }
 
+# Exact allowlist of i18n files that may be served via /i18n/{filename}.
+# Using an allowlist rather than constructing paths from user input prevents
+# path injection entirely — unknown filenames are rejected with 404.
+_ALLOWED_I18N_FILES: dict[str, str] = {
+    "i18n.js":  "application/javascript",
+    "es.json":  "application/json",
+    "en.json":  "application/json",
+}
+
 
 @app.get("/manifest.json")
 def pwa_manifest():
@@ -557,25 +566,17 @@ def pwa_icon(filename: str):
 
 @app.get("/i18n/{filename}")
 def i18n_asset(filename: str):
-    """Serve i18n translation assets (JS helper and JSON locale files)."""
-    i18n_dir = _DASHBOARD_DIR / "i18n"
-    # Allowlist: only permit known-safe extensions (.js, .json) and reject any
-    # filename containing path separators or parent-directory references.
-    _ALLOWED_I18N_EXTENSIONS = {".js", ".json"}
-    if "/" in filename or "\\" in filename or ".." in filename:
-        raise HTTPException(status_code=400, detail="Invalid i18n filename")
-    suffix = Path(filename).suffix.lower() if "." in filename else ""
-    if suffix not in _ALLOWED_I18N_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="Invalid i18n filename")
-    path = (i18n_dir / filename).resolve()
-    # Double-check that the resolved path is still inside i18n_dir.
-    try:
-        path.relative_to(i18n_dir.resolve())
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid i18n filename")
+    """Serve i18n translation assets (JS helper and JSON locale files).
+
+    Only files explicitly listed in ``_ALLOWED_I18N_FILES`` are served;
+    any other name is rejected with 404 to prevent path injection entirely.
+    """
+    if filename not in _ALLOWED_I18N_FILES:
+        raise HTTPException(status_code=404, detail=f"i18n file '{filename}' not found")
+    media_type = _ALLOWED_I18N_FILES[filename]
+    path = _DASHBOARD_DIR / "i18n" / filename
     if not path.is_file():
         raise HTTPException(status_code=404, detail=f"i18n file '{filename}' not found")
-    media_type = _MIME_TYPES.get(suffix, "application/octet-stream")
     return FileResponse(path, media_type=media_type)
 
 @app.get("/api/push/vapid-public-key", response_class=JSONResponse)
