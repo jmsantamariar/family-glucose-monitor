@@ -1165,7 +1165,7 @@ if (!isNaN(cg) && cg > 0) {
           pointBackgroundColor: pointColors,
           pointBorderColor: pointColors,
           pointRadius: pointRadii,
-          pointHoverRadius: 4,
+          pointHoverRadius: pointRadii.map(radius => Math.max(radius, 4)),
           fill: false,
           tension: 0.4,
           borderDash: [],
