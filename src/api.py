@@ -517,12 +517,12 @@ _MIME_TYPES: dict[str, str] = {
 }
 
 # Exact allowlist of i18n files that may be served via /i18n/{filename}.
-# Using an allowlist rather than constructing paths from user input prevents
-# path injection entirely — unknown filenames are rejected with 404.
-_ALLOWED_I18N_FILES: dict[str, str] = {
-    "i18n.js":  "application/javascript",
-    "es.json":  "application/json",
-    "en.json":  "application/json",
+# Paths are pre-computed at module load time so no user-provided value ever
+# participates in path construction — the user input is only used as a dict key.
+_ALLOWED_I18N_FILES: dict[str, tuple[Path, str]] = {
+    "i18n.js": (_DASHBOARD_DIR / "i18n" / "i18n.js", "application/javascript"),
+    "es.json":  (_DASHBOARD_DIR / "i18n" / "es.json",  "application/json"),
+    "en.json":  (_DASHBOARD_DIR / "i18n" / "en.json",  "application/json"),
 }
 
 
@@ -568,13 +568,14 @@ def pwa_icon(filename: str):
 def i18n_asset(filename: str):
     """Serve i18n translation assets (JS helper and JSON locale files).
 
-    Only files explicitly listed in ``_ALLOWED_I18N_FILES`` are served;
-    any other name is rejected with 404 to prevent path injection entirely.
+    Only files explicitly listed in ``_ALLOWED_I18N_FILES`` are served.
+    Paths are pre-computed at module level so the user-provided ``filename``
+    is used only as a dict lookup key and never touches path construction.
     """
-    if filename not in _ALLOWED_I18N_FILES:
+    entry = _ALLOWED_I18N_FILES.get(filename)
+    if entry is None:
         raise HTTPException(status_code=404, detail=f"i18n file '{filename}' not found")
-    media_type = _ALLOWED_I18N_FILES[filename]
-    path = _DASHBOARD_DIR / "i18n" / filename
+    path, media_type = entry
     if not path.is_file():
         raise HTTPException(status_code=404, detail=f"i18n file '{filename}' not found")
     return FileResponse(path, media_type=media_type)
