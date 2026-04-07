@@ -13,7 +13,7 @@
   <meta name="apple-mobile-web-app-title" content="Glucosa" />
   <link rel="apple-touch-icon" href="/icons/icon-192.svg" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js" integrity="sha384-OLBgp1GsljhM2TJ+sbHjaiH9txEUvgdDTAzHv2P24donTt6/529l+9Ua0vFImLlb" crossorigin="anonymous"></script>
   <!-- DSEG7 digital display font for glucose numbers -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dseg@0.46.0/css/dseg.min.css" />
   <style>
@@ -1430,11 +1430,14 @@ if (!isNaN(cg) && cg > 0) {
       if (a.level === 'high') heatSlots[h].hasHigh = true;
       if (a.level === 'low')  heatSlots[h].hasLow  = true;
     });
-    const maxCount = Math.max(1, ...heatSlots.map(s => s.count));
+    const maxCount = Math.max(1, ...heatSlots.map(s => s.count)); // Ensure >= 1 to avoid division by zero
 
     // Build SVG heatmap: 24 cells × 1 row
     const CELL_W = 24, CELL_H = 40, GAP = 2;
+    const HEAT_LABEL_INTERVAL = 6; // show hour label every 6 hours (00h, 06h, 12h, 18h)
     const totalW = 24 * (CELL_W + GAP);
+    // Map intensity (0–1) to opacity range 0.2–0.9 for each cell
+    const heatOpacity = intensity => (0.2 + intensity * 0.7).toFixed(2);
     let cells = '';
     heatSlots.forEach((slot, h) => {
       const x = h * (CELL_W + GAP);
@@ -1442,11 +1445,11 @@ if (!isNaN(cg) && cg > 0) {
       const fill = slot.count === 0
         ? 'rgba(255,255,255,0.04)'
         : slot.hasHigh
-          ? `rgba(239,68,68,${(0.2 + intensity * 0.7).toFixed(2)})`
+          ? `rgba(239,68,68,${heatOpacity(intensity)})`
           : slot.hasLow
-            ? `rgba(96,165,250,${(0.2 + intensity * 0.7).toFixed(2)})`
-            : `rgba(246,224,94,${(0.2 + intensity * 0.7).toFixed(2)})`;
-      const label = h % 6 === 0 ? `${String(h).padStart(2,'0')}h` : '';
+            ? `rgba(96,165,250,${heatOpacity(intensity)})`
+            : `rgba(246,224,94,${heatOpacity(intensity)})`;
+      const label = h % HEAT_LABEL_INTERVAL === 0 ? `${String(h).padStart(2,'0')}h` : '';
       cells += `<rect x="${x}" y="0" width="${CELL_W}" height="${CELL_H}" rx="3" fill="${fill}" title="${h}:00 — ${slot.count} alertas"/>`;
       if (label) cells += `<text x="${x + CELL_W/2}" y="${CELL_H + 12}" text-anchor="middle" font-size="9" fill="rgba(255,255,255,0.4)">${label}</text>`;
     });
