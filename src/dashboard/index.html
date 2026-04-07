@@ -13,6 +13,7 @@
   <meta name="apple-mobile-web-app-title" content="Glucosa" />
   <link rel="apple-touch-icon" href="/icons/icon-192.svg" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
   <!-- DSEG7 digital display font for glucose numbers -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dseg@0.46.0/css/dseg.min.css" />
   <style>
@@ -1094,12 +1095,18 @@
       `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.5" fill="${zoneColor(p.zone)}"/>`
     ).join('');
 
+    const last = mapped[mapped.length - 1];
+    const lastDot = `<circle cx="${last.x.toFixed(1)}" cy="${last.y.toFixed(1)}" r="4" fill="${zoneColor(last.zone)}" stroke="white" stroke-width="1"/>`;
+
     return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" style="border-radius:4px;overflow:hidden;display:block;" aria-hidden="true">` +
-      `<rect x="0" y="0" width="${W}" height="${highY.toFixed(1)}" fill="var(--red-bg)" opacity=".7"/>` +
-      `<rect x="0" y="${highY.toFixed(1)}" width="${W}" height="${Math.max(0, lowY - highY).toFixed(1)}" fill="var(--green-bg)" opacity=".7"/>` +
-      `<rect x="0" y="${lowY.toFixed(1)}" width="${W}" height="${Math.max(0, H - lowY).toFixed(1)}" fill="var(--blue-bg)" opacity=".7"/>` +
-      `<path d="${path}" fill="none" stroke="var(--subtext)" stroke-width="1.5" stroke-linejoin="round"/>` +
+      `<rect x="0" y="0" width="${W}" height="${highY.toFixed(1)}" fill="rgba(239,68,68,0.12)"/>` +
+      `<rect x="0" y="${highY.toFixed(1)}" width="${W}" height="${Math.max(0, lowY - highY).toFixed(1)}" fill="rgba(34,197,94,0.08)"/>` +
+      `<rect x="0" y="${lowY.toFixed(1)}" width="${W}" height="${Math.max(0, H - lowY).toFixed(1)}" fill="rgba(96,165,250,0.12)"/>` +
+      `<line x1="0" y1="${highY.toFixed(1)}" x2="${W}" y2="${highY.toFixed(1)}" stroke="rgba(239,68,68,0.4)" stroke-width="1" stroke-dasharray="3,3"/>` +
+      `<line x1="0" y1="${lowY.toFixed(1)}" x2="${W}" y2="${lowY.toFixed(1)}" stroke="rgba(96,165,250,0.4)" stroke-width="1" stroke-dasharray="3,3"/>` +
+      `<path d="${path}" fill="none" stroke="rgba(99,179,237,0.9)" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>` +
       dots +
+      lastDot +
       `</svg>`;
   }
 
@@ -1411,20 +1418,43 @@ if (!isNaN(cg) && cg > 0) {
       };
     });
 
-    const ctxHour = document.getElementById('chart-by-hour').getContext('2d');
-    if (chartByHour) chartByHour.destroy();
-    chartByHour = new Chart(ctxHour, {
-      type: 'bar',
-      data: { labels: hourLabels, datasets: hourDatasets },
-      options: {
-        responsive: true,
-        plugins: { legend: { display: patientIds.length > 1 } },
-        scales: {
-          x: { stacked: true, ticks: { maxTicksLimit: 6 } },
-          y: { stacked: true, beginAtZero: true, ticks: { stepSize: 1 } },
-        },
-      },
+    const heatmapContainer = document.getElementById('chart-by-hour').parentElement;
+    heatmapContainer.querySelector('canvas')?.remove();
+    if (chartByHour) { chartByHour.destroy(); chartByHour = null; }
+
+    // Count alerts per hour slot (0–23)
+    const heatSlots = Array.from({ length: 24 }, () => ({ count: 0, hasHigh: false, hasLow: false }));
+    alerts.forEach(a => {
+      const h = new Date(a.timestamp).getHours();
+      heatSlots[h].count++;
+      if (a.level === 'high') heatSlots[h].hasHigh = true;
+      if (a.level === 'low')  heatSlots[h].hasLow  = true;
     });
+    const maxCount = Math.max(1, ...heatSlots.map(s => s.count));
+
+    // Build SVG heatmap: 24 cells × 1 row
+    const CELL_W = 24, CELL_H = 40, GAP = 2;
+    const totalW = 24 * (CELL_W + GAP);
+    let cells = '';
+    heatSlots.forEach((slot, h) => {
+      const x = h * (CELL_W + GAP);
+      const intensity = slot.count / maxCount;
+      const fill = slot.count === 0
+        ? 'rgba(255,255,255,0.04)'
+        : slot.hasHigh
+          ? `rgba(239,68,68,${(0.2 + intensity * 0.7).toFixed(2)})`
+          : slot.hasLow
+            ? `rgba(96,165,250,${(0.2 + intensity * 0.7).toFixed(2)})`
+            : `rgba(246,224,94,${(0.2 + intensity * 0.7).toFixed(2)})`;
+      const label = h % 6 === 0 ? `${String(h).padStart(2,'0')}h` : '';
+      cells += `<rect x="${x}" y="0" width="${CELL_W}" height="${CELL_H}" rx="3" fill="${fill}" title="${h}:00 — ${slot.count} alertas"/>`;
+      if (label) cells += `<text x="${x + CELL_W/2}" y="${CELL_H + 12}" text-anchor="middle" font-size="9" fill="rgba(255,255,255,0.4)">${label}</text>`;
+    });
+
+    const heatSvg = `<svg viewBox="0 0 ${totalW} ${CELL_H + 16}" width="100%" style="overflow:visible" aria-label="Mapa de calor de alertas por hora">
+      ${cells}
+    </svg>`;
+    heatmapContainer.insertAdjacentHTML('beforeend', heatSvg);
 
     // ── Chart 2: distribution by level — always visible ─────────
     const levelContainer = document.getElementById('level-chart-container');
@@ -1556,15 +1586,15 @@ if (!isNaN(cg) && cg > 0) {
             label: `${patientName} (mg/dL)`,
             data: patAlerts.map(a => a.glucose_value),
             backgroundColor: pointColors,
-            borderColor: 'rgba(150,150,150,.6)',
+            borderColor: 'rgba(99, 179, 237, 0.9)',
             borderWidth: 2,
-            borderDash: patientLineDash(pid),
+            borderDash: [],
             pointBackgroundColor: pointColors,
             pointBorderColor: pointColors,
-            pointRadius: 4,
-            pointHoverRadius: 6,
+            pointRadius: patAlerts.map((_, i) => i === patAlerts.length - 1 ? 7 : 3),
+            pointHoverRadius: 8,
             fill: false,
-            tension: 0.3,
+            tension: 0.4,
           }],
         },
         options: {
@@ -1601,41 +1631,70 @@ if (!isNaN(cg) && cg > 0) {
                 el.style.top  = `${Math.max(0, y - 28)}px`;
               },
             },
-            annotation: {},
+            annotation: {
+              annotations: {
+                highZone: {
+                  type: 'box',
+                  yMin: 180, yMax: 300,
+                  backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                  borderWidth: 0,
+                },
+                normalZone: {
+                  type: 'box',
+                  yMin: 70, yMax: 180,
+                  backgroundColor: 'rgba(34, 197, 94, 0.06)',
+                  borderWidth: 0,
+                },
+                lowZone: {
+                  type: 'box',
+                  yMin: 40, yMax: 70,
+                  backgroundColor: 'rgba(96, 165, 250, 0.1)',
+                  borderWidth: 0,
+                },
+                highLine: {
+                  type: 'line',
+                  yMin: 180, yMax: 180,
+                  borderColor: 'rgba(239, 68, 68, 0.5)',
+                  borderWidth: 1,
+                  borderDash: [4, 4],
+                  label: {
+                    content: '180', display: true,
+                    position: 'start', font: { size: 10 },
+                    color: 'rgba(239, 68, 68, 0.8)', backgroundColor: 'transparent',
+                  },
+                },
+                lowLine: {
+                  type: 'line',
+                  yMin: 70, yMax: 70,
+                  borderColor: 'rgba(96, 165, 250, 0.5)',
+                  borderWidth: 1,
+                  borderDash: [4, 4],
+                  label: {
+                    content: '70', display: true,
+                    position: 'start', font: { size: 10 },
+                    color: 'rgba(96, 165, 250, 0.8)', backgroundColor: 'transparent',
+                  },
+                },
+              },
+            },
           },
           scales: {
-            x: { ticks: { maxTicksLimit: 8, maxRotation: 0 } },
+            x: {
+              grid: { display: false },
+              ticks: { color: 'rgba(255,255,255,0.4)', font: { size: 10 }, maxTicksLimit: 6, maxRotation: 0 },
+            },
             y: {
-              beginAtZero: false,
-              min: 40,
-              ticks: { maxTicksLimit: 6 },
+              min: 40, max: 300,
+              grid: { color: 'rgba(255,255,255,0.05)' },
+              ticks: {
+                color: 'rgba(255,255,255,0.5)',
+                font: { size: 10 },
+                maxTicksLimit: 6,
+                callback: v => [40, 70, 180, 250, 300].includes(v) ? v : '',
+              },
             },
           },
         },
-        plugins: [{
-          // Draw reference lines at MINI_HIGH and MINI_LOW after chart render
-          id: 'refLines',
-          afterDraw(chart) {
-            const { ctx, chartArea: { left, right }, scales: { y } } = chart;
-            if (!y) return;
-            const drawRef = (val, color, dash) => {
-              const yPx = y.getPixelForValue(val);
-              if (yPx < y.top || yPx > y.bottom) return;
-              ctx.save();
-              ctx.strokeStyle = color;
-              ctx.lineWidth = 1.5;
-              ctx.setLineDash(dash);
-              ctx.globalAlpha = 0.7;
-              ctx.beginPath();
-              ctx.moveTo(left, yPx);
-              ctx.lineTo(right, yPx);
-              ctx.stroke();
-              ctx.restore();
-            };
-            drawRef(MINI_HIGH, '#fc8181', [6, 3]);
-            drawRef(MINI_LOW,  '#f6ad55', [6, 3]);
-          },
-        }],
       });
     });
   }
