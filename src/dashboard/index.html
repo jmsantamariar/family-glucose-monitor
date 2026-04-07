@@ -1121,15 +1121,16 @@ if (!isNaN(cg) && cg > 0) {
 }
 
 
-    if (pts.length < 2) {
-      container.innerHTML = `<span class="mini-chart-no-data">Sin datos suficientes</span>`;
-      return;
-    }
-
-    // Destroy previous chart instance if exists
+    // Destroy previous chart instance if exists (do this before any early return
+    // so stale instances are always cleaned up, even when pts.length < 2)
     if (_miniCharts[patientId]) {
       _miniCharts[patientId].destroy();
       delete _miniCharts[patientId];
+    }
+
+    if (pts.length < 2) {
+      container.innerHTML = `<span class="mini-chart-no-data">Sin datos suficientes</span>`;
+      return;
     }
 
     // Clear container and inject a canvas
