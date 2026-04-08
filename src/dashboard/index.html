@@ -12,6 +12,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Glucosa" />
   <link rel="apple-touch-icon" href="/icons/icon-192.svg" />
+  <!-- i18n helper — must load before page scripts so t() is available synchronously -->
+  <script src="/i18n/i18n.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <!-- chartjs-plugin-annotation v3.0.1 (inlined for offline use) -->
   <script>
@@ -449,7 +451,24 @@
       50%       { opacity: .45; }
     }
 
-    /* ── Alert strip ────────────────────────────────────────────── */
+    /* ── Language toggle button ─────────────────────────────────── */
+    #lang-toggle-btn {
+      background: transparent;
+      border: 1px solid rgba(255,255,255,.35);
+      color: inherit;
+      border-radius: 4px;
+      padding: .2rem .5rem;
+      cursor: pointer;
+      font-size: .78rem;
+      font-family: inherit;
+      letter-spacing: .03em;
+      transition: background .15s, border-color .15s;
+      white-space: nowrap;
+    }
+    #lang-toggle-btn:hover {
+      background: rgba(255,255,255,.1);
+      border-color: rgba(255,255,255,.6);
+    }
     .alert-strip {
       background: var(--surface);
       border-radius: var(--radius);
@@ -714,6 +733,7 @@
 <header>
   <div class="header-top">
     <div class="header-brand">
+      <button id="lang-toggle-btn">🌐 EN</button>
       <div class="header-icon">🩸</div>
       <div>
         <div class="header-title">
@@ -723,7 +743,7 @@
         </div>
         <div class="header-subtitle">
           <span id="last-update">Última actualización: —</span>
-          <span class="live-badge" aria-label="Estado en vivo">● LIVE</span>
+          <span class="live-badge" data-i18n="header.live_badge">● LIVE</span>
         </div>
       </div>
     </div>
@@ -731,15 +751,15 @@
       <span id="clock">--:--:--</span>
       <div class="status-badge">
         <div class="status-dot" id="status-dot"></div>
-        <span id="status-label">Conectando…</span>
+        <span id="status-label" data-i18n="status.connecting">Conectando…</span>
       </div>
-      <a href="/configuracion" id="settings-btn" aria-label="Ir a Configuración del sistema" style="display:inline-flex;align-items:center;gap:.35rem;background:transparent;border:1px solid rgba(255,255,255,.4);color:inherit;border-radius:4px;padding:.25rem .6rem;cursor:pointer;font-size:.8rem;text-decoration:none;">
+      <a href="/configuracion" id="settings-btn" data-i18n-aria-label="header.settings_aria_label" style="display:inline-flex;align-items:center;gap:.35rem;background:transparent;border:1px solid rgba(255,255,255,.4);color:inherit;border-radius:4px;padding:.25rem .6rem;cursor:pointer;font-size:.8rem;text-decoration:none;">
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
           <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
         </svg>
-        Configuración
+        <span data-i18n="header.settings_btn">Configuración</span>
       </a>
-      <button id="logout-btn" title="Cerrar sesión" style="background:transparent;border:1px solid rgba(255,255,255,.4);color:inherit;border-radius:4px;padding:.25rem .6rem;cursor:pointer;font-size:.8rem;">⏏ Salir</button>
+      <button id="logout-btn" data-i18n-title="header.logout_title" style="background:transparent;border:1px solid rgba(255,255,255,.4);color:inherit;border-radius:4px;padding:.25rem .6rem;cursor:pointer;font-size:.8rem;" data-i18n="header.logout_btn">⏏ Salir</button>
     </div>
   </div>
 </header>
@@ -747,39 +767,39 @@
 <main>
   <!-- ── Alert strip (last 24h summary) ───────────────────────── -->
   <div id="alert-strip" class="alert-strip">
-    <span class="alert-strip-title">🔔 Historial de alertas (24h)</span>
+    <span class="alert-strip-title" data-i18n="alerts.title">🔔 Historial de alertas (24h)</span>
     <div class="alert-strip-cards">
       <div class="alert-card alert-card-total" data-filter="" role="button" tabindex="0" aria-label="Total de alertas">
         <span class="alert-card-count" id="strip-total">—</span>
-        <span class="alert-card-label">Alertas totales</span>
+        <span class="alert-card-label" data-i18n="alerts.total">Alertas totales</span>
       </div>
       <div class="alert-card alert-card-high" data-filter="high" role="button" tabindex="0" aria-label="Filtrar alertas de glucosa alta">
         <span class="alert-card-count" id="strip-high">—</span>
-        <span class="alert-card-label">Alertas ALTA</span>
+        <span class="alert-card-label" data-i18n="alerts.high">Alertas ALTA</span>
       </div>
       <div class="alert-card alert-card-low" data-filter="low" role="button" tabindex="0" aria-label="Filtrar alertas de glucosa baja">
         <span class="alert-card-count" id="strip-low">—</span>
-        <span class="alert-card-label">Alertas BAJA</span>
+        <span class="alert-card-label" data-i18n="alerts.low">Alertas BAJA</span>
       </div>
       <div class="alert-card alert-card-trend" data-filter="trend" role="button" tabindex="0" aria-label="Filtrar alertas de tendencia">
         <span class="alert-card-count" id="strip-trend">—</span>
-        <span class="alert-card-label">Alertas tendencia</span>
+        <span class="alert-card-label" data-i18n="alerts.trend">Alertas tendencia</span>
       </div>
     </div>
   </div>
 
   <!-- ── Current readings ─────────────────────────────────────── -->
-  <p class="section-title">📊 Lecturas actuales</p>
+  <p class="section-title" data-i18n="readings.section_title">📊 Lecturas actuales</p>
   <div class="table-wrap">
     <table id="patients-table">
       <thead>
         <tr>
-          <th>Paciente</th>
-          <th>Glucosa</th>
-          <th>Tendencia</th>
-          <th>Nivel</th>
-          <th class="col-trend-alert">Alerta tendencia</th>
-          <th>Última lectura</th>
+          <th data-i18n="table.patient">Paciente</th>
+          <th data-i18n="table.glucose">Glucosa</th>
+          <th data-i18n="table.trend">Tendencia</th>
+          <th data-i18n="table.level">Nivel</th>
+          <th class="col-trend-alert" data-i18n="table.trend_alert">Alerta tendencia</th>
+          <th data-i18n="table.last_reading">Última lectura</th>
         </tr>
       </thead>
       <tbody id="patients-body">
@@ -787,7 +807,7 @@
           <td colspan="6">
             <div class="no-data">
               <span class="icon">⏳</span>
-              <p>Cargando datos…</p>
+              <p data-i18n="no_data.loading">Cargando datos…</p>
             </div>
           </td>
         </tr>
@@ -796,46 +816,46 @@
   </div>
 
   <!-- ── Alert history & push subscription ───────────────────────── -->
-  <p class="section-title">Historial de alertas</p>
+  <p class="section-title" data-i18n="history.section_title">Historial de alertas</p>
 
   <!-- ── Push notification subscription ──────────────────────── -->
   <div id="push-section" style="margin-bottom:1rem;padding:1rem;background:var(--surface);border-radius:8px;border:1px solid var(--border);display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;">
-    <span style="font-size:1.1rem;">🔔 Notificaciones push:</span>
-    <button id="push-btn" style="padding:.35rem .9rem;border-radius:6px;border:none;cursor:pointer;font-size:.9rem;background:#2b6cb0;color:#fff;">
+    <span style="font-size:1.1rem;" data-i18n="push.title">🔔 Notificaciones push:</span>
+    <button id="push-btn" style="padding:.35rem .9rem;border-radius:6px;border:none;cursor:pointer;font-size:.9rem;background:#2b6cb0;color:#fff;" data-i18n="push.activate">
       Activar notificaciones
     </button>
     <span id="push-status" style="font-size:.85rem;color:var(--subtext);"></span>
   </div>
 
   <div class="history-controls">
-    <label for="patient-filter">Paciente:</label>
+    <label for="patient-filter" data-i18n="history.patient_label">Paciente:</label>
     <select id="patient-filter">
-      <option value="">Todos</option>
+      <option value="" data-i18n="history.patient_all">Todos</option>
     </select>
-    <label for="hours-filter">Últimas:</label>
+    <label for="hours-filter" data-i18n="history.hours_label">Últimas:</label>
     <select id="hours-filter">
-      <option value="6">6 horas</option>
-      <option value="24" selected>24 horas</option>
-      <option value="48">48 horas</option>
-      <option value="168">7 días</option>
+      <option value="6" data-i18n="history.6h">6 horas</option>
+      <option value="24" selected data-i18n="history.24h">24 horas</option>
+      <option value="48" data-i18n="history.48h">48 horas</option>
+      <option value="168" data-i18n="history.7d">7 días</option>
     </select>
   </div>
 
   <!-- charts -->
   <div class="charts-grid">
     <div class="chart-card">
-      <h3>Alertas por hora</h3>
+      <h3 data-i18n="chart.by_hour">Alertas por hora</h3>
       <canvas id="chart-by-hour"></canvas>
     </div>
     <div id="level-chart-container" class="chart-card">
-      <h3>Distribución por nivel</h3>
+      <h3 data-i18n="chart.by_level">Distribución por nivel</h3>
       <canvas id="chart-by-level"></canvas>
     </div>
   </div>
 
   <!-- per-patient glucose value charts -->
   <div id="glucose-charts-section" style="display:none">
-    <p class="section-title">📉 Valores de glucosa en alertas</p>
+    <p class="section-title" data-i18n="glucose_charts.title">📉 Valores de glucosa en alertas</p>
     <div id="glucose-charts-grid" class="charts-grid"></div>
   </div>
 
@@ -844,11 +864,11 @@
     <table id="history-table">
       <thead>
         <tr>
-          <th>Hora</th>
-          <th>Paciente</th>
-          <th>Glucosa</th>
-          <th>Nivel</th>
-          <th>Mensaje</th>
+          <th data-i18n="history.table.time">Hora</th>
+          <th data-i18n="history.table.patient">Paciente</th>
+          <th data-i18n="history.table.glucose">Glucosa</th>
+          <th data-i18n="history.table.level">Nivel</th>
+          <th data-i18n="history.table.message">Mensaje</th>
         </tr>
       </thead>
       <tbody id="history-body">
@@ -856,7 +876,7 @@
           <td colspan="5">
             <div class="no-data">
               <span class="icon">⏳</span>
-              <p>Cargando historial…</p>
+              <p data-i18n="no_data.history_loading">Cargando historial…</p>
             </div>
           </td>
         </tr>
@@ -866,17 +886,21 @@
 </main>
 
 <footer>
-  <strong>⚠️ Este no es un dispositivo médico.</strong>
-  Esta herramienta es solo para referencia informativa y no reemplaza la atención médica profesional
-  ni los sistemas de alarma del medidor de glucosa.
+  <strong data-i18n="footer.warning">⚠️ Este no es un dispositivo médico.</strong>
+  <span data-i18n="footer.disclaimer">Esta herramienta es solo para referencia informativa y no reemplaza la atención médica profesional ni los sistemas de alarma del medidor de glucosa.</span>
 </footer>
 
 <script>
+  // ── i18n helper: map app locale code to a JS Intl locale string ────────────
+  function jsLocale() {
+    return i18n.getLocale() === 'es' ? 'es-ES' : 'en-US';
+  }
+
   // ── Clock ───────────────────────────────────────────────────────
   function updateClock() {
     const now = new Date();
     document.getElementById('clock').textContent =
-      now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      now.toLocaleTimeString(jsLocale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   }
   setInterval(updateClock, 1000);
   updateClock();
@@ -889,13 +913,13 @@
     const label = document.getElementById('status-label');
     dot.className = 'status-dot';
     if (state === 'connected') {
-      label.textContent = 'Conectado';
+      label.textContent = i18n.t('status.connected');
     } else if (state === 'reconnecting') {
       dot.classList.add('warn');
-      label.textContent = 'Reconectando…';
+      label.textContent = i18n.t('status.reconnecting');
     } else {
       dot.classList.add('err');
-      label.textContent = 'Sin conexión';
+      label.textContent = i18n.t('status.disconnected');
     }
   }
 
@@ -916,31 +940,32 @@
   function formatTimeSince(isoTimestamp) {
     if (!isoTimestamp) return '—';
     const diff = (Date.now() - new Date(isoTimestamp)) / 1000 / 60;
-    if (diff < 1)  return 'ahora';
-    if (diff < 60) return `hace ${Math.floor(diff)} min`;
-    return `hace ${Math.floor(diff / 60)}h ${Math.floor(diff % 60)}m`;
+    if (diff < 1)  return i18n.t('time.now');
+    if (diff < 60) return i18n.t('time.min_ago', Math.floor(diff));
+    return i18n.t('time.hour_min_ago', Math.floor(diff / 60), Math.floor(diff % 60));
   }
 
   function formatDateTime(isoTimestamp) {
     if (!isoTimestamp) return '—';
     const d = new Date(isoTimestamp);
-    return d.toLocaleString('es-ES', {
+    const locale = jsLocale();
+    return d.toLocaleString(locale, {
       month: '2-digit', day: '2-digit',
       hour: '2-digit', minute: '2-digit'
     });
   }
 
   function levelLabel(level) {
-    if (level === 'low')  return 'BAJA';
-    if (level === 'high') return 'ALTA';
-    return 'NORMAL';
+    if (level === 'low')  return i18n.t('level.low');
+    if (level === 'high') return i18n.t('level.high');
+    return i18n.t('level.normal');
   }
 
   function alertLevelLabel(level) {
     if (!level) return '—';
-    if (level === 'low')  return 'BAJA';
-    if (level === 'high') return 'ALTA';
-    if (level.startsWith('trend_')) return 'TENDENCIA';
+    if (level === 'low')  return i18n.t('alert_level.low');
+    if (level === 'high') return i18n.t('alert_level.high');
+    if (level.startsWith('trend_')) return i18n.t('alert_level.trend');
     return level.toUpperCase();
   }
 
@@ -952,27 +977,33 @@
 
   function trendArrowHtml(arrow, trendName) {
     const map = {
-      'DoubleUp':      { char: '⬆', cls: 'trend-up-fast',   label: 'Subiendo muy rápido' },
-      'SingleUp':      { char: '↑', cls: 'trend-up-fast',   label: 'Subiendo rápido' },
-      'FortyFiveUp':   { char: '↗', cls: 'trend-up',        label: 'Subiendo' },
-      'Flat':          { char: '→', cls: 'trend-stable',    label: 'Estable' },
-      'FortyFiveDown': { char: '↘', cls: 'trend-down',      label: 'Bajando' },
-      'SingleDown':    { char: '↓', cls: 'trend-down-fast', label: 'Bajando rápido' },
-      'DoubleDown':    { char: '⬇', cls: 'trend-down-fast', label: 'Bajando muy rápido' },
+      'DoubleUp':      { char: '⬆', cls: 'trend-up-fast',   labelKey: 'trend.double_up' },
+      'SingleUp':      { char: '↑', cls: 'trend-up-fast',   labelKey: 'trend.single_up' },
+      'FortyFiveUp':   { char: '↗', cls: 'trend-up',        labelKey: 'trend.forty_five_up' },
+      'Flat':          { char: '→', cls: 'trend-stable',    labelKey: 'trend.flat' },
+      'FortyFiveDown': { char: '↘', cls: 'trend-down',      labelKey: 'trend.forty_five_down' },
+      'SingleDown':    { char: '↓', cls: 'trend-down-fast', labelKey: 'trend.single_down' },
+      'DoubleDown':    { char: '⬇', cls: 'trend-down-fast', labelKey: 'trend.double_down' },
     };
     // Legacy arrow characters passed directly
     const charFallback = {
-      '↑': { cls: 'trend-up-fast', label: 'Subiendo rápido' },
-      '↗': { cls: 'trend-up',      label: 'Subiendo' },
-      '→': { cls: 'trend-stable',  label: 'Estable' },
-      '↘': { cls: 'trend-down',    label: 'Bajando' },
-      '↓': { cls: 'trend-down-fast', label: 'Bajando rápido' },
+      '↑': { cls: 'trend-up-fast', labelKey: 'trend.single_up' },
+      '↗': { cls: 'trend-up',      labelKey: 'trend.forty_five_up' },
+      '→': { cls: 'trend-stable',  labelKey: 'trend.flat' },
+      '↘': { cls: 'trend-down',    labelKey: 'trend.forty_five_down' },
+      '↓': { cls: 'trend-down-fast', labelKey: 'trend.single_down' },
     };
     const key = trendName || '';
     const mapped = map[key] || null;
     const legacy = arrow && charFallback[arrow] ? { char: arrow, ...charFallback[arrow] } : null;
-    const cfg = mapped || legacy || { char: '→', cls: 'trend-stable', label: '' };
-    return `<span class="trend-arrow-icon ${cfg.cls}" title="${cfg.label}" aria-label="${cfg.label}">${cfg.char}</span>`;
+    const cfg = mapped || legacy || { char: '→', cls: 'trend-stable', labelKey: 'trend.flat' };
+    const label = i18n.t(cfg.labelKey);
+    const span = document.createElement('span');
+    span.className = 'trend-arrow-icon ' + cfg.cls;
+    span.setAttribute('title', label);
+    span.setAttribute('aria-label', label);
+    span.textContent = cfg.char;
+    return span.outerHTML;
   }
 
   function getGlucoseTrendClass(trendAlert) {
@@ -985,10 +1016,10 @@
   function trendAlertLabel(trendAlert) {
     if (!trendAlert || trendAlert === 'normal') return '—';
     const labels = {
-      'falling_fast': '🔻 Bajando rápido',
-      'falling':      '📉 Bajando',
-      'rising_fast':  '🔺 Subiendo rápido',
-      'rising':       '📈 Subiendo',
+      'falling_fast': i18n.t('trend_alert.falling_fast'),
+      'falling':      i18n.t('trend_alert.falling'),
+      'rising_fast':  i18n.t('trend_alert.rising_fast'),
+      'rising':       i18n.t('trend_alert.rising'),
     };
     return labels[trendAlert] || trendAlert;
   }
@@ -1018,7 +1049,8 @@
     const el = document.getElementById('last-update');
     if (!el || !isoTimestamp) return;
     const d = new Date(isoTimestamp);
-    el.textContent = 'Última actualización: ' + d.toLocaleString('es-ES', {
+    const locale = jsLocale();
+    el.textContent = i18n.t('header.last_update_prefix') + d.toLocaleString(locale, {
       month: '2-digit', day: '2-digit',
       hour: '2-digit', minute: '2-digit',
     });
@@ -1077,7 +1109,8 @@
 
   /** Format an ISO timestamp to short time, e.g. "13:11". */
   function formatShortTime(isoTimestamp) {
-    return new Date(isoTimestamp).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    const locale = jsLocale();
+    return new Date(isoTimestamp).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
   }
 
   // Cache of fetched mini-chart data: patientId → { ts: epoch ms, pts: [{t,v}] }
@@ -1100,7 +1133,7 @@
       pts = cached.pts.slice();
     } else {
       // Show loading placeholder while the fetch is in progress
-      container.innerHTML = `<span class="mini-chart-no-data">⏳ Cargando…</span>`;
+      container.innerHTML = `<span class="mini-chart-no-data">${i18n.t('chart.loading')}</span>`;
       try {
         const resp = await fetch(`/api/patients/${encodeURIComponent(patientId)}/history?hours=3`);
         if (resp.ok) {
@@ -1131,7 +1164,7 @@ if (!isNaN(cg) && cg > 0) {
     }
 
     if (pts.length < 2) {
-      container.innerHTML = `<span class="mini-chart-no-data">Sin datos suficientes</span>`;
+      container.innerHTML = `<span class="mini-chart-no-data">${i18n.t('chart.no_data')}</span>`;
       return;
     }
 
@@ -1146,7 +1179,8 @@ if (!isNaN(cg) && cg > 0) {
 
     const labels      = pts.map(p => {
       const d = new Date(p.t);
-      return d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+      const locale = jsLocale();
+      return d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
     });
     const values      = pts.map(p => p.v);
     const pointColors = pts.map(p => zoneColor(glucoseZone(p.v)));
@@ -1183,7 +1217,7 @@ if (!isNaN(cg) && cg > 0) {
             callbacks: {
               label: ctx => {
                 const zone = glucoseZone(ctx.parsed.y);
-                const zoneLabel = zone === 'high' ? 'ALTA' : zone === 'low' ? 'BAJA' : 'EN RANGO';
+                const zoneLabel = zone === 'high' ? i18n.t('zone.high') : zone === 'low' ? i18n.t('zone.low') : i18n.t('zone.range');
                 return `${ctx.parsed.y} mg/dL — ${zoneLabel}`;
               },
             },
@@ -1247,9 +1281,9 @@ if (!isNaN(cg) && cg > 0) {
       const statsEl = document.createElement('div');
       statsEl.className = 'mini-chart-stats';
       statsEl.innerHTML =
-        `<span>↑ ${stats.max} máx</span>` +
-        `<span>∅ ${stats.avg} prom</span>` +
-        `<span>↓ ${stats.min} mín</span>`;
+        `<span>↑ ${stats.max} ${i18n.t('stats.max')}</span>` +
+        `<span>∅ ${stats.avg} ${i18n.t('stats.avg')}</span>` +
+        `<span>↓ ${stats.min} ${i18n.t('stats.min')}</span>`;
       container.appendChild(statsEl);
     }
   }
@@ -1308,7 +1342,7 @@ if (!isNaN(cg) && cg > 0) {
         <tr><td colspan="6">
           <div class="no-data">
             <span class="icon">📭</span>
-            <p>Sin datos — esperando lecturas…</p>
+            <p>${i18n.t('no_data.waiting')}</p>
           </div>
         </td></tr>`;
       return;
@@ -1361,25 +1395,25 @@ if (!isNaN(cg) && cg > 0) {
                 <div class="expanded-stats">
                   <div class="stat-box">
                     <span class="stat-value">${escapeHtml(glucoseStr)}</span>
-                    <span class="stat-label">mg/dL actual</span>
+                    <span class="stat-label">${i18n.t('card.mg_dl')}</span>
                   </div>
                   <div class="stat-box">
                     <span class="stat-value">${escapeHtml(level)}</span>
-                    <span class="stat-label">Nivel</span>
+                    <span class="stat-label">${i18n.t('card.level')}</span>
                   </div>
                   <div class="stat-box">
                     <span class="stat-value">${escapeHtml(timeSince)}</span>
-                    <span class="stat-label">Última lectura</span>
+                    <span class="stat-label">${i18n.t('card.last_reading')}</span>
                   </div>
                 </div>
                 <div class="expanded-mini-chart" id="mini-chart-${pid}" aria-label="Mini-gráfica glucosa últimas 3 horas">
-                  <span class="mini-chart-no-data">⏳ Cargando…</span>
+                  <span class="mini-chart-no-data">${i18n.t('chart.loading')}</span>
                 </div>
               </div>
               <p class="expanded-trend-note">
                 ${trendAlert !== '—'
-                  ? `<span aria-hidden="true">📊</span> <span>Tendencia: ${trendAlert}</span>`
-                  : `<span aria-hidden="true">✅</span> <span>Tendencia estable</span>`}
+                  ? `<span aria-hidden="true">📊</span> <span>${i18n.t('card.trend_prefix')}${trendAlert}</span>`
+                  : `<span aria-hidden="true">✅</span> <span>${i18n.t('card.stable_trend')}</span>`}
               </p>
             </div>
           </td>
@@ -1527,15 +1561,15 @@ if (!isNaN(cg) && cg > 0) {
     const levelTitle = levelContainer.querySelector('h3');
     if (levelTitle) {
       levelTitle.textContent = selectedPid
-        ? `Distribución por nivel — ${_knownPatients[selectedPid] || selectedPid}`
-        : 'Distribución por nivel — Global';
+        ? i18n.t('chart.level_patient', _knownPatients[selectedPid] || selectedPid)
+        : i18n.t('chart.level_global');
     }
     const ctxLevel = document.getElementById('chart-by-level').getContext('2d');
     if (chartByLevel) chartByLevel.destroy();
     chartByLevel = new Chart(ctxLevel, {
       type: 'doughnut',
       data: {
-        labels: ['Baja', 'Alta', 'Tendencia'],
+        labels: [i18n.t('chart_label.low'), i18n.t('chart_label.high'), i18n.t('chart_label.trend')],
         datasets: [{
           data: [levelCounts.low, levelCounts.high, levelCounts.trend],
           backgroundColor: ['rgba(252,129,129,.8)', 'rgba(246,224,94,.8)', 'rgba(154,230,180,.8)'],
@@ -1599,9 +1633,9 @@ if (!isNaN(cg) && cg > 0) {
         const statsCol = document.createElement('div');
         statsCol.className = 'glucose-chart-stats-col';
         statsCol.innerHTML =
-          `<span>↑ <span class="gs-val">${stats.max}</span> máx</span>` +
-          `<span>∅ <span class="gs-val">${stats.avg}</span> prom</span>` +
-          `<span>↓ <span class="gs-val">${stats.min}</span> mín</span>`;
+          `<span>↑ <span class="gs-val">${stats.max}</span> ${i18n.t('stats.max')}</span>` +
+          `<span>∅ <span class="gs-val">${stats.avg}</span> ${i18n.t('stats.avg')}</span>` +
+          `<span>↓ <span class="gs-val">${stats.min}</span> ${i18n.t('stats.min')}</span>`;
         wrapper.appendChild(statsCol);
       }
 
@@ -1624,9 +1658,9 @@ if (!isNaN(cg) && cg > 0) {
             `<div class="tir-seg-low"   style="flex:${tir.low}"></div>` +
           `</div>` +
           `<div class="tir-labels">` +
-            `<span>Alta ${tir.high}%</span>` +
-            `<span class="tir-range-pct">${tir.range}% en rango</span>` +
-            `<span>Baja ${tir.low}%</span>` +
+            `<span>${i18n.t('tir.high', tir.high)}</span>` +
+            `<span class="tir-range-pct">${i18n.t('tir.range', tir.range)}</span>` +
+            `<span>${i18n.t('tir.low', tir.low)}</span>` +
           `</div>`;
         card.appendChild(tirEl);
       }
@@ -1677,7 +1711,7 @@ if (!isNaN(cg) && cg > 0) {
                 const val   = dp.parsed.y;
                 const label = dp.label;
                 const zone  = glucoseZone(val);
-                const zoneLabel = zone === 'high' ? 'ALTA' : zone === 'low' ? 'BAJA' : 'EN RANGO';
+                const zoneLabel = zone === 'high' ? i18n.t('zone.high') : zone === 'low' ? i18n.t('zone.low') : i18n.t('zone.range');
                 el.textContent = `${val} mg/dL — ${zoneLabel} — ${label}`;
                 el.style.color   = zoneColor(zone);
                 el.style.opacity = '1';
@@ -1772,7 +1806,7 @@ if (!isNaN(cg) && cg > 0) {
         <tr><td colspan="5">
           <div class="no-data">
             <span class="icon">📭</span>
-            <p>Sin alertas en el período seleccionado.</p>
+            <p>${i18n.t('no_data.history_empty')}</p>
           </div>
         </td></tr>`;
       renderCharts([]);
@@ -1913,6 +1947,26 @@ if (!isNaN(cg) && cg > 0) {
 
   const logoutBtn = document.getElementById('logout-btn');
   if (logoutBtn) logoutBtn.addEventListener('click', logout);
+
+  // ── Locale change — re-render all dynamic content ─────────────────
+  window.addEventListener('fgm:localechange', () => {
+    // Re-render current readings table
+    if (_lastPatients) updateTable(_lastPatients);
+    // Re-render alert strip + history + charts
+    updateAlertStrip(_alertsData);
+    const filtered = _levelFilter
+      ? _alertsData.filter(a => {
+          if (_levelFilter === 'trend') return isTrendAlert(a);
+          return a.level === _levelFilter;
+        })
+      : _alertsData;
+    updateHistory(filtered, /* skipStore= */ true);
+    // Re-render patient filter "All" option (already via data-i18n but update dynamically)
+    const allOpt = document.querySelector('#patient-filter option[value=""]');
+    if (allOpt) allOpt.textContent = i18n.t('history.patient_all');
+    // Refresh clock display
+    updateClock();
+  });
 </script>
 
 <script>
@@ -1946,23 +2000,23 @@ if (!isNaN(cg) && cg > 0) {
 
   async function updatePushButton() {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      pushStatus.textContent = 'Tu navegador no soporta notificaciones push.';
+      pushStatus.textContent = i18n.t('push.no_support');
       pushBtn.disabled = true;
       return;
     }
     if (Notification.permission === 'denied') {
-      pushStatus.textContent = '🔕 Notificaciones bloqueadas en el navegador.';
+      pushStatus.textContent = i18n.t('push.blocked');
       pushBtn.disabled = true;
       return;
     }
     const registration = await navigator.serviceWorker.ready;
     const existing = await registration.pushManager.getSubscription();
     if (existing) {
-      pushBtn.textContent = 'Desactivar notificaciones';
+      pushBtn.textContent = i18n.t('push.deactivate');
       pushBtn.style.background = '#c53030';
-      pushStatus.textContent = '✅ Notificaciones activas en este dispositivo.';
+      pushStatus.textContent = i18n.t('push.active');
     } else {
-      pushBtn.textContent = 'Activar notificaciones';
+      pushBtn.textContent = i18n.t('push.activate');
       pushBtn.style.background = '#2b6cb0';
       pushStatus.textContent = '';
     }
@@ -2009,10 +2063,10 @@ if (!isNaN(cg) && cg > 0) {
       const existing = await registration.pushManager.getSubscription();
       if (existing) {
         await unsubscribeFromPush();
-        pushStatus.textContent = '🔕 Notificaciones desactivadas.';
+        pushStatus.textContent = i18n.t('push.deactivated');
       } else {
         await subscribeToPush();
-        pushStatus.textContent = '✅ ¡Notificaciones activadas!';
+        pushStatus.textContent = i18n.t('push.activated');
       }
       await updatePushButton();
     } catch (err) {
@@ -2025,7 +2079,7 @@ if (!isNaN(cg) && cg > 0) {
   if ('serviceWorker' in navigator && 'PushManager' in window) {
     navigator.serviceWorker.ready.then(() => updatePushButton());
   } else {
-    pushStatus.textContent = 'Tu navegador no soporta notificaciones push.';
+    pushStatus.textContent = i18n.t('push.no_support');
     pushBtn.disabled = true;
   }
 </script>
