@@ -253,3 +253,12 @@ class TestFuturePlaceholderKeys:
     def test_help_page_title_key_present(self, client):
         resp = client.get("/i18n/i18n.js")
         assert "help.page_title" in resp.text
+
+    def test_footer_warning_key_present_in_both_locales(self, client):
+        resp = client.get("/i18n/i18n.js")
+        # These keys were present before this PR (pre-existing) and must remain
+        assert resp.text.count("'footer.warning'") >= 2  # at least ES + EN
+
+    def test_footer_disclaimer_key_present_in_both_locales(self, client):
+        resp = client.get("/i18n/i18n.js")
+        assert resp.text.count("'footer.disclaimer'") >= 2  # at least ES + EN
