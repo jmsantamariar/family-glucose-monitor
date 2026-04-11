@@ -239,7 +239,6 @@
       'config.btn.test_tg_aria': 'Probar Telegram usando los valores actuales del formulario',
       'config.section.dashboard_auth.title': '🔐 Acceso al dashboard',
       'config.dashboard_auth_note': 'El cambio de usuario y contraseña del dashboard no está disponible en esta pantalla. Para modificarlo, usa el asistente inicial desde /setup (requiere reconfigurar el sistema completo) o edita manualmente config.yaml con un hash PBKDF2 generado.',
-      'config.save_note': 'Los umbrales se aplican inmediatamente; las credenciales de LibreLinkUp en el próximo ciclo de polling; la configuración de Telegram en la próxima alerta.',
       'config.btn.save': '💾 Guardar cambios',
       'config.btn.save_aria': 'Guardar todos los cambios de configuración',
       'config.saving': '⏳ Guardando…',
@@ -259,6 +258,7 @@
       'config.tg.test_error': 'No se pudo enviar mensaje de prueba a Telegram.',
       'config.tg.test_network_error': 'No se pudo contactar con Telegram por un problema de red.',
       'config.save_bar.aria': 'Guardar cambios',
+      'config.save_note': 'Los umbrales se aplican inmediatamente; las credenciales de LibreLinkUp en el próximo ciclo de polling; la configuración de Telegram en la próxima alerta.',
       // ── Future: password recovery ────────────────────────────────────────
       'recovery.page_title': 'Recuperar contraseña — Monitor de Glucosa Familiar',
       'recovery.heading': '🔐 Recuperar contraseña',
@@ -546,10 +546,9 @@
     }
   }());
 
-  // ── translate ─────────────────────────────────────────────────────────────
-  /** Look up a translation key.  {0}, {1}, … are replaced with positional args. */
   // ── Translation lookup ─────────────────────────────────────────────────────
   // t(key[, arg0, arg1, ...]) → translated string.
+  // Looks up key in the active locale (falls back to 'es').
   // Placeholders {0}, {1}, … in the translation value are replaced with the
   // extra arguments passed after key.  Example:
   //   t('setup.tg.chat_obtained', chatId, label)
