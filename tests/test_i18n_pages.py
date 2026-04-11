@@ -177,6 +177,38 @@ class TestRegionLocaleSuggestion:
         assert "_userOverridedLocale = true" in html
 
 
+# ── i18n.js: placeholder substitution in t() ─────────────────────────────────
+
+class TestI18nJsPlaceholderSubstitution:
+    """The t() function must replace {0}, {1} placeholders with provided arguments."""
+
+    def test_t_function_replaces_placeholder_zero(self, client):
+        resp = client.get("/i18n/i18n.js")
+        js = resp.text
+        # t() must use regex replacement to substitute {0}
+        assert "replace" in js
+        assert r"\{" in js or "\\\\{" in js or "'\\\\{' + " in js or "RegExp" in js
+
+    def test_setup_tg_chat_obtained_key_uses_placeholder(self, client):
+        resp = client.get("/i18n/i18n.js")
+        # The key contains {0} and {1}
+        assert "setup.tg.chat_obtained" in resp.text
+        assert "{0}" in resp.text
+        assert "{1}" in resp.text
+
+    def test_setup_tg_multiple_chats_key_uses_placeholder(self, client):
+        resp = client.get("/i18n/i18n.js")
+        assert "setup.tg.multiple_chats" in resp.text
+
+    def test_setup_html_calls_t_with_placeholder_args(self, client):
+        resp = client.get("/setup")
+        # t() is called with extra arguments for placeholders
+        assert "t('setup.tg.chat_obtained'" in resp.text or \
+               't("setup.tg.chat_obtained"' in resp.text
+        assert "t('setup.tg.multiple_chats'" in resp.text or \
+               't("setup.tg.multiple_chats"' in resp.text
+
+
 # ── i18n.js: data-i18n-placeholder support ───────────────────────────────────
 
 class TestI18nJsPlaceholderSupport:
