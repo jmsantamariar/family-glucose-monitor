@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Configuración del sistema — Monitor de Glucosa Familiar</title>
+  <title data-i18n="config.page_title">Configuración del sistema — Monitor de Glucosa Familiar</title>
+  <!-- i18n helper — must load before page scripts so t() is available synchronously -->
+  <script src="/i18n/i18n.js"></script>
   <style>
     /* ── Reset & Variables ─────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -109,6 +111,25 @@
       background: rgba(255,255,255,.12);
       outline: 2px solid rgba(255,255,255,.6);
       outline-offset: 2px;
+    }
+
+    /* ── Language toggle button ──────────────────────────────── */
+    #lang-toggle-btn {
+      background: transparent;
+      border: 1px solid rgba(255,255,255,.35);
+      color: inherit;
+      border-radius: 4px;
+      padding: .2rem .5rem;
+      cursor: pointer;
+      font-size: .78rem;
+      font-family: inherit;
+      letter-spacing: .03em;
+      transition: background .15s, border-color .15s;
+      white-space: nowrap;
+    }
+    #lang-toggle-btn:hover {
+      background: rgba(255,255,255,.12);
+      border-color: rgba(255,255,255,.6);
     }
 
     /* ── Main ───────────────────────────────────────────────── */
@@ -395,10 +416,11 @@
       <circle cx="12" cy="12" r="3"/>
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
     </svg>
-    Configuración del sistema
+    <span data-i18n="config.header.title">Configuración del sistema</span>
   </h1>
   <div class="header-right">
-    <a href="/" class="btn-back" aria-label="Volver al dashboard">← Volver al dashboard</a>
+    <button id="lang-toggle-btn">🌐 EN</button>
+    <a href="/" class="btn-back" data-i18n-aria-label="config.header.back_aria" aria-label="Volver al dashboard" data-i18n="config.header.back">← Volver al dashboard</a>
   </div>
 </header>
 
@@ -411,16 +433,16 @@
         <circle cx="12" cy="12" r="3"/>
         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
       </svg>
-      Configuración del sistema
+      <span data-i18n="config.page_heading">Configuración del sistema</span>
     </h2>
-    <p>Actualiza las conexiones, alertas y notificaciones sin editar archivos manualmente.</p>
+    <p data-i18n="config.page_subtitle">Actualiza las conexiones, alertas y notificaciones sin editar archivos manualmente.</p>
   </div>
 
   <!-- ── Error summary (shown when there are multiple validation errors) ── -->
   <div class="error-summary" id="error-summary" role="alert" aria-live="assertive">
     <strong>
       <span aria-hidden="true">❌</span>
-      <span>Faltan campos obligatorios o hay errores de validación:</span>
+      <span data-i18n="config.error_summary_heading">Faltan campos obligatorios o hay errores de validación:</span>
     </strong>
     <ul id="error-summary-list"></ul>
   </div>
@@ -428,29 +450,31 @@
   <!-- ── Cuenta LibreLinkUp ──────────────────────────────────── -->
   <section class="card" id="card-librelinkup" aria-labelledby="section-librelinkup">
     <div class="card-header">
-      <h3 id="section-librelinkup">🔗 Cuenta LibreLinkUp</h3>
-      <span class="card-desc">Credenciales de acceso a la API de FreeStyle Libre</span>
+      <h3 id="section-librelinkup" data-i18n="config.section.ll.title">🔗 Cuenta LibreLinkUp</h3>
+      <span class="card-desc" data-i18n="config.section.ll.desc">Credenciales de acceso a la API de FreeStyle Libre</span>
       <span class="section-status" id="status-librelinkup" aria-live="polite"></span>
     </div>
     <div class="card-body">
       <div class="form-grid">
         <div class="field full">
-          <label for="ll-email">Correo electrónico</label>
+          <label for="ll-email" data-i18n="config.field.email">Correo electrónico</label>
           <input type="email" id="ll-email" name="ll-email" autocomplete="email"
+                 data-i18n-placeholder="config.field.email_placeholder"
                  placeholder="tu-email@ejemplo.com"
                  aria-describedby="ll-email-error" />
           <span class="field-error" id="ll-email-error" role="alert"></span>
         </div>
         <div class="field full">
-          <label for="ll-password">Contraseña</label>
+          <label for="ll-password" data-i18n="config.field.password">Contraseña</label>
           <input type="password" id="ll-password" name="ll-password" autocomplete="current-password"
+                 data-i18n-placeholder="config.field.password_placeholder"
                  placeholder="Dejar vacío para conservar la contraseña actual"
                  aria-describedby="ll-password-hint ll-password-error" />
           <span class="hint" id="ll-password-hint"></span>
           <span class="field-error" id="ll-password-error" role="alert"></span>
         </div>
         <div class="field">
-          <label for="ll-region">Región</label>
+          <label for="ll-region" data-i18n="config.field.region">Región</label>
           <select id="ll-region" name="ll-region" aria-describedby="ll-region-error">
             <option value="US">US</option>
             <option value="EU">EU</option>
@@ -471,13 +495,15 @@
 
       <div class="btn-actions">
         <button type="button" class="btn btn-secondary" id="test-ll-btn"
-                aria-label="Probar conexión con LibreLinkUp usando los valores actuales del formulario">
+                data-i18n-aria-label="config.btn.test_ll_aria"
+                aria-label="Probar conexión con LibreLinkUp usando los valores actuales del formulario"
+                data-i18n="config.btn.test_ll">
           🔍 Probar conexión con LibreLinkUp
         </button>
       </div>
       <div class="callout-info" id="ll-test-note">
         <span class="ci-icon" aria-hidden="true">ℹ️</span>
-        <span>La prueba usa los valores <strong>actualmente escritos</strong> en el formulario, incluso si aún no se han guardado.</span>
+        <span data-i18n="config.note.test">La prueba usa los valores <strong>actualmente escritos</strong> en el formulario, incluso si aún no se han guardado.</span>
       </div>
 
       <div class="test-result" id="ll-test-result" aria-live="polite"></div>
@@ -487,42 +513,42 @@
   <!-- ── Alertas ────────────────────────────────────────────── -->
   <section class="card" id="card-alertas" aria-labelledby="section-alertas">
     <div class="card-header">
-      <h3 id="section-alertas">⚠️ Alertas</h3>
-      <span class="card-desc">Umbrales y tiempo de espera entre alertas</span>
+      <h3 id="section-alertas" data-i18n="config.section.alerts.title">⚠️ Alertas</h3>
+      <span class="card-desc" data-i18n="config.section.alerts.desc">Umbrales y tiempo de espera entre alertas</span>
       <span class="section-status" id="status-alertas" aria-live="polite"></span>
     </div>
     <div class="card-body">
       <div class="form-grid">
         <div class="field">
-          <label for="low-threshold">Umbral bajo (mg/dL)</label>
+          <label for="low-threshold" data-i18n="config.field.low_threshold">Umbral bajo (mg/dL)</label>
           <input type="number" id="low-threshold" name="low-threshold"
                  min="40" max="300" step="1"
                  aria-describedby="low-threshold-error" />
-          <span class="hint">Por debajo → alerta de hipoglucemia</span>
+          <span class="hint" data-i18n="config.hint.low_threshold">Por debajo → alerta de hipoglucemia</span>
           <span class="field-error" id="low-threshold-error" role="alert"></span>
         </div>
         <div class="field">
-          <label for="high-threshold">Umbral alto (mg/dL)</label>
+          <label for="high-threshold" data-i18n="config.field.high_threshold">Umbral alto (mg/dL)</label>
           <input type="number" id="high-threshold" name="high-threshold"
                  min="40" max="400" step="1"
                  aria-describedby="high-threshold-error" />
-          <span class="hint">Por encima → alerta de hiperglucemia</span>
+          <span class="hint" data-i18n="config.hint.high_threshold">Por encima → alerta de hiperglucemia</span>
           <span class="field-error" id="high-threshold-error" role="alert"></span>
         </div>
         <div class="field">
-          <label for="cooldown">Minutos entre alertas (cooldown)</label>
+          <label for="cooldown" data-i18n="config.field.cooldown">Minutos entre alertas (cooldown)</label>
           <input type="number" id="cooldown" name="cooldown"
                  min="1" max="1440" step="1"
                  aria-describedby="cooldown-error" />
-          <span class="hint">Tiempo mínimo de espera entre alertas del mismo tipo</span>
+          <span class="hint" data-i18n="config.hint.cooldown">Tiempo mínimo de espera entre alertas del mismo tipo</span>
           <span class="field-error" id="cooldown-error" role="alert"></span>
         </div>
         <div class="field">
-          <label for="max-age">Antigüedad máxima de lectura (min)</label>
+          <label for="max-age" data-i18n="config.field.max_age">Antigüedad máxima de lectura (min)</label>
           <input type="number" id="max-age" name="max-age"
                  min="1" max="60" step="1"
                  aria-describedby="max-age-error" />
-          <span class="hint">Lecturas más antiguas que este tiempo se ignoran</span>
+          <span class="hint" data-i18n="config.hint.max_age">Lecturas más antiguas que este tiempo se ignoran</span>
           <span class="field-error" id="max-age-error" role="alert"></span>
         </div>
       </div>
@@ -532,28 +558,30 @@
   <!-- ── Notificaciones ────────────────────────────────────── -->
   <section class="card" id="card-notif" aria-labelledby="section-notif">
     <div class="card-header">
-      <h3 id="section-notif">💬 Notificaciones</h3>
-      <span class="card-desc">Canal de envío de alertas</span>
+      <h3 id="section-notif" data-i18n="config.section.notif.title">💬 Notificaciones</h3>
+      <span class="card-desc" data-i18n="config.section.notif.desc">Canal de envío de alertas</span>
       <span class="section-status" id="status-notif" aria-live="polite"></span>
     </div>
     <div class="card-body">
       <div class="toggle-row">
         <input type="checkbox" id="telegram-enabled" name="telegram-enabled" />
-        <label for="telegram-enabled">Activar Telegram</label>
+        <label for="telegram-enabled" data-i18n="config.field.telegram_enabled">Activar Telegram</label>
       </div>
 
       <div id="telegram-fields" class="form-grid">
         <div class="field full">
-          <label for="tg-token">Bot Token</label>
+          <label for="tg-token" data-i18n="config.field.tg_token">Bot Token</label>
           <input type="password" id="tg-token" name="tg-token" autocomplete="off"
+                 data-i18n-placeholder="config.field.tg_token_placeholder"
                  placeholder="Dejar vacío para conservar el token actual"
                  aria-describedby="tg-token-hint tg-token-error" />
           <span class="hint" id="tg-token-hint"></span>
           <span class="field-error" id="tg-token-error" role="alert"></span>
         </div>
         <div class="field full">
-          <label for="tg-chatid">Chat ID</label>
+          <label for="tg-chatid" data-i18n="config.field.tg_chatid">Chat ID</label>
           <input type="text" id="tg-chatid" name="tg-chatid" autocomplete="off"
+                 data-i18n-placeholder="config.field.tg_chatid_placeholder"
                  placeholder="Ej: -1001234567890"
                  aria-describedby="tg-chatid-error" />
           <span class="field-error" id="tg-chatid-error" role="alert"></span>
@@ -562,13 +590,15 @@
 
       <div class="btn-actions">
         <button type="button" class="btn btn-secondary" id="test-tg-btn"
-                aria-label="Probar Telegram usando los valores actuales del formulario">
+                data-i18n-aria-label="config.btn.test_tg_aria"
+                aria-label="Probar Telegram usando los valores actuales del formulario"
+                data-i18n="config.btn.test_tg">
           📨 Probar Telegram
         </button>
       </div>
       <div class="callout-info" id="tg-test-note">
         <span class="ci-icon" aria-hidden="true">ℹ️</span>
-        <span>La prueba usa los valores <strong>actualmente escritos</strong> en el formulario, incluso si aún no se han guardado.</span>
+        <span data-i18n="config.note.test">La prueba usa los valores <strong>actualmente escritos</strong> en el formulario, incluso si aún no se han guardado.</span>
       </div>
 
       <div class="test-result" id="tg-test-result" aria-live="polite"></div>
@@ -578,7 +608,7 @@
   <!-- ── Acceso al dashboard ─────────────────────────────────── -->
   <section class="card" aria-labelledby="section-dashboard-auth">
     <div class="card-header">
-      <h3 id="section-dashboard-auth">🔐 Acceso al dashboard</h3>
+      <h3 id="section-dashboard-auth" data-i18n="config.section.dashboard_auth.title">🔐 Acceso al dashboard</h3>
     </div>
     <div class="card-body">
       <p style="font-size:.88rem;color:var(--subtext);">
@@ -602,20 +632,21 @@
 </main>
 
 <!-- ── Sticky save bar ──────────────────────────────────────── -->
-<div class="save-bar" role="region" aria-label="Guardar cambios">
-  <span class="save-note">
+<div class="save-bar" role="region" data-i18n-aria-label="config.save_bar.aria" aria-label="Guardar cambios">
+  <span class="save-note" data-i18n="config.save_note">
     Los umbrales se aplican inmediatamente; las credenciales de LibreLinkUp en el próximo ciclo de polling; la configuración de Telegram en la próxima alerta.
   </span>
   <button type="button" class="btn btn-primary" id="save-btn"
-          aria-label="Guardar todos los cambios de configuración">
+          data-i18n-aria-label="config.btn.save_aria"
+          aria-label="Guardar todos los cambios de configuración"
+          data-i18n="config.btn.save">
     💾 Guardar cambios
   </button>
 </div>
 
 <footer>
-  <strong>⚠️ Este no es un dispositivo médico.</strong>
-  Esta herramienta es solo para referencia informativa y no reemplaza la atención médica profesional
-  ni los sistemas de alarma del medidor de glucosa.
+  <strong data-i18n="footer.warning">⚠️ Este no es un dispositivo médico.</strong>
+  <span data-i18n="footer.disclaimer">Esta herramienta es solo para referencia informativa y no reemplaza la atención médica profesional ni los sistemas de alarma del medidor de glucosa.</span>
 </footer>
 
 <script>
@@ -722,7 +753,7 @@
 
     if (!state) return;
 
-    const labels = { ok: '✅ Correcto', err: '❌ Error', warn: '⚠️ Pendiente' };
+    const labels = { ok: window.i18n.t('config.status.ok'), err: window.i18n.t('config.status.err'), warn: window.i18n.t('config.status.warn') };
     badge.textContent = labels[state] || '';
     badge.classList.add('show', state);
 
@@ -824,7 +855,7 @@
     const resp = await apiFetch('/api/configuracion');
     if (!resp) return;
     if (!resp.ok) {
-      showToast('error', 'No se pudo cargar la configuración actual.');
+      showToast('error', window.i18n.t('config.error.load'));
       return;
     }
     const data = await resp.json();
@@ -833,7 +864,7 @@
     document.getElementById('ll-email').value  = data.librelinkup?.email  || '';
     document.getElementById('ll-region').value = data.librelinkup?.region || 'EU';
     document.getElementById('ll-password-hint').textContent =
-      data.librelinkup?.has_password ? 'Contraseña guardada (encriptada). Deja vacío para mantenerla.' : '';
+      data.librelinkup?.has_password ? window.i18n.t('config.ll.password_hint_set') : '';
 
     // Alerts
     const a = data.alerts || {};
@@ -847,7 +878,7 @@
     document.getElementById('telegram-enabled').checked = !!tg.enabled;
     document.getElementById('tg-chatid').value = tg.chat_id || '';
     document.getElementById('tg-token-hint').textContent =
-      tg.has_bot_token ? 'Token guardado. Deja vacío para mantenerlo.' : '';
+      tg.has_bot_token ? window.i18n.t('config.tg.token_hint_set') : '';
 
     toggleTelegramFields();
   }
@@ -892,7 +923,7 @@
   document.getElementById('test-ll-btn').addEventListener('click', async () => {
     const btn = document.getElementById('test-ll-btn');
     btn.disabled = true;
-    btn.textContent = '⏳ Probando…';
+    btn.textContent = window.i18n.t('config.btn.testing');
     clearTestResult('ll-test-result');
 
     const payload = {
@@ -911,16 +942,16 @@
         showTestResult('ll-test-result', data.ok, data.message, data.patients);
         setSectionState('librelinkup', data.ok ? 'ok' : 'err');
       } else {
-        const msg = data.detail || 'No se pudo conectar con LibreLinkUp.';
+        const msg = data.detail || window.i18n.t('config.ll.test_error');
         showTestResult('ll-test-result', false, msg, []);
         setSectionState('librelinkup', 'err');
       }
     } catch {
-      showTestResult('ll-test-result', false, 'No se pudo conectar con LibreLinkUp por un problema de red.', []);
+      showTestResult('ll-test-result', false, window.i18n.t('config.ll.test_network_error'), []);
       setSectionState('librelinkup', 'err');
     } finally {
       btn.disabled = false;
-      btn.textContent = '🔍 Probar conexión con LibreLinkUp';
+      btn.textContent = window.i18n.t('config.btn.test_ll_restore');
     }
   });
 
@@ -928,7 +959,7 @@
   document.getElementById('test-tg-btn').addEventListener('click', async () => {
     const btn = document.getElementById('test-tg-btn');
     btn.disabled = true;
-    btn.textContent = '⏳ Probando…';
+    btn.textContent = window.i18n.t('config.btn.testing');
     clearTestResult('tg-test-result');
 
     const payload = {
@@ -946,16 +977,16 @@
         showTestResult('tg-test-result', data.ok, data.message, null);
         setSectionState('notif', data.ok ? 'ok' : 'err');
       } else {
-        const msg = data.detail || 'No se pudo enviar mensaje de prueba a Telegram.';
+        const msg = data.detail || window.i18n.t('config.tg.test_error');
         showTestResult('tg-test-result', false, msg, null);
         setSectionState('notif', 'err');
       }
     } catch {
-      showTestResult('tg-test-result', false, 'No se pudo contactar con Telegram por un problema de red.', null);
+      showTestResult('tg-test-result', false, window.i18n.t('config.tg.test_network_error'), null);
       setSectionState('notif', 'err');
     } finally {
       btn.disabled = false;
-      btn.textContent = '📨 Probar Telegram';
+      btn.textContent = window.i18n.t('config.btn.test_tg_restore');
     }
   });
 
@@ -982,7 +1013,7 @@
     }
 
     btn.disabled = true;
-    btn.textContent = '⏳ Guardando…';
+    btn.textContent = window.i18n.t('config.saving');
 
     const tgEnabled = document.getElementById('telegram-enabled').checked;
     const payload = {
@@ -1019,21 +1050,21 @@
         const detail = data.detail;
         if (detail && typeof detail === 'object' && Array.isArray(detail.errors)) {
           applyServerErrors(detail.errors);
-          showToast('error', detail.message || 'Faltan campos obligatorios o hay errores de validación.');
+          showToast('error', detail.message || window.i18n.t('config.error_summary_heading'));
         } else if (typeof detail === 'string') {
           // Single-field 422 string — try to match to a field
           const fakeList = [detail];
           applyServerErrors(fakeList);
           showToast('error', detail);
         } else {
-          showToast('error', 'Error desconocido al guardar la configuración.');
+          showToast('error', window.i18n.t('config.error.unknown'));
         }
       }
     } catch {
-      showToast('error', 'Error de red al guardar la configuración.');
+      showToast('error', window.i18n.t('config.error.network'));
     } finally {
       btn.disabled = false;
-      btn.textContent = '💾 Guardar cambios';
+      btn.textContent = window.i18n.t('config.btn.save');
     }
   });
 
@@ -1047,6 +1078,11 @@
   });
   ['tg-token', 'tg-chatid'].forEach(id => {
     document.getElementById(id)?.addEventListener('input', () => setSectionState('notif', null));
+  });
+
+  // Re-apply translations when locale changes (e.g. after toggle click)
+  window.addEventListener('fgm:localechange', function () {
+    window.i18n.applyTranslations();
   });
 </script>
 </body>

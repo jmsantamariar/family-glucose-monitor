@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Iniciar sesión — Monitor de Glucosa Familiar</title>
+  <title data-i18n="login.page_title">Iniciar sesión — Monitor de Glucosa Familiar</title>
   <!-- PWA — installable as Android / desktop app -->
   <link rel="manifest" href="/manifest.json" />
   <meta name="theme-color" content="#1a365d" />
@@ -12,6 +12,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Glucosa" />
   <link rel="apple-touch-icon" href="/icons/icon-192.svg" />
+  <!-- i18n helper — must load before page scripts so t() is available synchronously -->
+  <script src="/i18n/i18n.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -69,6 +71,26 @@
     header h1 {
       font-size: 1.2rem;
       font-weight: 700;
+    }
+
+    /* ── Language toggle button ──────────────────────────────── */
+    #lang-toggle-btn {
+      background: transparent;
+      border: 1px solid rgba(255,255,255,.35);
+      color: inherit;
+      border-radius: 4px;
+      padding: .2rem .5rem;
+      cursor: pointer;
+      font-size: .78rem;
+      font-family: inherit;
+      letter-spacing: .03em;
+      transition: background .15s, border-color .15s;
+      white-space: nowrap;
+      margin-left: auto;
+    }
+    #lang-toggle-btn:hover {
+      background: rgba(255,255,255,.12);
+      border-color: rgba(255,255,255,.6);
     }
 
     .main {
@@ -182,23 +204,25 @@
 <body>
   <header>
     <span style="font-size:1.6rem">👨‍👩‍👦</span>
-    <h1>Monitor de Glucosa Familiar</h1>
+    <h1 data-i18n="header.app_name">Monitor de Glucosa Familiar</h1>
+    <button id="lang-toggle-btn">🌐 EN</button>
   </header>
 
   <main class="main">
     <div class="card">
-      <h2>🔑 Iniciar sesión</h2>
-      <p class="subtitle">Ingresa tus credenciales del panel de control para acceder al monitor.</p>
+      <h2 data-i18n="login.heading">🔑 Iniciar sesión</h2>
+      <p class="subtitle" data-i18n="login.subtitle">Ingresa tus credenciales del panel de control para acceder al monitor.</p>
 
       <div id="errorBox" class="error-box" role="alert"></div>
 
       <form id="loginForm" novalidate>
         <div class="form-group">
-          <label for="email">👤 Usuario del panel</label>
+          <label for="username" data-i18n="login.username_label">👤 Usuario del panel</label>
           <input
             type="text"
             id="username"
             name="username"
+            data-i18n-placeholder="login.username_placeholder"
             placeholder="usuario"
             autocomplete="username"
             required
@@ -206,7 +230,7 @@
         </div>
 
         <div class="form-group">
-          <label for="password">🔒 Contraseña</label>
+          <label for="password" data-i18n="login.password_label">🔒 Contraseña</label>
           <input
             type="password"
             id="password"
@@ -217,13 +241,14 @@
           />
         </div>
 
-        <button type="submit" class="btn btn-primary" id="submitBtn">
+        <button type="submit" class="btn btn-primary" id="submitBtn" data-i18n="login.submit_btn">
           Entrar →
         </button>
       </form>
 
       <div class="footer-link">
-        ¿Primera vez? <a href="/setup">Configurar el monitor</a>
+        <span data-i18n="login.first_time_text">¿Primera vez?</span>
+        <a href="/setup" data-i18n="login.setup_link">Configurar el monitor</a>
       </div>
     </div>
   </main>
@@ -250,12 +275,12 @@
       const password = document.getElementById('password').value;
 
       if (!username || !password) {
-        showError('Por favor completa todos los campos.');
+        showError(window.i18n.t('login.error.empty_fields'));
         return;
       }
 
       submitBtn.disabled = true;
-      submitBtn.textContent = 'Verificando…';
+      submitBtn.textContent = window.i18n.t('login.verifying');
 
       try {
         const res = await fetch('/api/login', {
@@ -268,15 +293,20 @@
           window.location.href = '/';
         } else {
           const data = await res.json().catch(() => ({}));
-          showError(data.detail || 'Credenciales incorrectas. Inténtalo de nuevo.');
+          showError(data.detail || window.i18n.t('login.error.invalid_credentials'));
           submitBtn.disabled = false;
-          submitBtn.textContent = 'Entrar →';
+          submitBtn.textContent = window.i18n.t('login.submit_btn');
         }
       } catch {
-        showError('Error de conexión. Comprueba que el servidor está activo.');
+        showError(window.i18n.t('login.error.connection'));
         submitBtn.disabled = false;
-        submitBtn.textContent = 'Entrar →';
+        submitBtn.textContent = window.i18n.t('login.submit_btn');
       }
+    });
+
+    // Re-apply translations when locale changes (e.g. after toggle click)
+    window.addEventListener('fgm:localechange', function () {
+      window.i18n.applyTranslations();
     });
   </script>
   <script>
