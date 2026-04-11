@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Configuración inicial — Monitor de Glucosa Familiar</title>
+  <title data-i18n="setup.page_title">Configuración inicial — Monitor de Glucosa Familiar</title>
   <!-- PWA — installable as Android / desktop app -->
   <link rel="manifest" href="/manifest.json" />
   <meta name="theme-color" content="#1a365d" />
@@ -12,6 +12,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Glucosa" />
   <link rel="apple-touch-icon" href="/icons/icon-192.svg" />
+  <!-- i18n helper — must load before page scripts so t() is available synchronously -->
+  <script src="/i18n/i18n.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -73,6 +75,26 @@
     }
 
     header h1 { font-size: 1.2rem; font-weight: 700; }
+
+    /* ── Language toggle button ──────────────────────────────── */
+    #lang-toggle-btn {
+      background: transparent;
+      border: 1px solid rgba(255,255,255,.35);
+      color: inherit;
+      border-radius: 4px;
+      padding: .2rem .5rem;
+      cursor: pointer;
+      font-size: .78rem;
+      font-family: inherit;
+      letter-spacing: .03em;
+      transition: background .15s, border-color .15s;
+      white-space: nowrap;
+      margin-left: auto;
+    }
+    #lang-toggle-btn:hover {
+      background: rgba(255,255,255,.12);
+      border-color: rgba(255,255,255,.6);
+    }
 
     .main {
       flex: 1;
@@ -306,25 +328,26 @@
 <body>
   <header>
     <span style="font-size:1.6rem">👨‍👩‍👦</span>
-    <h1>Monitor de Glucosa Familiar</h1>
+    <h1 data-i18n="header.app_name">Monitor de Glucosa Familiar</h1>
+    <button id="lang-toggle-btn">🌐 EN</button>
   </header>
 
   <main class="main">
     <div class="card">
 
       <!-- Step indicator -->
-      <nav class="steps" aria-label="Pasos de configuración">
+      <nav class="steps" data-i18n-aria-label="setup.nav_aria_label" aria-label="Pasos de configuración">
         <div class="step active" id="step-ind-1">
           <div class="step-circle">1</div>
-          <span class="step-label">Cuenta</span>
+          <span class="step-label" data-i18n="setup.step_label.account">Cuenta</span>
         </div>
         <div class="step" id="step-ind-2">
           <div class="step-circle">2</div>
-          <span class="step-label">Alertas</span>
+          <span class="step-label" data-i18n="setup.step_label.alerts">Alertas</span>
         </div>
         <div class="step" id="step-ind-3">
           <div class="step-circle">3</div>
-          <span class="step-label">Notificaciones</span>
+          <span class="step-label" data-i18n="setup.step_label.notifications">Notificaciones</span>
         </div>
       </nav>
 
@@ -332,128 +355,128 @@
 
       <!-- Step 1: LibreLinkUp credentials -->
       <section class="step-panel active" id="panel-1" aria-label="Paso 1 — Cuenta LibreLinkUp">
-        <h2>🔑 Paso 1 de 3 — Cuenta LibreLinkUp</h2>
-        <p class="hint">
+        <h2 data-i18n="setup.step1.heading">🔑 Paso 1 de 3 — Cuenta LibreLinkUp</h2>
+        <p class="hint" data-i18n="setup.step1.hint">
           Usa las mismas credenciales que usas en la app LibreLinkUp.
           El monitor las usará para leer los datos de glucosa de tus familiares.
         </p>
 
         <div class="form-group">
-          <label for="email">📧 Email de LibreLinkUp</label>
-          <input type="email" id="email" placeholder="tu@email.com" autocomplete="email" required />
+          <label for="email" data-i18n="setup.step1.email_label">📧 Email de LibreLinkUp</label>
+          <input type="email" id="email" data-i18n-placeholder="setup.step1.email_placeholder" placeholder="tu@email.com" autocomplete="email" required />
         </div>
 
         <div class="form-group">
-          <label for="password">🔒 Contraseña de LibreLinkUp</label>
+          <label for="password" data-i18n="setup.step1.password_label">🔒 Contraseña de LibreLinkUp</label>
           <input type="password" id="password" placeholder="••••••••" autocomplete="new-password" required />
         </div>
 
         <hr style="margin:1.2rem 0;border:none;border-top:1px solid var(--border,#e2e8f0);" />
-        <p class="hint">
+        <p class="hint" data-i18n="setup.step1.dashboard_hint">
           Elige también una contraseña <strong>para el panel de control</strong>.
           Puede ser diferente a tu contraseña de LibreLinkUp y se almacenará
           derivada con hash (PBKDF2) en <code>config.yaml</code>.
         </p>
 
         <div class="form-group">
-          <label for="dashboardPassword">🛡️ Contraseña del panel de control</label>
-          <input type="password" id="dashboardPassword" placeholder="Mínimo 8 caracteres" autocomplete="new-password" required minlength="8" />
+          <label for="dashboardPassword" data-i18n="setup.step1.dashboard_password_label">🛡️ Contraseña del panel de control</label>
+          <input type="password" id="dashboardPassword" data-i18n-placeholder="setup.step1.dashboard_password_placeholder" placeholder="Mínimo 8 caracteres" autocomplete="new-password" required minlength="8" />
         </div>
 
         <div class="form-group">
-          <label for="region">🌍 Región de LibreLinkUp</label>
+          <label for="region" data-i18n="setup.step1.region_label">🌍 Región de LibreLinkUp</label>
           <select id="region">
-            <option value="EU" selected>EU — Europa (predeterminado)</option>
-            <option value="US">US — Estados Unidos</option>
-            <option value="EU2">EU2 — Europa 2</option>
-            <option value="DE">DE — Alemania</option>
-            <option value="FR">FR — Francia</option>
-            <option value="JP">JP — Japón</option>
-            <option value="AP">AP — Asia-Pacífico</option>
-            <option value="AU">AU — Australia</option>
-            <option value="AE">AE — Emiratos Árabes</option>
-            <option value="CA">CA — Canadá</option>
-            <option value="LA">LA — Latinoamérica</option>
-            <option value="RU">RU — Rusia</option>
+            <option value="LA" selected data-i18n="setup.region.LA">LA — Latinoamérica</option>
+            <option value="EU" data-i18n="setup.region.EU">EU — Europa</option>
+            <option value="US" data-i18n="setup.region.US">US — Estados Unidos</option>
+            <option value="EU2" data-i18n="setup.region.EU2">EU2 — Europa 2</option>
+            <option value="DE" data-i18n="setup.region.DE">DE — Alemania</option>
+            <option value="FR" data-i18n="setup.region.FR">FR — Francia</option>
+            <option value="JP" data-i18n="setup.region.JP">JP — Japón</option>
+            <option value="AP" data-i18n="setup.region.AP">AP — Asia-Pacífico</option>
+            <option value="AU" data-i18n="setup.region.AU">AU — Australia</option>
+            <option value="AE" data-i18n="setup.region.AE">AE — Emiratos Árabes</option>
+            <option value="CA" data-i18n="setup.region.CA">CA — Canadá</option>
+            <option value="RU" data-i18n="setup.region.RU">RU — Rusia</option>
           </select>
-          <small class="hint">Elige la misma región que tu app LibreLinkUp.</small>
+          <small class="hint" data-i18n="setup.step1.region_hint">Elige la misma región que tu app LibreLinkUp.</small>
         </div>
 
         <div class="btn-row">
           <span></span>
-          <button class="btn btn-primary" onclick="goToStep(2)">Siguiente →</button>
+          <button class="btn btn-primary" data-i18n="setup.step1.next_btn" onclick="goToStep(2)">Siguiente →</button>
         </div>
       </section>
 
       <!-- Step 2: Alert thresholds -->
       <section class="step-panel" id="panel-2" aria-label="Paso 2 — Umbrales de alerta">
-        <h2>⚠️ Paso 2 de 3 — Umbrales de alerta</h2>
-        <p class="hint">
+        <h2 data-i18n="setup.step2.heading">⚠️ Paso 2 de 3 — Umbrales de alerta</h2>
+        <p class="hint" data-i18n="setup.step2.hint">
           Define los valores límite de glucosa (mg/dL) para recibir alertas.
           Los valores predeterminados son los recomendados para adultos.
         </p>
 
         <div class="grid-2">
           <div class="form-group">
-            <label for="lowThreshold">🔴 Umbral bajo (mg/dL)</label>
+            <label for="lowThreshold" data-i18n="setup.step2.low_threshold_label">🔴 Umbral bajo (mg/dL)</label>
             <input type="number" id="lowThreshold" value="70" min="40" max="150" />
           </div>
           <div class="form-group">
-            <label for="highThreshold">🟠 Umbral alto (mg/dL)</label>
+            <label for="highThreshold" data-i18n="setup.step2.high_threshold_label">🟠 Umbral alto (mg/dL)</label>
             <input type="number" id="highThreshold" value="180" min="100" max="400" />
           </div>
           <div class="form-group">
-            <label for="cooldown">⏱️ Cooldown (minutos)</label>
+            <label for="cooldown" data-i18n="setup.step2.cooldown_label">⏱️ Cooldown (minutos)</label>
             <input type="number" id="cooldown" value="30" min="5" max="120" />
           </div>
           <div class="form-group">
-            <label for="maxAge">🕐 Edad máx. lectura (min)</label>
+            <label for="maxAge" data-i18n="setup.step2.max_age_label">🕐 Edad máx. lectura (min)</label>
             <input type="number" id="maxAge" value="15" min="5" max="60" />
           </div>
         </div>
 
         <div class="btn-row">
-          <button class="btn btn-secondary" onclick="goToStep(1)">← Anterior</button>
-          <button class="btn btn-primary" onclick="goToStep(3)">Siguiente →</button>
+          <button class="btn btn-secondary" data-i18n="setup.step2.prev_btn" onclick="goToStep(1)">← Anterior</button>
+          <button class="btn btn-primary" data-i18n="setup.step2.next_btn" onclick="goToStep(3)">Siguiente →</button>
         </div>
       </section>
 
       <!-- Step 3: Notifications -->
       <section class="step-panel" id="panel-3" aria-label="Paso 3 — Notificaciones">
-        <h2>🔔 Paso 3 de 3 — Notificaciones <span style="font-weight:400;font-size:.85rem;color:var(--subtext)">(opcional)</span></h2>
-        <p class="hint">
+        <h2><span data-i18n="setup.step3.heading">🔔 Paso 3 de 3 — Notificaciones</span> <span style="font-weight:400;font-size:.85rem;color:var(--subtext)" data-i18n="setup.step3.optional_badge">(opcional)</span></h2>
+        <p class="hint" data-i18n="setup.step3.hint">
           Elige cómo quieres recibir alertas de glucosa. Puedes omitir este paso
           y configurarlo más tarde editando <code>config.yaml</code>.
         </p>
 
         <div class="form-group">
-          <label for="notifType">Tipo de notificación</label>
+          <label for="notifType" data-i18n="setup.step3.notif_type_label">Tipo de notificación</label>
           <select id="notifType" onchange="onNotifChange()">
-            <option value="none">Sin notificaciones por ahora</option>
-            <option value="telegram">Telegram</option>
-            <option value="webhook">Webhook (Home Assistant, etc.)</option>
-            <option value="whatsapp">WhatsApp</option>
+            <option value="none" data-i18n="setup.step3.notif_none">Sin notificaciones por ahora</option>
+            <option value="telegram" data-i18n="setup.step3.notif_telegram">Telegram</option>
+            <option value="webhook" data-i18n="setup.step3.notif_webhook">Webhook (Home Assistant, etc.)</option>
+            <option value="whatsapp" data-i18n="setup.step3.notif_whatsapp">WhatsApp</option>
           </select>
         </div>
 
         <!-- Telegram fields -->
         <div class="notif-section" id="sec-telegram">
           <div class="tg-guide">
-            <p>Sigue estos pasos para configurar las notificaciones de Telegram:</p>
+            <p data-i18n="setup.step3.tg_guide_intro">Sigue estos pasos para configurar las notificaciones de Telegram:</p>
             <ol class="tg-steps">
               <li>Habla con <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer">@BotFather</a> → escribe <code>/newbot</code> → copia el <strong>token</strong> en el campo de abajo.</li>
               <li>Abre tu bot nuevo en Telegram y envíale cualquier mensaje (por ejemplo, <em>Hola</em>).</li>
-              <li>Haz clic en <strong>"📥 Obtener Chat ID"</strong> para que se rellene automáticamente.</li>
+              <li>Haz clic en <strong>"📥 <span data-i18n="setup.step3.tg_get_chatid_btn">Obtener Chat ID</span>"</strong> para que se rellene automáticamente.</li>
             </ol>
           </div>
           <div class="form-group">
-            <label for="tgToken">🤖 Token del bot de Telegram</label>
+            <label for="tgToken" data-i18n="setup.step3.tg_token_label">🤖 Token del bot de Telegram</label>
             <input type="text" id="tgToken" placeholder="123456789:ABCDEFGabcdefg..." autocomplete="off" />
           </div>
           <div class="form-group">
             <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem">
-              <label for="tgChatId" style="margin:0">💬 Chat ID</label>
-              <button type="button" class="btn btn-secondary" id="fetchChatIdBtn" onclick="fetchTelegramChatId()" style="padding:.3rem .8rem;font-size:.82rem;">
+              <label for="tgChatId" style="margin:0" data-i18n="setup.step3.tg_chatid_label">💬 Chat ID</label>
+              <button type="button" class="btn btn-secondary" id="fetchChatIdBtn" onclick="fetchTelegramChatId()" style="padding:.3rem .8rem;font-size:.82rem;" data-i18n="setup.step3.tg_get_chatid_btn">
                 📥 Obtener Chat ID
               </button>
             </div>
@@ -466,7 +489,7 @@
         <!-- Webhook fields -->
         <div class="notif-section" id="sec-webhook">
           <div class="form-group">
-            <label for="webhookUrl">🌐 URL del webhook</label>
+            <label for="webhookUrl" data-i18n="setup.step3.webhook_url_label">🌐 URL del webhook</label>
             <input type="text" id="webhookUrl" placeholder="https://..." autocomplete="off" />
           </div>
         </div>
@@ -474,22 +497,22 @@
         <!-- WhatsApp fields -->
         <div class="notif-section" id="sec-whatsapp">
           <div class="form-group">
-            <label for="waPhoneId">📱 Phone Number ID</label>
+            <label for="waPhoneId" data-i18n="setup.step3.wa_phone_id_label">📱 Phone Number ID</label>
             <input type="text" id="waPhoneId" placeholder="1234567890" autocomplete="off" />
           </div>
           <div class="form-group">
-            <label for="waToken">🔑 Access Token</label>
+            <label for="waToken" data-i18n="setup.step3.wa_token_label">🔑 Access Token</label>
             <input type="password" id="waToken" placeholder="EAAxxxxxx..." autocomplete="off" />
           </div>
           <div class="form-group">
-            <label for="waRecipient">📞 Número destinatario</label>
+            <label for="waRecipient" data-i18n="setup.step3.wa_recipient_label">📞 Número destinatario</label>
             <input type="text" id="waRecipient" placeholder="521234567890" autocomplete="off" />
           </div>
         </div>
 
         <div class="btn-row">
-          <button class="btn btn-secondary" onclick="goToStep(2)">← Anterior</button>
-          <button class="btn btn-primary" id="saveBtn" onclick="submitSetup()">
+          <button class="btn btn-secondary" data-i18n="setup.step3.prev_btn" onclick="goToStep(2)">← Anterior</button>
+          <button class="btn btn-primary" id="saveBtn" data-i18n="setup.step3.save_btn" onclick="submitSetup()">
             💾 Guardar y comenzar
           </button>
         </div>
@@ -500,6 +523,20 @@
 
   <script>
     let currentStep = 1;
+
+    // ── Region → suggested locale mapping ────────────────────────────────
+    const REGION_LOCALE_MAP = {
+      LA: 'es',
+      US: 'en', EU: 'en', EU2: 'en',
+      DE: 'en', FR: 'en', JP: 'en', AP: 'en',
+      AU: 'en', AE: 'en', CA: 'en', RU: 'en',
+    };
+
+    // Track whether the user has explicitly chosen a language.
+    // An existing stored preference (from a previous visit) also counts.
+    let _userOverridedLocale = (function () {
+      try { return localStorage.getItem('fgm_locale') !== null; } catch (e) { return false; }
+    }());
 
     function goToStep(n) {
       if (n > currentStep && !validateStep(currentStep)) return;
@@ -526,26 +563,26 @@
         const email = document.getElementById('email').value.trim();
         const password = document.getElementById('password').value;
         const dashboardPassword = document.getElementById('dashboardPassword').value;
-        if (!email) { showAlert('Por favor ingresa tu email.', 'error'); return false; }
+        if (!email) { showAlert(window.i18n.t('setup.error.email_required'), 'error'); return false; }
         const emailInput = document.getElementById('email');
         if (!emailInput.checkValidity()) {
-          showAlert('El email no tiene un formato válido.', 'error'); return false;
+          showAlert(window.i18n.t('setup.error.email_invalid'), 'error'); return false;
         }
-        if (!password) { showAlert('Por favor ingresa tu contraseña de LibreLinkUp.', 'error'); return false; }
-        if (!dashboardPassword) { showAlert('Por favor ingresa la contraseña del panel de control.', 'error'); return false; }
-        if (dashboardPassword.length < 8) { showAlert('La contraseña del panel de control debe tener al menos 8 caracteres.', 'error'); return false; }
+        if (!password) { showAlert(window.i18n.t('setup.error.password_required'), 'error'); return false; }
+        if (!dashboardPassword) { showAlert(window.i18n.t('setup.error.dashboard_password_required'), 'error'); return false; }
+        if (dashboardPassword.length < 8) { showAlert(window.i18n.t('setup.error.dashboard_password_length'), 'error'); return false; }
       }
       if (step === 2) {
         const low = parseInt(document.getElementById('lowThreshold').value, 10);
         const high = parseInt(document.getElementById('highThreshold').value, 10);
-        if (isNaN(low) || isNaN(high)) { showAlert('Los umbrales deben ser números.', 'error'); return false; }
+        if (isNaN(low) || isNaN(high)) { showAlert(window.i18n.t('setup.error.threshold_numbers'), 'error'); return false; }
         if (low >= high) {
-          showAlert('El umbral bajo debe ser menor que el umbral alto.', 'error'); return false;
+          showAlert(window.i18n.t('setup.error.threshold_order'), 'error'); return false;
         }
         const cooldown = parseInt(document.getElementById('cooldown').value, 10);
         const maxAge = parseInt(document.getElementById('maxAge').value, 10);
-        if (isNaN(cooldown) || cooldown <= 0) { showAlert('El cooldown debe ser un número positivo.', 'error'); return false; }
-        if (isNaN(maxAge) || maxAge <= 0) { showAlert('La edad máxima de lectura debe ser un número positivo.', 'error'); return false; }
+        if (isNaN(cooldown) || cooldown <= 0) { showAlert(window.i18n.t('setup.error.cooldown_invalid'), 'error'); return false; }
+        if (isNaN(maxAge) || maxAge <= 0) { showAlert(window.i18n.t('setup.error.max_age_invalid'), 'error'); return false; }
       }
       return true;
     }
@@ -578,7 +615,7 @@
       const sel = document.getElementById('tgChatSelect');
 
       if (!token) {
-        msg.textContent = '⚠️ Ingresa primero el token del bot.';
+        msg.textContent = window.i18n.t('setup.tg.enter_token_first');
         msg.className = 'tg-chat-id-msg-error';
         msg.style.display = 'block';
         return;
@@ -586,7 +623,7 @@
 
       const btn = document.getElementById('fetchChatIdBtn');
       btn.disabled = true;
-      btn.textContent = '⏳ Buscando…';
+      btn.textContent = window.i18n.t('setup.tg.searching');
       msg.style.display = 'none';
       sel.style.display = 'none';
 
@@ -599,24 +636,24 @@
         const data = await res.json().catch(() => ({}));
 
         if (!res.ok) {
-          msg.textContent = '⚠️ ' + (data.detail || 'Error al obtener el Chat ID.');
+          msg.textContent = '⚠️ ' + (data.detail || window.i18n.t('setup.tg.connection_error'));
           msg.className = 'tg-chat-id-msg-error';
           msg.style.display = 'block';
         } else if (!data.chats || data.chats.length === 0) {
-          msg.textContent = '⚠️ No se encontraron mensajes. Envía un mensaje a tu bot y vuelve a intentarlo.';
+          msg.textContent = window.i18n.t('setup.tg.no_messages');
           msg.className = 'tg-chat-id-msg-info';
           msg.style.display = 'block';
         } else if (data.chats.length === 1) {
           document.getElementById('tgChatId').value = data.chats[0].id;
-          const label = data.chats[0].name ? ` (${data.chats[0].name})` : '';
-          msg.textContent = `✅ Chat ID obtenido: ${data.chats[0].id}${label}`;
+          const chatLabel = data.chats[0].name ? ` (${data.chats[0].name})` : '';
+          msg.textContent = window.i18n.t('setup.tg.chat_obtained', data.chats[0].id, chatLabel);
           msg.className = 'tg-chat-id-msg-success';
           msg.style.display = 'block';
         } else {
           // Multiple chats found — render a selector
-          const label = document.createElement('label');
-          label.style.cssText = 'font-size:.85rem;font-weight:600';
-          label.textContent = 'Selecciona el chat:';
+          const selectLabel = document.createElement('label');
+          selectLabel.style.cssText = 'font-size:.85rem;font-weight:600';
+          selectLabel.textContent = window.i18n.t('setup.tg.select_chat');
 
           const select = document.createElement('select');
           select.style.cssText = 'width:100%;margin-top:.3rem;padding:.45rem .75rem;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:.9rem';
@@ -631,20 +668,20 @@
             select.appendChild(option);
           }
 
-          sel.replaceChildren(label, select);
+          sel.replaceChildren(selectLabel, select);
           sel.style.display = 'block';
           document.getElementById('tgChatId').value = data.chats[0].id;
-          msg.textContent = `✅ Se encontraron ${data.chats.length} chats. Selecciona el correcto arriba.`;
+          msg.textContent = window.i18n.t('setup.tg.multiple_chats', data.chats.length);
           msg.className = 'tg-chat-id-msg-success';
           msg.style.display = 'block';
         }
       } catch {
-        msg.textContent = '⚠️ Error de conexión al obtener el Chat ID.';
+        msg.textContent = window.i18n.t('setup.tg.connection_error');
         msg.className = 'tg-chat-id-msg-error';
         msg.style.display = 'block';
       } finally {
         btn.disabled = false;
-        btn.textContent = '📥 Obtener Chat ID';
+        btn.textContent = window.i18n.t('setup.step3.tg_get_chatid_btn');
       }
     }
 
@@ -654,7 +691,7 @@
       hideAlert();
       const saveBtn = document.getElementById('saveBtn');
       saveBtn.disabled = true;
-      saveBtn.textContent = 'Guardando…';
+      saveBtn.textContent = window.i18n.t('setup.saving');
 
       const notifType = document.getElementById('notifType').value;
       const payload = {
@@ -697,20 +734,58 @@
         });
 
         if (res.ok) {
-          showAlert('✅ Configuración guardada. Redirigiendo al monitor…', 'success');
+          showAlert(window.i18n.t('setup.success.saved'), 'success');
           setTimeout(() => { window.location.href = '/'; }, 1200);
         } else {
           const data = await res.json().catch(() => ({}));
-          showAlert(data.detail || 'Error al guardar la configuración.', 'error');
+          showAlert(data.detail || window.i18n.t('setup.error.save'), 'error');
           saveBtn.disabled = false;
-          saveBtn.textContent = '💾 Guardar y comenzar';
+          saveBtn.textContent = window.i18n.t('setup.step3.save_btn');
         }
       } catch {
-        showAlert('Error de conexión. Comprueba que el servidor está activo.', 'error');
+        showAlert(window.i18n.t('setup.error.connection'), 'error');
         saveBtn.disabled = false;
-        saveBtn.textContent = '💾 Guardar y comenzar';
+        saveBtn.textContent = window.i18n.t('setup.step3.save_btn');
       }
     }
+
+    // ── Region → language suggestion ─────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', function () {
+      var regionSel = document.getElementById('region');
+      var langBtn = document.getElementById('lang-toggle-btn');
+
+      // Mark override when user clicks the language toggle
+      if (langBtn) {
+        langBtn.addEventListener('click', function () {
+          _userOverridedLocale = true;
+        });
+      }
+
+      if (regionSel) {
+        // Suggest language on region change (only if no explicit override)
+        regionSel.addEventListener('change', function () {
+          if (!_userOverridedLocale) {
+            var suggested = REGION_LOCALE_MAP[this.value];
+            if (suggested && window.i18n) {
+              window.i18n.setLocale(suggested);
+            }
+          }
+        });
+
+        // On first arrival with no stored preference, suggest based on default region
+        if (!_userOverridedLocale) {
+          var initial = REGION_LOCALE_MAP[regionSel.value];
+          if (initial && window.i18n) {
+            window.i18n.setLocale(initial);
+          }
+        }
+      }
+    });
+
+    // Re-apply translations when locale changes (e.g. after toggle click)
+    window.addEventListener('fgm:localechange', function () {
+      window.i18n.applyTranslations();
+    });
   </script>
   <script>
     if ('serviceWorker' in navigator) {
