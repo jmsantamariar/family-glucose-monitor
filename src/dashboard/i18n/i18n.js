@@ -548,6 +548,12 @@
 
   // ── translate ─────────────────────────────────────────────────────────────
   /** Look up a translation key.  {0}, {1}, … are replaced with positional args. */
+  // ── Translation lookup ─────────────────────────────────────────────────────
+  // t(key[, arg0, arg1, ...]) → translated string.
+  // Placeholders {0}, {1}, … in the translation value are replaced with the
+  // extra arguments passed after key.  Example:
+  //   t('setup.tg.chat_obtained', chatId, label)
+  //   → '✅ Chat ID obtenido: 12345 (MyBot)'
   function t(key) {
     var dict = TRANSLATIONS[_locale] || TRANSLATIONS['es'];
     var fallbackDict = TRANSLATIONS['es'];
