@@ -1079,11 +1079,6 @@
   ['tg-token', 'tg-chatid'].forEach(id => {
     document.getElementById(id)?.addEventListener('input', () => setSectionState('notif', null));
   });
-
-  // Re-apply translations when locale changes (e.g. after toggle click)
-  window.addEventListener('fgm:localechange', function () {
-    window.i18n.applyTranslations();
-  });
 </script>
 </body>
 </html>
