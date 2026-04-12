@@ -778,11 +778,6 @@
         }
       }
     });
-
-    // Re-apply translations when locale changes (e.g. after toggle click)
-    window.addEventListener('fgm:localechange', function () {
-      window.i18n.applyTranslations();
-    });
   </script>
   <script>
     if ('serviceWorker' in navigator) {
