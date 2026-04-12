@@ -10,7 +10,7 @@ Covers:
 """
 import re
 import pytest
-from starlette.testclient import TestClient
+from fastapi.testclient import TestClient
 from src.api import app
 
 
