@@ -531,7 +531,7 @@
 
     // Track whether the user has explicitly chosen a language.
     // An existing stored preference (from a previous visit) also counts.
-    let _userOverridedLocale = (function () {
+    let _userOverrodeLocale = (function () {
       try { return localStorage.getItem('fgm_locale') !== null; } catch (e) { return false; }
     }());
 
