@@ -5,7 +5,7 @@ Covers:
 - Presence of data-i18n attributes on key elements.
 - Default region is LA on the setup page.
 - Region → language suggestion logic (REGION_LOCALE_MAP) is present in setup.html.
-- User override tracking (_userOverridedLocale) is present in setup.html.
+- User override tracking (_userOverrodeLocale) is present in setup.html.
 - i18n.js includes placeholder-translation support (data-i18n-placeholder).
 """
 import re
@@ -150,7 +150,7 @@ class TestRegionLocaleSuggestion:
 
     def test_user_override_flag_present(self, client):
         resp = client.get("/setup")
-        assert "_userOverridedLocale" in resp.text
+        assert "_userOverrodeLocale" in resp.text
 
     def test_region_change_listener_present(self, client):
         resp = client.get("/setup")
@@ -159,22 +159,22 @@ class TestRegionLocaleSuggestion:
                "region\").addEventListener" in resp.text
 
     def test_override_is_not_reset_on_region_change(self, client):
-        """The handler must check _userOverridedLocale before applying suggestion."""
+        """The handler must check _userOverrodeLocale before applying suggestion."""
         resp = client.get("/setup")
         html = resp.text
         # The region change handler must guard with the override flag
-        assert "_userOverridedLocale" in html
+        assert "_userOverrodeLocale" in html
         # The change listener block must reference the flag
-        idx_flag = html.find("_userOverridedLocale")
+        idx_flag = html.find("_userOverrodeLocale")
         idx_map = html.find("REGION_LOCALE_MAP")
         assert idx_flag != -1 and idx_map != -1
 
     def test_lang_btn_click_sets_override(self, client):
-        """Clicking the language toggle button must mark _userOverridedLocale = true."""
+        """Clicking the language toggle button must mark _userOverrodeLocale = true."""
         resp = client.get("/setup")
         html = resp.text
         # The click listener on lang-toggle-btn must set the override flag
-        assert "_userOverridedLocale = true" in html
+        assert "_userOverrodeLocale = true" in html
 
 
 # ── i18n.js: placeholder substitution in t() ─────────────────────────────────
@@ -262,3 +262,81 @@ class TestFuturePlaceholderKeys:
     def test_footer_disclaimer_key_present_in_both_locales(self, client):
         resp = client.get("/i18n/i18n.js")
         assert resp.text.count("'footer.disclaimer'") >= 2  # at least ES + EN
+
+
+# ── Telegram step list i18n ───────────────────────────────────────────────────
+
+class TestTelegramStepsI18n:
+    """Telegram guide steps must use data-i18n so they are translated."""
+
+    def test_tg_step1_uses_split_spans(self, client):
+        resp = client.get("/setup")
+        assert 'data-i18n="setup.step3.tg_guide_step1_pre"' in resp.text
+        assert 'data-i18n="setup.step3.tg_guide_step1_suf"' in resp.text
+
+    def test_tg_step1_preserves_botfather_link(self, client):
+        resp = client.get("/setup")
+        assert 'href="https://t.me/BotFather"' in resp.text
+
+    def test_tg_step2_uses_data_i18n(self, client):
+        resp = client.get("/setup")
+        assert 'data-i18n="setup.step3.tg_guide_step2"' in resp.text
+
+    def test_tg_step3_uses_data_i18n(self, client):
+        resp = client.get("/setup")
+        assert 'data-i18n="setup.step3.tg_guide_step3"' in resp.text
+
+    def test_tg_step1_split_keys_in_i18n_js(self, client):
+        resp = client.get("/i18n/i18n.js")
+        assert "setup.step3.tg_guide_step1_pre" in resp.text
+        assert "setup.step3.tg_guide_step1_suf" in resp.text
+
+    def test_no_hardcoded_tg_steps(self, client):
+        resp = client.get("/setup")
+        # Step 1's prefix text must only appear inside a data-i18n span (not as bare HTML)
+        assert 'data-i18n="setup.step3.tg_guide_step1_pre"' in resp.text
+        # Step 2 and step 3 must carry data-i18n, not be bare text on <li>
+        assert 'data-i18n="setup.step3.tg_guide_step2"' in resp.text
+        assert 'data-i18n="setup.step3.tg_guide_step3"' in resp.text
+        # The un-wrapped bare HTML from the original hard-coded structure must be gone
+        assert 'Habla con <a' not in resp.text
+
+
+# ── configuracion.html dashboard auth note splits ────────────────────────────
+
+class TestDashboardAuthNoteSplits:
+    """The dashboard auth note must use split spans to preserve link and code markup."""
+
+    def test_auth_note_uses_split_spans(self, client):
+        resp = client.get("/configuracion")
+        assert 'data-i18n="config.dashboard_auth_note_pre"' in resp.text
+        assert 'data-i18n="config.dashboard_auth_note_mid"' in resp.text
+        assert 'data-i18n="config.dashboard_auth_note_suf"' in resp.text
+
+    def test_auth_note_preserves_setup_link(self, client):
+        resp = client.get("/configuracion")
+        assert 'href="/setup"' in resp.text
+
+    def test_auth_note_preserves_config_yaml_code(self, client):
+        resp = client.get("/configuracion")
+        assert '<code>config.yaml</code>' in resp.text
+
+    def test_auth_note_split_keys_in_i18n_js(self, client):
+        resp = client.get("/i18n/i18n.js")
+        assert "config.dashboard_auth_note_pre" in resp.text
+        assert "config.dashboard_auth_note_mid" in resp.text
+        assert "config.dashboard_auth_note_suf" in resp.text
+
+
+# ── _userOverrodeLocale consistent naming ────────────────────────────────────
+
+class TestUserOverrodeLocaleNaming:
+    """The variable must be consistently named _userOverrodeLocale."""
+
+    def test_no_old_typo_variable(self, client):
+        resp = client.get("/setup")
+        assert "_userOverridedLocale" not in resp.text
+
+    def test_correct_variable_name_declared(self, client):
+        resp = client.get("/setup")
+        assert "_userOverrodeLocale" in resp.text

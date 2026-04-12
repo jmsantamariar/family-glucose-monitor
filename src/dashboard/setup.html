@@ -461,9 +461,9 @@
           <div class="tg-guide">
             <p data-i18n="setup.step3.tg_guide_intro">Sigue estos pasos para configurar las notificaciones de Telegram:</p>
             <ol class="tg-steps">
-              <li>Habla con <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer">@BotFather</a> → escribe <code>/newbot</code> → copia el <strong>token</strong> en el campo de abajo.</li>
-              <li>Abre tu bot nuevo en Telegram y envíale cualquier mensaje (por ejemplo, <em>Hola</em>).</li>
-              <li>Haz clic en <strong>"📥 <span data-i18n="setup.step3.tg_get_chatid_btn">Obtener Chat ID</span>"</strong> para que se rellene automáticamente.</li>
+              <li><span data-i18n="setup.step3.tg_guide_step1_pre">Habla con </span><a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer">@BotFather</a><span data-i18n="setup.step3.tg_guide_step1_suf"> → escribe /newbot → copia el token en el campo de abajo.</span></li>
+              <li data-i18n="setup.step3.tg_guide_step2">Abre tu bot nuevo en Telegram y envíale cualquier mensaje (por ejemplo, Hola).</li>
+              <li data-i18n="setup.step3.tg_guide_step3">Haz clic en "📥 Obtener Chat ID" para que se rellene automáticamente.</li>
             </ol>
           </div>
           <div class="form-group">
@@ -754,14 +754,14 @@
       // Mark override when user clicks the language toggle
       if (langBtn) {
         langBtn.addEventListener('click', function () {
-          _userOverridedLocale = true;
+          _userOverrodeLocale = true;
         });
       }
 
       if (regionSel) {
         // Suggest language on region change (only if no explicit override)
         regionSel.addEventListener('change', function () {
-          if (!_userOverridedLocale) {
+          if (!_userOverrodeLocale) {
             var suggested = REGION_LOCALE_MAP[this.value];
             if (suggested && window.i18n) {
               window.i18n.setLocale(suggested);
@@ -770,7 +770,7 @@
         });
 
         // On first arrival with no stored preference, suggest based on default region
-        if (!_userOverridedLocale) {
+        if (!_userOverrodeLocale) {
           var initial = REGION_LOCALE_MAP[regionSel.value];
           if (initial && window.i18n) {
             window.i18n.setLocale(initial);

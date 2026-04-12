@@ -611,12 +611,8 @@
       <h3 id="section-dashboard-auth" data-i18n="config.section.dashboard_auth.title">🔐 Acceso al dashboard</h3>
     </div>
     <div class="card-body">
-      <p style="font-size:.88rem;color:var(--subtext);" data-i18n="config.dashboard_auth_note">
-        El cambio de usuario y contraseña del dashboard no está disponible en esta pantalla.
-        Para modificarlo, usa el asistente inicial desde
-        <a href="/setup" style="color:var(--accent);">/setup</a>
-        (requiere reconfigurar el sistema completo) o edita manualmente
-        <code>config.yaml</code> con un hash PBKDF2 generado.
+      <p style="font-size:.88rem;color:var(--subtext);">
+        <span data-i18n="config.dashboard_auth_note_pre">El cambio de usuario y contraseña del dashboard no está disponible en esta pantalla. Para modificarlo, usa el asistente inicial desde </span><a href="/setup" style="color:var(--accent);">/setup</a><span data-i18n="config.dashboard_auth_note_mid"> (requiere reconfigurar el sistema completo) o edita manualmente </span><code>config.yaml</code><span data-i18n="config.dashboard_auth_note_suf"> con un hash PBKDF2 generado.</span>
       </p>
     </div>
   </section>
