@@ -1,0 +1,1513 @@
+<!DOCTYPE html>
+<html lang="es" data-mode="modern">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FGM // dual view modes mockup v2</title>
+  <style>
+    /* ============================================================
+       SISTEMA DE MODOS — variables por modo
+       ============================================================ */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root[data-mode="senior"] {
+      --font-base: 20px;
+      --font-h1: 34px;
+      --font-h2: 26px;
+      --font-h3: 22px;
+      --font-glucose: 72px;
+      --font-small: 18px;
+      --font-stack: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      --color-bg: #f7f3ec;
+      --color-surface: #ffffff;
+      --color-surface-2: #f0ebe1;
+      --color-text: #111111;
+      --color-text-secondary: #4a4036;
+      --color-border: #2a2620;
+      --color-border-strong: #111111;
+      --color-accent: #1a4d2e;
+      --color-normal: #1f7a3a;
+      --color-normal-bg: #e8f5ec;
+      --color-warning: #8a6212;
+      --color-warning-bg: #fdf3d4;
+      --color-critical: #a01818;
+      --color-critical-bg: #fde4e4;
+      --color-low: #1e5b8c;
+      --color-low-bg: #dbeaf6;
+      --border-width: 2px;
+      --radius: 6px;
+      --gap: 24px;
+      --pad-card: 28px;
+      --touch-target: 56px;
+      --transition: none;
+    }
+
+    :root[data-mode="modern"] {
+      --font-base: 13px;
+      --font-h1: 22px;
+      --font-h2: 16px;
+      --font-h3: 13px;
+      --font-glucose: 32px;
+      --font-small: 11px;
+      --font-stack: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      --color-bg: #14110c;
+      --color-surface: #1c1813;
+      --color-surface-2: #251f17;
+      --color-surface-3: #2e271d;
+      --color-text: #f0e6d2;
+      --color-text-secondary: #a89880;
+      --color-text-dim: #6b5d48;
+      --color-border: #2a2418;
+      --color-border-strong: #3a3225;
+      --color-accent: #d4a85a;
+      --color-normal: #7cc97f;
+      --color-normal-dim: #4a7a4c;
+      --color-normal-bg: rgba(124, 201, 127, 0.1);
+      --color-warning: #d99e3a;
+      --color-warning-dim: #8a6422;
+      --color-warning-bg: rgba(217, 158, 58, 0.1);
+      --color-critical: #d96666;
+      --color-critical-dim: #8a3838;
+      --color-critical-bg: rgba(217, 102, 102, 0.1);
+      --color-baseline: #b89cd8;
+      --border-width: 1px;
+      --radius: 4px;
+      --gap: 20px;
+      --pad-card: 20px;
+      --touch-target: 36px;
+      --transition: all 200ms ease-out;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      :root[data-mode="modern"] { --transition: none; }
+      * { animation: none !important; }
+    }
+
+    /* ============================================================
+       BASE
+       ============================================================ */
+    html, body { background: var(--color-bg); }
+    body {
+      font-family: var(--font-stack);
+      font-size: var(--font-base);
+      color: var(--color-text);
+      min-height: 100vh;
+      line-height: 1.5;
+      transition: var(--transition);
+    }
+    h1 { font-size: var(--font-h1); font-weight: 700; letter-spacing: -0.02em; }
+    h2 { font-size: var(--font-h2); font-weight: 700; letter-spacing: -0.015em; }
+    h3 { font-size: var(--font-h3); font-weight: 600; }
+
+    .senior-only, .modern-only { display: none; }
+    :root[data-mode="senior"] .senior-only { display: revert; }
+    :root[data-mode="modern"] .modern-only { display: revert; }
+    :root[data-mode="senior"] .senior-only-grid { display: grid; }
+    :root[data-mode="modern"] .modern-only-grid { display: grid; }
+    :root[data-mode="senior"] .senior-only-flex { display: flex; }
+    :root[data-mode="modern"] .modern-only-flex { display: flex; }
+
+    .sr-only {
+      position: absolute; width: 1px; height: 1px;
+      padding: 0; margin: -1px; overflow: hidden;
+      clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+    }
+
+    /* ============================================================
+       META BAR (mockup-only, no del producto)
+       ============================================================ */
+    .meta-bar {
+      position: sticky; top: 0; z-index: 100;
+      background: var(--color-bg);
+      border-bottom: var(--border-width) solid var(--color-border);
+      padding: 12px 24px;
+      display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    }
+    :root[data-mode="modern"] .meta-bar { background: rgba(20, 17, 12, 0.92); backdrop-filter: blur(12px); }
+    .meta-bar-label {
+      font-size: var(--font-small);
+      color: var(--color-text-secondary);
+      letter-spacing: 0.05em; text-transform: uppercase; font-weight: 600;
+    }
+    .meta-bar small { font-size: 12px; color: var(--color-text-secondary); margin-left: auto; }
+
+    /* ============================================================
+       MODE TOGGLE — componente real del producto
+       ============================================================ */
+    .mode-toggle {
+      display: inline-flex;
+      background: var(--color-surface-2);
+      border: var(--border-width) solid var(--color-border);
+      border-radius: var(--radius);
+      padding: 4px; gap: 4px;
+    }
+    .mode-toggle button {
+      background: transparent; border: none;
+      color: var(--color-text-secondary);
+      font-family: var(--font-stack);
+      font-size: var(--font-small); font-weight: 600;
+      cursor: pointer; padding: 8px 16px;
+      border-radius: calc(var(--radius) - 2px);
+      min-height: var(--touch-target);
+      display: inline-flex; align-items: center; gap: 8px;
+      transition: var(--transition);
+    }
+    .mode-toggle button:hover { background: var(--color-surface); color: var(--color-text); }
+    .mode-toggle button[aria-pressed="true"] {
+      background: var(--color-surface);
+      color: var(--color-text);
+      border: var(--border-width) solid var(--color-border-strong);
+    }
+    :root[data-mode="senior"] .mode-toggle button { padding: 12px 20px; font-size: 18px; font-weight: 700; }
+
+    /* ============================================================
+       PAGE CONTAINER
+       ============================================================ */
+    .page-section { max-width: 1280px; margin: 32px auto; padding: 0 24px; }
+    .page-label {
+      font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase;
+      color: var(--color-text-secondary); font-weight: 700;
+      margin-bottom: 12px; padding-bottom: 8px;
+      border-bottom: 1px dashed var(--color-border);
+    }
+    :root[data-mode="senior"] .page-label { font-size: 14px; color: var(--color-text); }
+
+    /* ============================================================
+       DASHBOARD HEADER (común a ambos modos)
+       ============================================================ */
+    .dash-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: var(--pad-card);
+      background: var(--color-surface);
+      border: var(--border-width) solid var(--color-border);
+      border-radius: var(--radius);
+      margin-bottom: var(--gap);
+      flex-wrap: wrap; gap: 16px;
+    }
+    .dash-title { display: flex; align-items: center; gap: 14px; }
+    .dash-icon {
+      width: 36px; height: 36px;
+      background: var(--color-critical);
+      clip-path: polygon(50% 0%, 100% 60%, 75% 100%, 25% 100%, 0% 60%);
+      flex-shrink: 0;
+    }
+    :root[data-mode="senior"] .dash-icon { width: 44px; height: 44px; }
+    .dash-title-text { display: flex; flex-direction: column; }
+    .dash-title-name {
+      font-size: var(--font-h2); font-weight: 700; letter-spacing: -0.01em;
+    }
+    :root[data-mode="modern"] .dash-title-name { font-family: var(--font-stack); font-size: 22px; font-weight: 800; }
+    :root[data-mode="modern"] .dash-title-name em { font-style: normal; color: var(--color-accent); }
+    :root[data-mode="senior"] .dash-title-name em { font-style: normal; color: var(--color-accent); }
+    .dash-title-meta {
+      font-size: var(--font-small);
+      color: var(--color-text-secondary);
+      margin-top: 2px;
+    }
+    .dash-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .live-pill {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 12px;
+      background: var(--color-normal-bg);
+      border: var(--border-width) solid var(--color-normal);
+      border-radius: var(--radius);
+      color: var(--color-normal);
+      font-size: var(--font-small); font-weight: 700;
+      letter-spacing: 0.05em;
+    }
+    .live-pill::before {
+      content: ''; width: 8px; height: 8px; border-radius: 50%;
+      background: var(--color-normal);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .icon-btn {
+      min-height: var(--touch-target); min-width: var(--touch-target);
+      padding: 8px 14px;
+      background: var(--color-surface-2);
+      border: var(--border-width) solid var(--color-border);
+      border-radius: var(--radius);
+      color: var(--color-text);
+      font-family: var(--font-stack);
+      font-size: var(--font-small); font-weight: 600;
+      cursor: pointer;
+      display: inline-flex; align-items: center; gap: 8px;
+      transition: var(--transition);
+    }
+    .icon-btn:hover { background: var(--color-surface); border-color: var(--color-border-strong); }
+    :root[data-mode="modern"] .icon-btn:hover { transform: translateY(-1px); }
+
+    /* ============================================================
+       BANNER DEMO
+       ============================================================ */
+    .banner-demo {
+      padding: 12px 20px;
+      background: var(--color-warning-bg);
+      border: var(--border-width) solid var(--color-warning);
+      border-radius: var(--radius);
+      color: var(--color-warning);
+      font-weight: 700; font-size: var(--font-small);
+      margin-bottom: var(--gap); text-align: center;
+    }
+    :root[data-mode="senior"] .banner-demo { color: #6b4f0a; font-size: 18px; }
+
+    /* ============================================================
+       SECTION TITLE (modern only — barras laterales)
+       ============================================================ */
+    .section-title {
+      font-weight: 700; font-size: 14px;
+      letter-spacing: 0.05em; text-transform: uppercase;
+      margin-bottom: 16px;
+      color: var(--color-accent);
+      display: flex; align-items: center; gap: 12px;
+    }
+    .section-title::after { content: ''; flex: 1; height: 1px; background: var(--color-border); }
+    .section-title small {
+      font-family: var(--font-stack); font-size: 10px;
+      color: var(--color-text-dim);
+      letter-spacing: 0.1em; font-weight: 400; text-transform: none;
+    }
+
+    /* ============================================================
+       SENIOR — patient cards (versión grande accesible)
+       ============================================================ */
+    .senior-patient-grid {
+      grid-template-columns: 1fr;
+      gap: var(--gap);
+      margin-bottom: var(--gap);
+    }
+    @media (min-width: 900px) {
+      :root[data-mode="senior"] .senior-patient-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    .senior-patient-card {
+      background: var(--color-surface);
+      border: 3px solid var(--color-border);
+      border-radius: var(--radius);
+      padding: 32px;
+    }
+    :root[data-mode="senior"] .senior-patient-card.normal { border-color: var(--color-normal); }
+    :root[data-mode="senior"] .senior-patient-card.warning { border-color: var(--color-warning); }
+    :root[data-mode="senior"] .senior-patient-card.critical { border-color: var(--color-critical); }
+
+    .senior-patient-name { font-size: 32px; font-weight: 700; margin-bottom: 16px; }
+
+    .senior-status-pill {
+      display: inline-flex; align-items: center; gap: 10px;
+      padding: 14px 22px;
+      border-radius: var(--radius);
+      font-size: 22px; font-weight: 700;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      border: 3px solid;
+      margin-bottom: 24px;
+    }
+    .senior-status-pill.normal { background: var(--color-normal-bg); color: var(--color-normal); border-color: var(--color-normal); }
+    .senior-status-pill.warning { background: var(--color-warning-bg); color: var(--color-warning); border-color: var(--color-warning); }
+    .senior-status-pill.critical { background: var(--color-critical-bg); color: var(--color-critical); border-color: var(--color-critical); }
+    .senior-status-pill::before { font-size: 26px; }
+    .senior-status-pill.normal::before { content: '✓'; }
+    .senior-status-pill.warning::before { content: '!'; }
+    .senior-status-pill.critical::before { content: '⚠'; }
+
+    .senior-glucose-row {
+      display: flex; align-items: baseline; gap: 16px;
+      margin-bottom: 20px;
+    }
+    .senior-glucose-value {
+      font-size: 72px; font-weight: 700;
+      letter-spacing: -0.04em; line-height: 1;
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+    }
+    :root[data-mode="senior"] .senior-glucose-value.normal { color: var(--color-normal); }
+    :root[data-mode="senior"] .senior-glucose-value.warning { color: var(--color-warning); }
+    :root[data-mode="senior"] .senior-glucose-value.critical { color: var(--color-critical); }
+    .senior-glucose-unit { font-size: 22px; color: var(--color-text-secondary); font-weight: 600; }
+
+    .senior-trend-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 18px;
+      background: var(--color-surface-2);
+      border-radius: var(--radius);
+      margin-bottom: 20px;
+      font-size: 22px; font-weight: 700;
+    }
+    .senior-trend-arrow { font-size: 32px; line-height: 1; }
+
+    .senior-meta-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      padding-top: 20px;
+      border-top: 2px solid var(--color-border);
+    }
+    .senior-meta-item { display: flex; flex-direction: column; gap: 4px; }
+    .senior-meta-label { font-size: 16px; color: var(--color-text-secondary); font-weight: 600; }
+    .senior-meta-value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+    /* SENIOR — alertas (tabla simple, no narrativa) */
+    .senior-alerts-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      background: var(--color-surface);
+      border: 2px solid var(--color-border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .senior-alerts-table thead {
+      background: var(--color-surface-2);
+    }
+    .senior-alerts-table th {
+      text-align: left;
+      padding: 16px 20px;
+      font-size: 18px;
+      font-weight: 700;
+      border-bottom: 2px solid var(--color-border);
+    }
+    .senior-alerts-table td {
+      padding: 18px 20px;
+      font-size: 20px;
+      border-bottom: 1px solid var(--color-border);
+    }
+    .senior-alerts-table tr:last-child td { border-bottom: none; }
+    .senior-alerts-table .alert-level {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 14px;
+      border-radius: var(--radius);
+      font-weight: 700;
+      border: 2px solid;
+    }
+    .senior-alerts-table .alert-level.critical {
+      background: var(--color-critical-bg); color: var(--color-critical); border-color: var(--color-critical);
+    }
+    .senior-alerts-table .alert-level.critical::before { content: '⚠'; }
+
+    /* ============================================================
+       MODERN — patient cards (v2: radial + vs mediana + mini-stats)
+       ============================================================ */
+    .modern-family-strip {
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: var(--gap);
+      margin-bottom: var(--gap);
+    }
+    @media (max-width: 1100px) { :root[data-mode="modern"] .modern-family-strip { grid-template-columns: 1fr; } }
+
+    .modern-patient-card {
+      background: var(--color-surface);
+      border: var(--border-width) solid var(--color-border);
+      border-radius: var(--radius);
+      padding: var(--pad-card);
+      position: relative; overflow: hidden;
+      transition: var(--transition);
+    }
+    .modern-patient-card:hover { transform: translateY(-2px); border-color: var(--color-border-strong); }
+    .modern-patient-card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    }
+    .modern-patient-card.normal::before { background: var(--color-normal); }
+    .modern-patient-card.warning::before { background: var(--color-warning); }
+    .modern-patient-card.critical::before { background: var(--color-critical); }
+
+    .modern-patient-header {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      margin-bottom: 14px; gap: 12px;
+    }
+    .modern-patient-name {
+      font-weight: 700; font-size: 15px; letter-spacing: -0.01em;
+      margin-bottom: 2px;
+    }
+    .modern-patient-meta {
+      font-size: 10px; color: var(--color-text-secondary);
+      letter-spacing: 0.1em; text-transform: uppercase;
+    }
+    .modern-status-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 8px; border-radius: 2px;
+      font-size: 9px; letter-spacing: 0.15em; text-transform: uppercase; font-weight: 700;
+      border: var(--border-width) solid;
+    }
+    .modern-status-pill.normal { background: var(--color-normal-bg); color: var(--color-normal); border-color: rgba(124, 201, 127, 0.3); }
+    .modern-status-pill.warning { background: var(--color-warning-bg); color: var(--color-warning); border-color: rgba(217, 158, 58, 0.3); }
+    .modern-status-pill.critical { background: var(--color-critical-bg); color: var(--color-critical); border-color: rgba(217, 102, 102, 0.3); }
+
+    .modern-patient-body {
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      gap: 16px; align-items: center;
+    }
+    .modern-patient-radial { width: 140px; height: 140px; }
+    .modern-patient-stats { display: flex; flex-direction: column; gap: 10px; }
+    .modern-patient-current { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+    .modern-current-value {
+      font-family: var(--font-mono);
+      font-size: 32px; font-weight: 700; letter-spacing: -0.04em;
+      font-variant-numeric: tabular-nums; line-height: 1;
+    }
+    .modern-current-value.normal { color: var(--color-normal); }
+    .modern-current-value.warning { color: var(--color-warning); }
+    .modern-current-value.critical { color: var(--color-critical); }
+    .modern-current-unit {
+      font-size: 10px; color: var(--color-text-secondary);
+      letter-spacing: 0.1em; text-transform: uppercase;
+    }
+    .modern-trend { font-size: 18px; font-weight: 700; line-height: 1; }
+
+    .modern-vsbase {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 11px; color: var(--color-text-secondary);
+    }
+    .modern-vsbase strong { color: var(--color-baseline); font-weight: 700; font-variant-numeric: tabular-nums; }
+    .modern-vsbase-bar {
+      flex: 1; height: 3px;
+      background: var(--color-border-strong);
+      border-radius: 2px; position: relative; overflow: hidden;
+    }
+    .modern-vsbase-bar::after {
+      content: ''; position: absolute; left: 50%; top: -2px;
+      width: 1px; height: 7px; background: var(--color-baseline);
+    }
+    .modern-vsbase-fill { height: 100%; }
+    .modern-vsbase-fill.normal { background: var(--color-normal); }
+    .modern-vsbase-fill.warning { background: var(--color-warning); }
+    .modern-vsbase-fill.critical { background: var(--color-critical); }
+
+    .modern-mini-stats {
+      display: grid; grid-template-columns: 1fr 1fr 1fr;
+      gap: 4px;
+      padding-top: 8px;
+      border-top: 1px solid var(--color-border);
+    }
+    .modern-mini-stat { display: flex; flex-direction: column; gap: 2px; }
+    .modern-mini-label {
+      font-size: 8px; color: var(--color-text-dim);
+      letter-spacing: 0.15em; text-transform: uppercase;
+    }
+    .modern-mini-value {
+      font-family: var(--font-mono);
+      font-size: 12px; font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .modern-patient-last {
+      font-size: 10px; color: var(--color-text-dim);
+      letter-spacing: 0.1em;
+      margin-top: 8px; padding-top: 8px;
+      border-top: 1px solid var(--color-border);
+      display: flex; justify-content: space-between;
+    }
+
+    /* ============================================================
+       MODERN — heatmap + TIR row
+       ============================================================ */
+    .modern-row {
+      grid-template-columns: 1fr 1fr;
+      gap: var(--gap);
+      margin-bottom: var(--gap);
+    }
+    @media (max-width: 1000px) { :root[data-mode="modern"] .modern-row { grid-template-columns: 1fr; } }
+
+    .modern-panel {
+      background: var(--color-surface);
+      border: var(--border-width) solid var(--color-border);
+      border-radius: var(--radius);
+      padding: var(--pad-card);
+    }
+    .modern-panel-header {
+      display: flex; justify-content: space-between; align-items: baseline;
+      margin-bottom: 14px;
+    }
+    .modern-panel-title {
+      font-weight: 700; font-size: 12px;
+      letter-spacing: 0.1em; text-transform: uppercase;
+    }
+    .modern-panel-subtitle {
+      font-size: 9px; color: var(--color-text-secondary);
+      letter-spacing: 0.15em; text-transform: uppercase;
+    }
+
+    .modern-patient-tabs { display: flex; gap: 6px; margin-bottom: 16px; }
+    .modern-patient-tab {
+      padding: 5px 12px;
+      background: transparent;
+      border: 1px solid var(--color-border-strong);
+      border-radius: 2px;
+      color: var(--color-text-secondary);
+      font-family: var(--font-stack);
+      font-size: 10px; font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.05em;
+      transition: var(--transition);
+    }
+    .modern-patient-tab:hover { background: var(--color-surface-2); color: var(--color-text); }
+    .modern-patient-tab.active { background: var(--color-surface-2); color: var(--color-accent); border-color: var(--color-accent); }
+
+    .heatmap-wrapper { display: grid; grid-template-columns: 32px 1fr; gap: 4px; }
+    .heatmap-day-labels { display: flex; flex-direction: column; gap: 2px; padding-top: 18px; }
+    .heatmap-day {
+      height: 18px; font-size: 9px;
+      color: var(--color-text-secondary);
+      letter-spacing: 0.1em; text-transform: uppercase;
+      display: flex; align-items: center;
+    }
+    .heatmap-content { min-width: 0; }
+    .heatmap-hours {
+      display: grid; grid-template-columns: repeat(24, 1fr);
+      gap: 2px; margin-bottom: 4px;
+    }
+    .heatmap-hour-label {
+      font-size: 8px; color: var(--color-text-dim);
+      text-align: center; letter-spacing: 0.05em;
+      font-family: var(--font-mono);
+    }
+    .heatmap-grid { display: grid; grid-template-rows: repeat(7, 18px); gap: 2px; }
+    .heatmap-row-cells { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; }
+    .heatmap-cell { border-radius: 2px; cursor: pointer; transition: transform 0.1s; }
+    .heatmap-cell:hover { transform: scale(1.3); }
+    .heatmap-legend {
+      display: flex; align-items: center; gap: 8px;
+      margin-top: 12px; font-size: 9px;
+      color: var(--color-text-secondary);
+      letter-spacing: 0.1em; text-transform: uppercase;
+    }
+    .heatmap-legend-cells { display: flex; gap: 2px; }
+    .legend-cell { width: 12px; height: 12px; border-radius: 2px; }
+
+    /* TIR */
+    .tir-bar {
+      height: 32px; display: flex;
+      border-radius: 3px; overflow: hidden;
+      margin-bottom: 10px;
+      border: 1px solid var(--color-border-strong);
+    }
+    .tir-segment {
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700;
+      font-family: var(--font-mono);
+    }
+    .tir-labels {
+      display: grid; gap: 4px; font-size: 8px;
+      color: var(--color-text-secondary);
+      letter-spacing: 0.1em; text-transform: uppercase;
+    }
+    .tir-stats {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 1px; background: var(--color-border);
+      border: 1px solid var(--color-border);
+      border-radius: 3px; margin-top: 16px; overflow: hidden;
+    }
+    .tir-stat { background: var(--color-surface); padding: 12px 14px; }
+    .tir-stat-label {
+      font-size: 9px; color: var(--color-text-secondary);
+      letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 4px;
+    }
+    .tir-stat-value {
+      font-family: var(--font-mono);
+      font-size: 18px; font-weight: 700;
+      font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+    }
+    .tir-stat-delta { font-size: 9px; margin-top: 4px; color: var(--color-text-secondary); }
+
+    /* ============================================================
+       MODERN — alertas narrativas
+       ============================================================ */
+    .alerts-grid {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px; margin-bottom: var(--gap);
+    }
+    @media (max-width: 800px) { :root[data-mode="modern"] .alerts-grid { grid-template-columns: 1fr; } }
+    .alert-card {
+      background: var(--color-surface);
+      border: var(--border-width) solid var(--color-border);
+      border-radius: var(--radius);
+      padding: 18px;
+      position: relative; overflow: hidden;
+    }
+    .alert-card::before {
+      content: ''; position: absolute; top: 0; left: 0; bottom: 0; width: 3px;
+    }
+    .alert-card.warning::before { background: var(--color-warning); }
+    .alert-card.critical::before { background: var(--color-critical); }
+    .alert-header {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      margin-bottom: 10px;
+    }
+    .alert-meta { display: flex; flex-direction: column; gap: 2px; }
+    .alert-patient { font-weight: 700; font-size: 14px; letter-spacing: -0.01em; }
+    .alert-time {
+      font-family: var(--font-mono); font-size: 10px;
+      color: var(--color-text-secondary); letter-spacing: 0.1em;
+    }
+    .alert-value-block { text-align: right; }
+    .alert-value {
+      font-family: var(--font-mono);
+      font-size: 26px; font-weight: 700;
+      font-variant-numeric: tabular-nums; letter-spacing: -0.03em; line-height: 1;
+    }
+    .alert-value.warning { color: var(--color-warning); }
+    .alert-value.critical { color: var(--color-critical); }
+    .alert-value-unit { font-size: 9px; color: var(--color-text-secondary); letter-spacing: 0.15em; }
+    .alert-context {
+      font-size: 11px; color: var(--color-text-secondary);
+      line-height: 1.6; margin-bottom: 12px;
+    }
+    .alert-context strong { color: var(--color-text); font-weight: 700; }
+    .alert-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+    .alert-tag {
+      padding: 3px 8px;
+      background: var(--color-surface-3);
+      border-radius: 2px; font-size: 9px;
+      color: var(--color-text-secondary);
+      letter-spacing: 0.15em; text-transform: uppercase; font-weight: 700;
+    }
+    .alert-tag.atypical { color: var(--color-warning); }
+    .alert-tag.predictive { color: var(--color-baseline); }
+    .alert-mini-trend {
+      height: 32px; margin-top: 12px;
+      padding-top: 10px; border-top: 1px solid var(--color-border);
+    }
+
+    /* ============================================================
+       FORMS (config / login / setup)
+       ============================================================ */
+    .form-card {
+      background: var(--color-surface);
+      border: var(--border-width) solid var(--color-border);
+      border-radius: var(--radius);
+      padding: var(--pad-card);
+      max-width: 540px; margin: 0 auto;
+    }
+    .form-title { font-size: var(--font-h2); font-weight: 700; margin-bottom: 8px; }
+    .form-subtitle {
+      font-size: var(--font-small);
+      color: var(--color-text-secondary);
+      margin-bottom: 24px;
+    }
+    :root[data-mode="senior"] .form-subtitle { font-size: 18px; }
+    .field-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+    .field-label { font-weight: 700; font-size: var(--font-small); color: var(--color-text); }
+    :root[data-mode="senior"] .field-label { font-size: 18px; }
+    .field-help {
+      font-size: var(--font-small);
+      color: var(--color-text-secondary);
+      margin-top: -4px;
+    }
+    :root[data-mode="senior"] .field-help { font-size: 16px; }
+    .field-input {
+      min-height: var(--touch-target);
+      padding: 10px 14px;
+      font-family: var(--font-stack); font-size: var(--font-base);
+      background: var(--color-surface-2);
+      border: var(--border-width) solid var(--color-border);
+      border-radius: var(--radius);
+      color: var(--color-text);
+      transition: var(--transition); width: 100%;
+    }
+    .field-input:focus {
+      outline: 2px solid var(--color-accent);
+      outline-offset: 2px;
+      border-color: var(--color-accent);
+    }
+    :root[data-mode="senior"] .field-input { padding: 14px 16px; font-size: 20px; }
+    .btn-primary {
+      min-height: var(--touch-target);
+      padding: 10px 22px;
+      background: var(--color-accent);
+      border: var(--border-width) solid var(--color-accent);
+      border-radius: var(--radius);
+      color: #14110c;
+      font-family: var(--font-stack);
+      font-size: var(--font-base); font-weight: 700;
+      cursor: pointer; transition: var(--transition);
+    }
+    :root[data-mode="senior"] .btn-primary { color: white; }
+    .btn-primary:hover { filter: brightness(1.1); }
+    :root[data-mode="modern"] .btn-primary:hover { transform: translateY(-1px); }
+    :root[data-mode="senior"] .btn-primary { padding: 16px 32px; font-size: 22px; font-weight: 700; width: 100%; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 640px) { .form-row { grid-template-columns: 1fr; } }
+
+    /* SETUP stepper */
+    .stepper { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; gap: 8px; }
+    .step { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .step-num {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: var(--color-surface-2);
+      border: var(--border-width) solid var(--color-border);
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 14px;
+    }
+    .step.active .step-num { background: var(--color-accent); color: #14110c; border-color: var(--color-accent); }
+    :root[data-mode="senior"] .step.active .step-num { color: white; }
+    .step.done .step-num { background: var(--color-normal); color: white; border-color: var(--color-normal); }
+    .step-label { font-size: var(--font-small); color: var(--color-text-secondary); font-weight: 600; }
+    .step.active .step-label { color: var(--color-text); }
+    :root[data-mode="senior"] .step-num { width: 48px; height: 48px; font-size: 18px; }
+    :root[data-mode="senior"] .step-label { font-size: 16px; }
+
+    /* DISCLAIMER */
+    .disclaimer {
+      max-width: 1280px; margin: 32px auto;
+      padding: 16px 24px;
+      background: var(--color-warning-bg);
+      border: var(--border-width) solid var(--color-warning);
+      border-radius: var(--radius);
+      color: var(--color-warning);
+      font-size: var(--font-small); line-height: 1.6;
+    }
+    :root[data-mode="senior"] .disclaimer { color: #6b4f0a; font-size: 18px; }
+    .disclaimer strong { display: block; margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+
+  <!-- ====================== META BAR ====================== -->
+  <div class="meta-bar" role="region" aria-label="Mockup controls">
+    <span class="meta-bar-label">Mockup · dual view modes v2</span>
+    <div class="mode-toggle" role="group" aria-label="Cambiar vista">
+      <button id="btn-senior" aria-pressed="false" onclick="setMode('senior')">
+        <span aria-hidden="true">👵</span> Abuelos
+      </button>
+      <button id="btn-modern" aria-pressed="true" onclick="setMode('modern')">
+        <span aria-hidden="true">🚀</span> Moderno
+      </button>
+    </div>
+    <small>v[siguiente] · feat/dual-view-modes</small>
+  </div>
+
+  <!-- ====================== DASHBOARD ====================== -->
+  <section class="page-section" aria-labelledby="dash-heading">
+    <div class="page-label">→ src/dashboard/index.html</div>
+
+    <div class="banner-demo" role="status">
+      <span aria-hidden="true">⚠</span> DEMO — datos ficticios. No conectado a LibreLinkUp real.
+    </div>
+
+    <div class="dash-header">
+      <div class="dash-title">
+        <div class="dash-icon" aria-hidden="true"></div>
+        <div class="dash-title-text">
+          <h1 id="dash-heading" class="dash-title-name">Family <em>Glucose</em> Monitor</h1>
+          <span class="dash-title-meta">Última actualización: 06/04 20:57</span>
+        </div>
+      </div>
+      <div class="dash-actions">
+        <span class="live-pill"><span class="sr-only">Estado:</span>LIVE</span>
+        <button class="icon-btn" type="button"><span aria-hidden="true">🔔</span> Activar push</button>
+        <button class="icon-btn" type="button"><span aria-hidden="true">⚙</span> Configuración</button>
+      </div>
+    </div>
+
+    <!-- ============= SENIOR DASHBOARD ============= -->
+    <div class="senior-only">
+      <div class="senior-only-grid senior-patient-grid">
+
+        <article class="senior-patient-card normal" aria-labelledby="ana-name-s">
+          <h2 id="ana-name-s" class="senior-patient-name">Ana García</h2>
+          <span class="senior-status-pill normal">NORMAL</span>
+          <div class="senior-glucose-row" aria-label="Glucosa actual: 116 mg/dL">
+            <span class="senior-glucose-value normal">116</span>
+            <span class="senior-glucose-unit">mg/dL</span>
+          </div>
+          <div class="senior-trend-row">
+            <span class="senior-trend-arrow" aria-hidden="true" style="color: var(--color-normal);">→</span>
+            <span>Estable</span>
+          </div>
+          <div class="senior-meta-row">
+            <div class="senior-meta-item">
+              <span class="senior-meta-label">Última lectura</span>
+              <span class="senior-meta-value">hace 3 min</span>
+            </div>
+            <div class="senior-meta-item">
+              <span class="senior-meta-label">Promedio hoy</span>
+              <span class="senior-meta-value">115</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="senior-patient-card critical" aria-labelledby="carlos-name-s">
+          <h2 id="carlos-name-s" class="senior-patient-name">Carlos López</h2>
+          <span class="senior-status-pill critical">ALERTA ALTA</span>
+          <div class="senior-glucose-row" aria-label="Glucosa actual: 212 mg/dL, alerta alta">
+            <span class="senior-glucose-value critical">212</span>
+            <span class="senior-glucose-unit">mg/dL</span>
+          </div>
+          <div class="senior-trend-row">
+            <span class="senior-trend-arrow" aria-hidden="true" style="color: var(--color-critical);">↗</span>
+            <span>Subiendo</span>
+          </div>
+          <div class="senior-meta-row">
+            <div class="senior-meta-item">
+              <span class="senior-meta-label">Última lectura</span>
+              <span class="senior-meta-value">hace 2 min</span>
+            </div>
+            <div class="senior-meta-item">
+              <span class="senior-meta-label">Promedio hoy</span>
+              <span class="senior-meta-value">187</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="senior-patient-card normal" aria-labelledby="elena-name-s">
+          <h2 id="elena-name-s" class="senior-patient-name">Elena Martínez</h2>
+          <span class="senior-status-pill normal">NORMAL</span>
+          <div class="senior-glucose-row" aria-label="Glucosa actual: 134 mg/dL">
+            <span class="senior-glucose-value normal">134</span>
+            <span class="senior-glucose-unit">mg/dL</span>
+          </div>
+          <div class="senior-trend-row">
+            <span class="senior-trend-arrow" aria-hidden="true" style="color: var(--color-normal);">→</span>
+            <span>Estable</span>
+          </div>
+          <div class="senior-meta-row">
+            <div class="senior-meta-item">
+              <span class="senior-meta-label">Última lectura</span>
+              <span class="senior-meta-value">hace 5 min</span>
+            </div>
+            <div class="senior-meta-item">
+              <span class="senior-meta-label">Promedio hoy</span>
+              <span class="senior-meta-value">132</span>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <!-- SENIOR alerts table -->
+      <h2 style="margin: 32px 0 16px;">Alertas recientes</h2>
+      <table class="senior-alerts-table" aria-label="Alertas recientes de glucosa">
+        <thead>
+          <tr>
+            <th>Hora</th>
+            <th>Paciente</th>
+            <th>Glucosa</th>
+            <th>Nivel</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>20:28</td>
+            <td><strong>Carlos</strong></td>
+            <td><strong>216 mg/dL</strong></td>
+            <td><span class="alert-level critical">ALERTA ALTA</span></td>
+          </tr>
+          <tr>
+            <td>17:01</td>
+            <td><strong>Carlos</strong></td>
+            <td><strong>211 mg/dL</strong></td>
+            <td><span class="alert-level critical">ALERTA ALTA</span></td>
+          </tr>
+          <tr>
+            <td>16:25</td>
+            <td><strong>Carlos</strong></td>
+            <td><strong>222 mg/dL</strong></td>
+            <td><span class="alert-level critical">ALERTA ALTA</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ============= MODERN DASHBOARD ============= -->
+    <div class="modern-only">
+      <div class="section-title">vista familiar <small>· estado en vivo · 3 pacientes</small></div>
+
+      <div class="modern-only-grid modern-family-strip">
+
+        <!-- Ana -->
+        <article class="modern-patient-card normal">
+          <div class="modern-patient-header">
+            <div>
+              <div class="modern-patient-name">Ana García</div>
+              <div class="modern-patient-meta">FreeStyle Libre 3</div>
+            </div>
+            <span class="modern-status-pill normal">en rango</span>
+          </div>
+          <div class="modern-patient-body">
+            <svg class="modern-patient-radial" id="radial-ana" viewBox="0 0 140 140"></svg>
+            <div class="modern-patient-stats">
+              <div class="modern-patient-current">
+                <div class="modern-current-value normal">116</div>
+                <div class="modern-current-unit">mg/dL</div>
+                <div class="modern-trend" style="color: var(--color-normal);">→</div>
+              </div>
+              <div class="modern-vsbase">
+                <span>vs su mediana</span>
+                <strong>118</strong>
+                <div class="modern-vsbase-bar"><div class="modern-vsbase-fill normal" style="width: 48%;"></div></div>
+              </div>
+              <div class="modern-mini-stats">
+                <div class="modern-mini-stat">
+                  <div class="modern-mini-label">TIR</div>
+                  <div class="modern-mini-value" style="color: var(--color-normal);">82%</div>
+                </div>
+                <div class="modern-mini-stat">
+                  <div class="modern-mini-label">CV</div>
+                  <div class="modern-mini-value">19%</div>
+                </div>
+                <div class="modern-mini-stat">
+                  <div class="modern-mini-label">GMI</div>
+                  <div class="modern-mini-value">5.7</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modern-patient-last">
+            <span>hace 3 min</span>
+            <span>↑ 130 ø 115 ↓ 100</span>
+          </div>
+        </article>
+
+        <!-- Carlos -->
+        <article class="modern-patient-card critical">
+          <div class="modern-patient-header">
+            <div>
+              <div class="modern-patient-name">Carlos López</div>
+              <div class="modern-patient-meta">FreeStyle Libre 3</div>
+            </div>
+            <span class="modern-status-pill critical">alta</span>
+          </div>
+          <div class="modern-patient-body">
+            <svg class="modern-patient-radial" id="radial-carlos" viewBox="0 0 140 140"></svg>
+            <div class="modern-patient-stats">
+              <div class="modern-patient-current">
+                <div class="modern-current-value critical">212</div>
+                <div class="modern-current-unit">mg/dL</div>
+                <div class="modern-trend" style="color: var(--color-critical);">↗</div>
+              </div>
+              <div class="modern-vsbase">
+                <span>vs su mediana</span>
+                <strong>195</strong>
+                <div class="modern-vsbase-bar"><div class="modern-vsbase-fill critical" style="width: 72%;"></div></div>
+              </div>
+              <div class="modern-mini-stats">
+                <div class="modern-mini-stat">
+                  <div class="modern-mini-label">TIR</div>
+                  <div class="modern-mini-value" style="color: var(--color-warning);">31%</div>
+                </div>
+                <div class="modern-mini-stat">
+                  <div class="modern-mini-label">CV</div>
+                  <div class="modern-mini-value">28%</div>
+                </div>
+                <div class="modern-mini-stat">
+                  <div class="modern-mini-label">GMI</div>
+                  <div class="modern-mini-value">7.4</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modern-patient-last">
+            <span>hace 2 min</span>
+            <span>↑ 222 ø 207 ↓ 178</span>
+          </div>
+        </article>
+
+        <!-- Elena -->
+        <article class="modern-patient-card normal">
+          <div class="modern-patient-header">
+            <div>
+              <div class="modern-patient-name">Elena Martínez</div>
+              <div class="modern-patient-meta">FreeStyle Libre 3</div>
+            </div>
+            <span class="modern-status-pill normal">en rango</span>
+          </div>
+          <div class="modern-patient-body">
+            <svg class="modern-patient-radial" id="radial-elena" viewBox="0 0 140 140"></svg>
+            <div class="modern-patient-stats">
+              <div class="modern-patient-current">
+                <div class="modern-current-value normal">134</div>
+                <div class="modern-current-unit">mg/dL</div>
+                <div class="modern-trend" style="color: var(--color-normal);">→</div>
+              </div>
+              <div class="modern-vsbase">
+                <span>vs su mediana</span>
+                <strong>128</strong>
+                <div class="modern-vsbase-bar"><div class="modern-vsbase-fill normal" style="width: 54%;"></div></div>
+              </div>
+              <div class="modern-mini-stats">
+                <div class="modern-mini-stat">
+                  <div class="modern-mini-label">TIR</div>
+                  <div class="modern-mini-value" style="color: var(--color-normal);">76%</div>
+                </div>
+                <div class="modern-mini-stat">
+                  <div class="modern-mini-label">CV</div>
+                  <div class="modern-mini-value">22%</div>
+                </div>
+                <div class="modern-mini-stat">
+                  <div class="modern-mini-label">GMI</div>
+                  <div class="modern-mini-value">6.1</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modern-patient-last">
+            <span>hace 5 min</span>
+            <span>↑ 150 ø 140 ↓ 131</span>
+          </div>
+        </article>
+      </div>
+
+      <!-- MODERN heatmap + TIR -->
+      <div class="section-title">patrones por paciente <small>· últimos 7 días</small></div>
+      <div class="modern-only-grid modern-row">
+        <div class="modern-panel">
+          <div class="modern-panel-header">
+            <div class="modern-panel-title">heatmap de alertas 7×24</div>
+            <div class="modern-panel-subtitle">L–D · 00–23h</div>
+          </div>
+          <div class="modern-patient-tabs">
+            <button class="modern-patient-tab">Ana</button>
+            <button class="modern-patient-tab active">Carlos</button>
+            <button class="modern-patient-tab">Elena</button>
+          </div>
+          <div class="heatmap-wrapper">
+            <div class="heatmap-day-labels">
+              <div class="heatmap-day">L</div>
+              <div class="heatmap-day">M</div>
+              <div class="heatmap-day">X</div>
+              <div class="heatmap-day">J</div>
+              <div class="heatmap-day">V</div>
+              <div class="heatmap-day">S</div>
+              <div class="heatmap-day">D</div>
+            </div>
+            <div class="heatmap-content">
+              <div class="heatmap-hours" id="heatmap-hours"></div>
+              <div class="heatmap-grid" id="heatmap-grid"></div>
+            </div>
+          </div>
+          <div class="heatmap-legend">
+            <span>menos</span>
+            <div class="heatmap-legend-cells">
+              <div class="legend-cell" style="background: var(--color-surface-3);"></div>
+              <div class="legend-cell" style="background: rgba(217, 102, 102, 0.2);"></div>
+              <div class="legend-cell" style="background: rgba(217, 102, 102, 0.45);"></div>
+              <div class="legend-cell" style="background: rgba(217, 102, 102, 0.7);"></div>
+              <div class="legend-cell" style="background: var(--color-critical);"></div>
+            </div>
+            <span>más alertas</span>
+            <span style="margin-left: auto; color: var(--color-warning);">patrón: martes &amp; viernes 16–18h</span>
+          </div>
+        </div>
+
+        <div class="modern-panel">
+          <div class="modern-panel-header">
+            <div class="modern-panel-title">tiempo en rango · Carlos</div>
+            <div class="modern-panel-subtitle">últimos 7 días</div>
+          </div>
+          <div class="tir-bar">
+            <div class="tir-segment" style="flex: 4; background: var(--color-critical-dim); color: #ffe4e4;">4%</div>
+            <div class="tir-segment" style="flex: 8; background: rgba(217, 102, 102, 0.4); color: #ffe4e4;">8%</div>
+            <div class="tir-segment" style="flex: 31; background: var(--color-normal-dim); color: #d4f5d6;">31%</div>
+            <div class="tir-segment" style="flex: 37; background: var(--color-warning-dim); color: #fde9b6;">37%</div>
+            <div class="tir-segment" style="flex: 20; background: rgba(217, 102, 102, 0.55); color: #ffe4e4;">20%</div>
+          </div>
+          <div class="tir-labels" style="grid-template-columns: 4fr 8fr 31fr 37fr 20fr;">
+            <div>&lt;54</div>
+            <div>54–69</div>
+            <div>70–180</div>
+            <div>181–249</div>
+            <div>&gt;250</div>
+          </div>
+          <div class="tir-stats">
+            <div class="tir-stat">
+              <div class="tir-stat-label">tiempo &gt; 180</div>
+              <div class="tir-stat-value" style="color: var(--color-warning);">57%</div>
+              <div class="tir-stat-delta">obj &lt;25%</div>
+            </div>
+            <div class="tir-stat">
+              <div class="tir-stat-label">vs semana ant.</div>
+              <div class="tir-stat-value" style="color: var(--color-normal);">+4%</div>
+              <div class="tir-stat-delta">en rango</div>
+            </div>
+            <div class="tir-stat">
+              <div class="tir-stat-label">eventos hoy</div>
+              <div class="tir-stat-value">6</div>
+              <div class="tir-stat-delta">altas activas</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- MODERN narrative alerts -->
+      <div class="section-title">alertas activas <small>· con contexto y proyección</small></div>
+      <div class="modern-only-grid alerts-grid">
+        <div class="alert-card critical">
+          <div class="alert-header">
+            <div class="alert-meta">
+              <div class="alert-patient">Carlos López</div>
+              <div class="alert-time">06/04 · 20:28 · hace 2 min</div>
+            </div>
+            <div class="alert-value-block">
+              <div class="alert-value critical">216</div>
+              <div class="alert-value-unit">mg/dL ↗</div>
+            </div>
+          </div>
+          <div class="alert-context">
+            Pico actual <strong>+27 mg/dL sobre su mediana de martes</strong> (189). Subiendo ~14 mg/dL cada 15 min. Última dosis registrada hace 5h 12min.
+          </div>
+          <div class="alert-tags">
+            <span class="alert-tag atypical">atípico para martes</span>
+            <span class="alert-tag predictive">prob. &gt;220 en 30min: 78%</span>
+            <span class="alert-tag">cuarta alerta hoy</span>
+          </div>
+          <div class="alert-mini-trend">
+            <svg viewBox="0 0 320 32" style="width: 100%; height: 100%;" id="trend-carlos-1" preserveAspectRatio="none"></svg>
+          </div>
+        </div>
+
+        <div class="alert-card warning">
+          <div class="alert-header">
+            <div class="alert-meta">
+              <div class="alert-patient">Carlos López</div>
+              <div class="alert-time">06/04 · 17:01 · hace 3h</div>
+            </div>
+            <div class="alert-value-block">
+              <div class="alert-value warning">211</div>
+              <div class="alert-value-unit">mg/dL →</div>
+            </div>
+          </div>
+          <div class="alert-context">
+            Excursión postprandial <strong>97 min sobre umbral</strong>. Patrón semanal recurrente: alto martes y viernes 16–18h en últimas 4 semanas.
+          </div>
+          <div class="alert-tags">
+            <span class="alert-tag">postprandial</span>
+            <span class="alert-tag atypical">patrón recurrente</span>
+            <span class="alert-tag">resuelta 18:38</span>
+          </div>
+          <div class="alert-mini-trend">
+            <svg viewBox="0 0 320 32" style="width: 100%; height: 100%;" id="trend-carlos-2" preserveAspectRatio="none"></svg>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ====================== CONFIGURACIÓN ====================== -->
+  <section class="page-section" aria-labelledby="config-heading">
+    <div class="page-label">→ src/dashboard/configuracion.html</div>
+    <div class="form-card">
+      <h2 id="config-heading" class="form-title">Configuración</h2>
+      <p class="form-subtitle">Edita umbrales, credenciales y notificaciones. Los cambios se aplican sin reiniciar.</p>
+      <div class="field-group">
+        <label class="field-label" for="cfg-low">Umbral bajo (mg/dL)</label>
+        <span class="field-help" id="cfg-low-help">Por debajo de este valor se envía alerta BAJA</span>
+        <input class="field-input" id="cfg-low" type="number" value="70" aria-describedby="cfg-low-help" />
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="cfg-high">Umbral alto (mg/dL)</label>
+        <span class="field-help" id="cfg-high-help">Por encima de este valor se envía alerta ALTA</span>
+        <input class="field-input" id="cfg-high" type="number" value="180" aria-describedby="cfg-high-help" />
+      </div>
+      <div class="form-row">
+        <div class="field-group">
+          <label class="field-label" for="cfg-cooldown">Cooldown (min)</label>
+          <input class="field-input" id="cfg-cooldown" type="number" value="20" />
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="cfg-region">Región</label>
+          <select class="field-input" id="cfg-region">
+            <option>EU</option><option>US</option><option>LA</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn-primary" type="submit">Guardar cambios</button>
+    </div>
+  </section>
+
+  <!-- ====================== LOGIN ====================== -->
+  <section class="page-section" aria-labelledby="login-heading">
+    <div class="page-label">→ src/dashboard/login.html</div>
+    <div class="form-card">
+      <h2 id="login-heading" class="form-title">Iniciar sesión</h2>
+      <p class="form-subtitle">Acceso al dashboard familiar de glucosa.</p>
+      <div class="field-group">
+        <label class="field-label" for="lg-user">Usuario</label>
+        <input class="field-input" id="lg-user" type="text" autocomplete="username" />
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="lg-pass">Contraseña</label>
+        <input class="field-input" id="lg-pass" type="password" autocomplete="current-password" />
+      </div>
+      <button class="btn-primary" type="submit">Entrar</button>
+    </div>
+  </section>
+
+  <!-- ====================== SETUP ====================== -->
+  <section class="page-section" aria-labelledby="setup-heading">
+    <div class="page-label">→ src/dashboard/setup.html · paso 1 de 4</div>
+    <div class="form-card">
+      <div class="stepper" role="list" aria-label="Pasos del setup">
+        <div class="step active" role="listitem" aria-current="step">
+          <div class="step-num">1</div><span class="step-label">Cuenta</span>
+        </div>
+        <div class="step" role="listitem">
+          <div class="step-num">2</div><span class="step-label">Umbrales</span>
+        </div>
+        <div class="step" role="listitem">
+          <div class="step-num">3</div><span class="step-label">Notif.</span>
+        </div>
+        <div class="step" role="listitem">
+          <div class="step-num">4</div><span class="step-label">Listo</span>
+        </div>
+      </div>
+      <h2 id="setup-heading" class="form-title">Conecta tu cuenta de LibreLinkUp</h2>
+      <p class="form-subtitle">Usa el email y contraseña con los que recibes las lecturas.</p>
+      <div class="field-group">
+        <label class="field-label" for="su-email">Email</label>
+        <input class="field-input" id="su-email" type="email" autocomplete="email" />
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="su-pass">Contraseña</label>
+        <input class="field-input" id="su-pass" type="password" />
+      </div>
+      <button class="btn-primary" type="submit">Continuar →</button>
+    </div>
+  </section>
+
+  <div class="disclaimer" role="note">
+    <strong>Este no es un dispositivo médico.</strong>
+    Esta herramienta es solo para referencia informativa y no reemplaza la atención médica profesional ni los sistemas de alarma del medidor de glucosa.
+  </div>
+
+  <script>
+    // ============================================================
+    // VIEW MODE CONTROLLER (extract → src/dashboard/view-mode.js)
+    // ============================================================
+    (function () {
+      var STORAGE_KEY = 'fgm-view-mode';
+      var DEFAULT_MODE = 'modern';
+
+      function detectInitialMode() {
+        try {
+          var saved = localStorage.getItem(STORAGE_KEY);
+          if (saved === 'senior' || saved === 'modern') return saved;
+        } catch (e) { /* localStorage may be unavailable */ }
+        var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        var moreContrast = window.matchMedia && window.matchMedia('(prefers-contrast: more)').matches;
+        if (reduceMotion && moreContrast) return 'senior';
+        return DEFAULT_MODE;
+      }
+
+      function applyMode(mode) {
+        document.documentElement.setAttribute('data-mode', mode);
+        var btnSenior = document.getElementById('btn-senior');
+        var btnModern = document.getElementById('btn-modern');
+        if (btnSenior) btnSenior.setAttribute('aria-pressed', String(mode === 'senior'));
+        if (btnModern) btnModern.setAttribute('aria-pressed', String(mode === 'modern'));
+      }
+
+      window.setMode = function (mode) {
+        if (mode !== 'senior' && mode !== 'modern') return;
+        try { localStorage.setItem(STORAGE_KEY, mode); } catch (e) { /* ignore */ }
+        applyMode(mode);
+      };
+
+      applyMode(detectInitialMode());
+    })();
+
+    // ============================================================
+    // GLUCOSE CURVE GENERATION (modern radial)
+    // ============================================================
+    function generatePatientCurve(profile) {
+      var points = [];
+      for (var i = 0; i < 144; i++) {
+        var hour = i / 6;
+        var v = profile.baseline;
+        if (hour >= 7.5 && hour < 10) {
+          var t = (hour - 7.5) / 2.5;
+          if (t < 0.4) v += t * profile.peak1 * 2.5;
+          else v += profile.peak1 * (1 - (t - 0.4) * 1.4);
+        } else if (hour >= 13.5 && hour < 16) {
+          var t2 = (hour - 13.5) / 2.5;
+          if (t2 < 0.4) v += t2 * profile.peak2 * 2.5;
+          else v += profile.peak2 * (1 - (t2 - 0.4) * 1.4);
+        } else if (hour >= 19.5 && hour < 22) {
+          var t3 = (hour - 19.5) / 2.5;
+          if (t3 < 0.4) v += t3 * profile.peak3 * 2.5;
+          else v += profile.peak3 * (1 - (t3 - 0.4) * 1.4);
+        } else if (hour >= 4 && hour < 7) {
+          v += (hour - 4) * 4;
+        }
+        v += (Math.random() - 0.5) * 8;
+        points.push({ hour: hour, value: Math.max(60, Math.min(280, v)) });
+      }
+      return points;
+    }
+
+    function colorForValue(v) {
+      if (v < 70) return '#d96666';
+      if (v < 80) return '#d99e3a';
+      if (v <= 140) return '#7cc97f';
+      if (v <= 180) return '#a3c977';
+      if (v <= 250) return '#d99e3a';
+      return '#d96666';
+    }
+
+    // ============================================================
+    // RADIAL CLOCK (modern only)
+    // ============================================================
+    function renderMiniRadial(svgId, curve, nowHour, nowVal) {
+      var svg = document.getElementById(svgId);
+      if (!svg) return;
+      var cx = 70, cy = 70, innerR = 24, outerR = 60;
+      var minVal = 50, maxVal = 280;
+
+      function valueToRadius(v) { return innerR + ((v - minVal) / (maxVal - minVal)) * (outerR - innerR); }
+      function angleForHour(h) { return (h / 24) * 2 * Math.PI - Math.PI / 2; }
+      function pointFor(h, v) {
+        var a = angleForHour(h);
+        var r = valueToRadius(v);
+        return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+      }
+
+      var html = '';
+      html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + outerR + '" fill="none" stroke="#2a2418" stroke-width="0.5"/>';
+      html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + innerR + '" fill="none" stroke="#2a2418" stroke-width="0.5"/>';
+      html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + valueToRadius(70).toFixed(1) + '" fill="none" stroke="#3a3225" stroke-width="0.4" stroke-dasharray="1.5 3"/>';
+      html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + valueToRadius(180).toFixed(1) + '" fill="none" stroke="#3a3225" stroke-width="0.4" stroke-dasharray="1.5 3"/>';
+
+      for (var h = 0; h < 24; h += 6) {
+        var a = angleForHour(h);
+        var x1 = cx + (outerR + 2) * Math.cos(a);
+        var y1 = cy + (outerR + 2) * Math.sin(a);
+        var x2 = cx + (outerR + 6) * Math.cos(a);
+        var y2 = cy + (outerR + 6) * Math.sin(a);
+        html += '<line x1="' + x1.toFixed(1) + '" y1="' + y1.toFixed(1) + '" x2="' + x2.toFixed(1) + '" y2="' + y2.toFixed(1) + '" stroke="#a89880" stroke-width="0.8"/>';
+        var labelR = outerR + 12;
+        var lx = cx + labelR * Math.cos(a);
+        var ly = cy + labelR * Math.sin(a);
+        html += '<text x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1) + '" fill="#6b5d48" font-family="ui-monospace, monospace" font-size="7" text-anchor="middle" dominant-baseline="central" letter-spacing="0.05em">' + (h < 10 ? '0' + h : h) + '</text>';
+      }
+
+      // Curve
+      var segments = [];
+      var cur = null;
+      for (var i = 0; i < curve.length; i++) {
+        var color = colorForValue(curve[i].value);
+        var p = pointFor(curve[i].hour, curve[i].value);
+        if (!cur || cur.color !== color) {
+          if (cur) cur.points.push(p);
+          cur = { color: color, points: [p] };
+          segments.push(cur);
+        } else {
+          cur.points.push(p);
+        }
+      }
+      for (var s = 0; s < segments.length; s++) {
+        var pts = segments[s].points.map(function (p) { return p.x.toFixed(1) + ',' + p.y.toFixed(1); }).join(' ');
+        html += '<polyline points="' + pts + '" stroke="' + segments[s].color + '" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="0.9"/>';
+      }
+
+      // NOW marker
+      var nowAngle = angleForHour(nowHour);
+      var nowOX = cx + (outerR + 2) * Math.cos(nowAngle);
+      var nowOY = cy + (outerR + 2) * Math.sin(nowAngle);
+      var nowIX = cx + innerR * Math.cos(nowAngle);
+      var nowIY = cy + innerR * Math.sin(nowAngle);
+      html += '<line x1="' + nowIX.toFixed(1) + '" y1="' + nowIY.toFixed(1) + '" x2="' + nowOX.toFixed(1) + '" y2="' + nowOY.toFixed(1) + '" stroke="#f0e6d2" stroke-width="0.6" stroke-dasharray="2 2" opacity="0.5"/>';
+
+      var nowPoint = pointFor(nowHour, nowVal);
+      var nowColor = colorForValue(nowVal);
+      html += '<circle cx="' + nowPoint.x.toFixed(1) + '" cy="' + nowPoint.y.toFixed(1) + '" r="4" fill="' + nowColor + '" opacity="0.25"/>';
+      html += '<circle cx="' + nowPoint.x.toFixed(1) + '" cy="' + nowPoint.y.toFixed(1) + '" r="2.5" fill="#14110c" stroke="' + nowColor + '" stroke-width="1.4"/>';
+      html += '<text x="' + cx + '" y="' + (cy + 2) + '" fill="#a89880" font-family="ui-monospace, monospace" font-size="9" text-anchor="middle" letter-spacing="0.05em" font-weight="700">24h</text>';
+
+      svg.innerHTML = html;
+    }
+
+    // ============================================================
+    // HEATMAP (modern only)
+    // ============================================================
+    function renderHeatmap() {
+      var hoursEl = document.getElementById('heatmap-hours');
+      var gridEl = document.getElementById('heatmap-grid');
+      if (!hoursEl || !gridEl) return;
+
+      var hoursHtml = '';
+      for (var h = 0; h < 24; h++) {
+        hoursHtml += '<div class="heatmap-hour-label">' + (h % 3 === 0 ? (h < 10 ? '0' + h : h) : '') + '</div>';
+      }
+      hoursEl.innerHTML = hoursHtml;
+
+      var days = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+      var gridHtml = '';
+      for (var d = 0; d < 7; d++) {
+        var rowHtml = '<div class="heatmap-row-cells">';
+        for (var hh = 0; hh < 24; hh++) {
+          var intensity = 0;
+          if (hh >= 4 && hh <= 7 && Math.random() > 0.5) intensity = 1;
+          if ((d === 1 || d === 4) && hh >= 16 && hh <= 18) intensity = 4;
+          if ((hh >= 9 && hh <= 11) || (hh >= 15 && hh <= 17) || (hh >= 21 && hh <= 22)) {
+            intensity = Math.max(intensity, Math.random() > 0.5 ? 2 : 1);
+          }
+          if (d === 0 && hh >= 20) intensity = 4;
+          if (Math.random() > 0.85 && intensity === 0) intensity = 1;
+
+          var bg;
+          switch (intensity) {
+            case 0: bg = 'var(--color-surface-3)'; break;
+            case 1: bg = 'rgba(217, 102, 102, 0.2)'; break;
+            case 2: bg = 'rgba(217, 102, 102, 0.45)'; break;
+            case 3: bg = 'rgba(217, 102, 102, 0.7)'; break;
+            case 4: bg = 'var(--color-critical)'; break;
+          }
+          var tooltip = days[d] + ' ' + (hh < 10 ? '0' + hh : hh) + ':00 — ' + (intensity * 2) + ' alertas';
+          rowHtml += '<div class="heatmap-cell" style="background:' + bg + ';" title="' + tooltip + '"></div>';
+        }
+        rowHtml += '</div>';
+        gridHtml += rowHtml;
+      }
+      gridEl.innerHTML = gridHtml;
+    }
+
+    // ============================================================
+    // MINI TREND (modern only)
+    // ============================================================
+    function renderMiniTrend(svgId, points, color) {
+      var svg = document.getElementById(svgId);
+      if (!svg) return;
+      var w = 320, h = 32;
+      var min = Math.min.apply(null, points);
+      var max = Math.max.apply(null, points);
+      var range = max - min || 1;
+
+      var pts = '';
+      for (var i = 0; i < points.length; i++) {
+        var x = (i / (points.length - 1)) * w;
+        var y = h - 4 - ((points[i] - min) / range) * (h - 12);
+        pts += x.toFixed(1) + ',' + y.toFixed(1) + ' ';
+      }
+
+      var lastY = h - 4 - ((points[points.length - 1] - min) / range) * (h - 12);
+      svg.innerHTML =
+        '<polyline points="' + pts + '" stroke="' + color + '" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<circle cx="' + (w - 2) + '" cy="' + lastY.toFixed(1) + '" r="2.5" fill="' + color + '"/>';
+    }
+
+    // ============================================================
+    // INIT (modern visuals)
+    // ============================================================
+    var NOW_HOUR = 20.95;
+    var ana = generatePatientCurve({ baseline: 95, peak1: 30, peak2: 25, peak3: 28 });
+    var carlos = generatePatientCurve({ baseline: 145, peak1: 65, peak2: 75, peak3: 70 });
+    var elena = generatePatientCurve({ baseline: 110, peak1: 35, peak2: 40, peak3: 35 });
+
+    renderMiniRadial('radial-ana', ana, NOW_HOUR, 116);
+    renderMiniRadial('radial-carlos', carlos, NOW_HOUR, 212);
+    renderMiniRadial('radial-elena', elena, NOW_HOUR, 134);
+    renderHeatmap();
+    renderMiniTrend('trend-carlos-1', [178, 182, 188, 195, 201, 208, 212, 216], '#d96666');
+    renderMiniTrend('trend-carlos-2', [165, 178, 195, 211, 207, 198, 182, 165], '#d99e3a');
+
+    // Patient tab toggle (decorative)
+    var tabs = document.querySelectorAll('.modern-patient-tab');
+    for (var t = 0; t < tabs.length; t++) {
+      tabs[t].addEventListener('click', function (e) {
+        for (var x = 0; x < tabs.length; x++) tabs[x].classList.remove('active');
+        e.currentTarget.classList.add('active');
+      });
+    }
+  </script>
+</body>
+</html>
