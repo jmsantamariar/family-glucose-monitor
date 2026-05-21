@@ -92,5 +92,9 @@
   "alert_level.trend": "TREND",
   "lang.toggle": "Change language",
   "header.settings_aria_label": "Go to system settings",
-  "header.logout_title": "Log out"
+  "header.logout_title": "Log out",
+  "header.mode_toggle_btn": "Senior Mode",
+  "header.mode_toggle_to_senior": "Senior Mode",
+  "header.mode_toggle_to_modern": "Normal Mode",
+  "header.mode_toggle_aria_label": "Switch between Senior mode (large text) and Normal mode"
 }
