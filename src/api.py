@@ -43,6 +43,7 @@ from fastapi import Query
 
 from src import alert_engine
 from src.alert_history import get_alerts
+from src.analytics.glycemic_metrics import compute_metrics as _compute_glycemic_metrics
 from src.auth import hash_password, is_configured, session_manager, verify_credentials
 from src.bootstrap import check_config_writable
 from src.config_schema import validate_config as schema_validate_config
@@ -507,6 +508,60 @@ def export_patient_history(
             ),
         },
     )
+
+
+@app.get("/api/patients/{patient_id}/metrics", response_class=JSONResponse)
+def get_patient_metrics(
+    patient_id: str,
+    days: int = Query(default=14, ge=1, le=365),
+):
+    """Return standard glycemic-control metrics for *patient_id* over *days* days.
+
+    Metrics computed (see ``src.analytics.glycemic_metrics``):
+    descriptive stats (mean/median/stdev/min/max), TIR five-bucket
+    breakdown (severe-low/low/in-range/high/severe-high), GMI, CV, MAGE.
+
+    Default window is 14 days — the minimum considered clinically useful
+    by the 2019 International Consensus on TIR. Clamped to [1, 365].
+
+    Returns 404 if the patient is not in the in-memory cache.
+    Auth is enforced by the global middleware (401 if no session).
+
+    Response shape::
+
+        {
+            "patient_id": "...",
+            "patient_name": "...",
+            "period_days": 14,
+            "first_reading_at": "<ISO-8601 or None>",
+            "last_reading_at":  "<ISO-8601 or None>",
+            "generated_at":     "<ISO-8601 UTC now>",
+            "metrics": { ...flat dict from compute_metrics()... }
+        }
+    """
+    _load_and_enrich_cache()
+    with _cache_lock:
+        patient = _readings_cache.get(patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    patient_name = patient.get("patient_name", patient_id)
+    rh_path = get_reading_history_db_path(_config)
+    readings = _reading_history.get_readings(rh_path, patient_id=patient_id, days=days)
+    metrics = _compute_glycemic_metrics(readings)
+
+    first_at = readings[0]["timestamp"] if readings else None
+    last_at = readings[-1]["timestamp"] if readings else None
+
+    return {
+        "patient_id": patient_id,
+        "patient_name": patient_name,
+        "period_days": days,
+        "first_reading_at": first_at,
+        "last_reading_at": last_at,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "metrics": metrics,
+    }
 
 
 @app.get("/api/health", response_class=JSONResponse)
