@@ -340,3 +340,114 @@ class TestUserOverrodeLocaleNaming:
     def test_correct_variable_name_declared(self, client):
         resp = client.get("/setup")
         assert "_userOverrodeLocale" in resp.text
+
+
+# ── Senior mode toggle (elder-friendly accessibility) ────────────────────────
+
+class TestSeniorModeToggle:
+    """The senior/modern mode toggle must be wired across all dashboard pages."""
+
+    # Bootstrap script (applies data-mode before first render) on all 4 pages
+
+    def test_index_has_mode_bootstrap(self, client):
+        resp = client.get("/")
+        assert "localStorage.getItem('fgm-mode')" in resp.text
+        assert "data-mode" in resp.text
+
+    def test_login_has_mode_bootstrap(self, client, monkeypatch):
+        monkeypatch.setattr("src.api.is_configured", lambda: True)
+        resp = client.get("/login")
+        assert "localStorage.getItem('fgm-mode')" in resp.text
+
+    def test_setup_has_mode_bootstrap(self, client):
+        resp = client.get("/setup")
+        assert "localStorage.getItem('fgm-mode')" in resp.text
+
+    def test_configuracion_has_mode_bootstrap(self, client):
+        resp = client.get("/configuracion")
+        assert "localStorage.getItem('fgm-mode')" in resp.text
+
+    # CSS senior block present on all 4 pages
+
+    def test_index_has_senior_css_block(self, client):
+        resp = client.get("/")
+        assert ':root[data-mode="senior"]' in resp.text
+
+    def test_login_has_senior_css_block(self, client, monkeypatch):
+        monkeypatch.setattr("src.api.is_configured", lambda: True)
+        resp = client.get("/login")
+        assert ':root[data-mode="senior"]' in resp.text
+
+    def test_setup_has_senior_css_block(self, client):
+        resp = client.get("/setup")
+        assert ':root[data-mode="senior"]' in resp.text
+
+    def test_configuracion_has_senior_css_block(self, client):
+        resp = client.get("/configuracion")
+        assert ':root[data-mode="senior"]' in resp.text
+
+    # font-scale applied to html on all 4 pages
+
+    def test_index_applies_font_scale_to_html(self, client):
+        resp = client.get("/")
+        assert "calc(16px * var(--font-scale" in resp.text
+
+    def test_login_applies_font_scale_to_html(self, client, monkeypatch):
+        monkeypatch.setattr("src.api.is_configured", lambda: True)
+        resp = client.get("/login")
+        assert "calc(16px * var(--font-scale" in resp.text
+
+    def test_setup_applies_font_scale_to_html(self, client):
+        resp = client.get("/setup")
+        assert "calc(16px * var(--font-scale" in resp.text
+
+    def test_configuracion_applies_font_scale_to_html(self, client):
+        resp = client.get("/configuracion")
+        assert "calc(16px * var(--font-scale" in resp.text
+
+    # Toggle button present on index and configuracion (NOT on login/setup)
+
+    def test_index_has_mode_toggle_button(self, client):
+        resp = client.get("/")
+        assert 'id="mode-toggle-btn"' in resp.text
+
+    def test_configuracion_has_mode_toggle_button(self, client):
+        resp = client.get("/configuracion")
+        assert 'id="mode-toggle-btn"' in resp.text
+
+    # i18n keys for toggle present in both locales
+
+    def test_mode_toggle_keys_in_es_json(self, client):
+        resp = client.get("/i18n/es.json")
+        assert resp.status_code == 200
+        assert "header.mode_toggle_btn" in resp.text
+        assert "header.mode_toggle_to_senior" in resp.text
+        assert "header.mode_toggle_to_modern" in resp.text
+        assert "header.mode_toggle_aria_label" in resp.text
+
+    def test_mode_toggle_keys_in_en_json(self, client):
+        resp = client.get("/i18n/en.json")
+        assert resp.status_code == 200
+        assert "header.mode_toggle_btn" in resp.text
+        assert "header.mode_toggle_to_senior" in resp.text
+        assert "header.mode_toggle_to_modern" in resp.text
+        assert "header.mode_toggle_aria_label" in resp.text
+
+    # Heuristic default uses both prefers-reduced-motion and prefers-color-scheme
+
+    def test_index_heuristic_uses_prefers_reduced_motion(self, client):
+        resp = client.get("/")
+        assert "prefers-reduced-motion: reduce" in resp.text
+
+    def test_index_heuristic_uses_prefers_color_scheme_light(self, client):
+        resp = client.get("/")
+        assert "prefers-color-scheme: light" in resp.text
+
+    # Service worker cache version bumped (so installed PWAs refresh)
+
+    def test_service_worker_cache_bumped_past_v1(self, client):
+        resp = client.get("/sw.js")
+        assert resp.status_code == 200
+        assert 'CACHE_NAME = "fgm-shell-v1"' not in resp.text
+        # Must be v2 or newer
+        assert 'CACHE_NAME = "fgm-shell-v' in resp.text
