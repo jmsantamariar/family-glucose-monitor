@@ -726,6 +726,204 @@
       table { font-size: .88rem; }
       tbody td { padding: .7rem .6rem; }
     }
+
+    /* ── Historical analysis section ─────────────────────────────────
+       Selector + per-patient cards (chart + metrics + download).      */
+    .history-analysis {
+      margin-top: 2rem;
+      padding: 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+    .history-analysis-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: .75rem;
+      margin-bottom: 1rem;
+    }
+    .range-selector {
+      display: inline-flex;
+      gap: .25rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: .2rem;
+    }
+    .range-btn {
+      background: transparent;
+      border: none;
+      color: var(--subtext);
+      padding: .4rem .85rem;
+      border-radius: calc(var(--radius) - 3px);
+      font-size: .85rem;
+      font-family: var(--font);
+      cursor: pointer;
+      min-height: var(--touch-min, 36px);
+      transition: background var(--transition-fast, .15s), color var(--transition-fast, .15s);
+    }
+    .range-btn:hover { background: var(--border); color: var(--text); }
+    .range-btn.is-active {
+      background: var(--header-bg);
+      color: var(--header-fg);
+      font-weight: 600;
+    }
+    .history-analysis-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1rem;
+    }
+    .ha-patient-card {
+      background: var(--bg);
+      border: var(--border-w, 1px) solid var(--border);
+      border-radius: var(--radius);
+      padding: .85rem;
+      display: flex;
+      flex-direction: column;
+      gap: .75rem;
+    }
+    .ha-patient-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .5rem;
+    }
+    .ha-patient-card-title {
+      font-weight: 700;
+      font-size: 1rem;
+      color: var(--text);
+    }
+    .ha-chart-wrap {
+      position: relative;
+      height: 140px;
+      width: 100%;
+    }
+    .ha-metrics-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) - 2px);
+      padding: .65rem .75rem;
+      display: flex;
+      flex-direction: column;
+      gap: .4rem;
+    }
+    .ha-metrics-headline {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: .5rem;
+      text-align: center;
+    }
+    .ha-metric {
+      display: flex;
+      flex-direction: column;
+      gap: .15rem;
+    }
+    .ha-metric-label {
+      font-size: .65rem;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--subtext);
+    }
+    .ha-metric-value {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+    .ha-metric-value.is-good { color: var(--green-fg); }
+    .ha-metric-value.is-warn { color: var(--yellow-fg); }
+    .ha-metric-value.is-bad  { color: var(--red-fg); }
+    .ha-metrics-detail {
+      display: none;
+      grid-template-columns: repeat(2, 1fr);
+      gap: .3rem .75rem;
+      font-size: .78rem;
+      color: var(--subtext);
+      padding-top: .4rem;
+      border-top: 1px dashed var(--border);
+    }
+    .ha-metrics-detail.is-open { display: grid; }
+    .ha-metrics-detail-row { display: flex; justify-content: space-between; gap: .5rem; }
+    .ha-metrics-detail-row .v {
+      color: var(--text);
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .ha-metrics-toggle {
+      align-self: flex-end;
+      background: transparent;
+      border: none;
+      color: var(--accent, var(--header-bg));
+      font-size: .75rem;
+      font-family: var(--font);
+      cursor: pointer;
+      padding: .15rem .3rem;
+      min-height: var(--touch-min, 36px);
+    }
+    .ha-metrics-toggle:hover { text-decoration: underline; }
+    .ha-metrics-empty {
+      text-align: center;
+      color: var(--subtext);
+      font-size: .8rem;
+      padding: .75rem .5rem;
+    }
+    .ha-badge-partial {
+      display: inline-block;
+      background: var(--yellow-bg);
+      color: var(--yellow-fg);
+      font-size: .65rem;
+      padding: .12rem .45rem;
+      border-radius: 999px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      font-weight: 700;
+      margin-left: .35rem;
+    }
+    .ha-download {
+      display: inline-flex;
+      align-items: center;
+      gap: .25rem;
+      position: relative;
+    }
+    .ha-download-btn {
+      background: var(--header-bg);
+      color: var(--header-fg);
+      border: none;
+      border-radius: calc(var(--radius) - 3px);
+      padding: .35rem .7rem;
+      font-size: .75rem;
+      font-family: var(--font);
+      cursor: pointer;
+      min-height: var(--touch-min, 36px);
+      text-decoration: none;
+    }
+    .ha-download-btn:hover { opacity: .9; }
+    .ha-download-menu {
+      display: none;
+      position: absolute;
+      right: 0;
+      top: calc(100% + 4px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: .25rem;
+      z-index: 10;
+      min-width: 130px;
+    }
+    .ha-download.is-open .ha-download-menu { display: block; }
+    .ha-download-menu a {
+      display: block;
+      padding: .4rem .6rem;
+      color: var(--text);
+      text-decoration: none;
+      font-size: .8rem;
+      border-radius: calc(var(--radius) - 4px);
+    }
+    .ha-download-menu a:hover { background: var(--bg); }
   </style>
 </head>
 <body>
@@ -857,6 +1055,20 @@
   <div id="glucose-charts-section" style="display:none">
     <p class="section-title" data-i18n="glucose_charts.title">📉 Valores de glucosa en alertas</p>
     <div id="glucose-charts-grid" class="charts-grid"></div>
+  </div>
+
+  <!-- ── Historical analysis (per-patient chart + TIR/GMI/CV metrics + CSV/JSON download) ─── -->
+  <div id="history-analysis-section" class="history-analysis" style="display:none">
+    <div class="history-analysis-header">
+      <p class="section-title" data-i18n="history_analysis.title">📈 Análisis histórico</p>
+      <div class="range-selector" role="group" data-i18n-aria-label="history_analysis.range_aria_label" aria-label="Rango temporal de análisis">
+        <button type="button" class="range-btn" data-range="3h" data-i18n="history_analysis.range_3h">3 horas</button>
+        <button type="button" class="range-btn" data-range="24h" data-i18n="history_analysis.range_24h">24 horas</button>
+        <button type="button" class="range-btn" data-range="14d" data-i18n="history_analysis.range_14d">14 días</button>
+        <button type="button" class="range-btn" data-range="90d" data-i18n="history_analysis.range_90d">90 días</button>
+      </div>
+    </div>
+    <div id="history-analysis-grid" class="history-analysis-grid"></div>
   </div>
 
   <!-- history table -->
@@ -1905,6 +2117,319 @@ if (!isNaN(cg) && cg > 0) {
   document.getElementById('patient-filter').addEventListener('change', fetchHistory);
   document.getElementById('hours-filter').addEventListener('change', fetchHistory);
 
+  // ── Historical analysis (range selector + per-patient chart + metrics + download) ──
+  // Range tokens map to the API parameters of /history (?hours=N) and
+  // /metrics (?days=N). Buckets in `metricsMode`:
+  //   - 'off'     → < 24h window, hide metrics card (statistically meaningless)
+  //   - 'partial' → 24h-7d window, show metrics with "muestra parcial" badge
+  //   - 'full'    → ≥ 14d window, show metrics, no badge
+  const RANGE_MAP = {
+    '3h':  { hours: 3,    days: null, metricsMode: 'off'     },
+    '24h': { hours: 24,   days: 1,    metricsMode: 'partial' },
+    '14d': { hours: 336,  days: 14,   metricsMode: 'full'    },
+    '90d': { hours: 2160, days: 90,   metricsMode: 'full'    },
+  };
+  const VALID_RANGES = Object.keys(RANGE_MAP);
+
+  function getSavedRange() {
+    try {
+      const v = localStorage.getItem('fgm-chart-range');
+      return VALID_RANGES.includes(v) ? v : '24h';
+    } catch (e) { return '24h'; }
+  }
+  function setSavedRange(r) {
+    try { localStorage.setItem('fgm-chart-range', r); } catch (e) { /* noop */ }
+  }
+
+  let _chartRange = getSavedRange();
+  const _haCharts = {};  // chartjs instances keyed by patient_id
+
+  function _setRangeBtnActive() {
+    document.querySelectorAll('.range-btn').forEach(btn => {
+      btn.classList.toggle('is-active', btn.dataset.range === _chartRange);
+    });
+  }
+
+  function _classifyMetric(metric, value) {
+    // Returns 'is-good' | 'is-warn' | 'is-bad' for color cueing, or '' if N/A.
+    if (value === null || value === undefined) return '';
+    if (metric === 'tir_in_range_pct') {
+      if (value >= 70) return 'is-good';
+      if (value >= 50) return 'is-warn';
+      return 'is-bad';
+    }
+    if (metric === 'gmi') {
+      if (value < 5.7) return 'is-good';
+      if (value < 7) return 'is-warn';
+      return 'is-bad';
+    }
+    if (metric === 'cv_pct') {
+      if (value < 36) return 'is-good';
+      if (value < 50) return 'is-warn';
+      return 'is-bad';
+    }
+    return '';
+  }
+
+  function _fmtMetric(value, unit = '') {
+    if (value === null || value === undefined) return '—';
+    return unit ? `${value}${unit}` : String(value);
+  }
+
+  async function fetchHistoryForRange(patientId, range) {
+    const cfg = RANGE_MAP[range];
+    try {
+      const resp = await fetch(`/api/patients/${encodeURIComponent(patientId)}/history?hours=${cfg.hours}`);
+      if (!resp.ok) return [];
+      return await resp.json();
+    } catch (e) { return []; }
+  }
+  async function fetchMetricsForRange(patientId, range) {
+    const cfg = RANGE_MAP[range];
+    if (cfg.metricsMode === 'off' || !cfg.days) return null;
+    try {
+      const resp = await fetch(`/api/patients/${encodeURIComponent(patientId)}/metrics?days=${cfg.days}`);
+      if (!resp.ok) return null;
+      return await resp.json();
+    } catch (e) { return null; }
+  }
+
+  function _renderMetricsCard(host, envelope, range) {
+    host.innerHTML = '';
+    const cfg = RANGE_MAP[range];
+    if (cfg.metricsMode === 'off') return;  // hidden in <24h
+    if (!envelope || !envelope.metrics || envelope.metrics.n_readings === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'ha-metrics-empty';
+      empty.dataset.i18n = 'history_analysis.metrics_empty';
+      empty.textContent = i18n.t('history_analysis.metrics_empty');
+      host.appendChild(empty);
+      return;
+    }
+    const m = envelope.metrics;
+    const card = document.createElement('div');
+    card.className = 'ha-metrics-card';
+
+    const headline = document.createElement('div');
+    headline.className = 'ha-metrics-headline';
+    const cells = [
+      ['history_analysis.metric.tir', _fmtMetric(m.tir_in_range_pct, '%'), _classifyMetric('tir_in_range_pct', m.tir_in_range_pct)],
+      ['history_analysis.metric.gmi', _fmtMetric(m.gmi, '%'), _classifyMetric('gmi', m.gmi)],
+      ['history_analysis.metric.cv',  _fmtMetric(m.cv_pct, '%'), _classifyMetric('cv_pct', m.cv_pct)],
+      ['history_analysis.metric.n',   _fmtMetric(m.n_readings), ''],
+    ];
+    cells.forEach(([labelKey, val, cls]) => {
+      const cell = document.createElement('div');
+      cell.className = 'ha-metric';
+      const lbl = document.createElement('span');
+      lbl.className = 'ha-metric-label';
+      lbl.dataset.i18n = labelKey;
+      lbl.textContent = i18n.t(labelKey);
+      const vEl = document.createElement('span');
+      vEl.className = 'ha-metric-value' + (cls ? ` ${cls}` : '');
+      vEl.textContent = val;
+      cell.append(lbl, vEl);
+      headline.appendChild(cell);
+    });
+
+    if (cfg.metricsMode === 'partial') {
+      const badge = document.createElement('span');
+      badge.className = 'ha-badge-partial';
+      badge.dataset.i18n = 'history_analysis.partial_badge';
+      badge.textContent = i18n.t('history_analysis.partial_badge');
+      headline.appendChild(badge);
+    }
+
+    const detail = document.createElement('div');
+    detail.className = 'ha-metrics-detail';
+    const detailRows = [
+      ['history_analysis.metric.mean',   _fmtMetric(m.mean, ' mg/dL')],
+      ['history_analysis.metric.median', _fmtMetric(m.median, ' mg/dL')],
+      ['history_analysis.metric.stdev',  _fmtMetric(m.stdev, ' mg/dL')],
+      ['history_analysis.metric.mage',   _fmtMetric(m.mage, ' mg/dL')],
+      ['history_analysis.metric.min',    _fmtMetric(m.min, ' mg/dL')],
+      ['history_analysis.metric.max',    _fmtMetric(m.max, ' mg/dL')],
+      ['history_analysis.metric.tir_low_pct',  _fmtMetric(m.tir_low_pct, '%')],
+      ['history_analysis.metric.tir_high_pct', _fmtMetric(m.tir_high_pct, '%')],
+    ];
+    detailRows.forEach(([lk, v]) => {
+      const row = document.createElement('div');
+      row.className = 'ha-metrics-detail-row';
+      const lEl = document.createElement('span');
+      lEl.dataset.i18n = lk;
+      lEl.textContent = i18n.t(lk);
+      const vEl = document.createElement('span');
+      vEl.className = 'v';
+      vEl.textContent = v;
+      row.append(lEl, vEl);
+      detail.appendChild(row);
+    });
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'ha-metrics-toggle';
+    toggle.dataset.i18n = 'history_analysis.show_detail';
+    toggle.textContent = i18n.t('history_analysis.show_detail');
+    toggle.addEventListener('click', () => {
+      const isOpen = detail.classList.toggle('is-open');
+      toggle.dataset.i18n = isOpen ? 'history_analysis.hide_detail' : 'history_analysis.show_detail';
+      toggle.textContent = i18n.t(toggle.dataset.i18n);
+    });
+
+    card.append(headline, detail, toggle);
+    host.appendChild(card);
+  }
+
+  function _renderChart(canvas, readings) {
+    // Dispose previous chart for this canvas if any
+    const pid = canvas.dataset.patientId;
+    if (_haCharts[pid]) {
+      try { _haCharts[pid].destroy(); } catch (e) {}
+      delete _haCharts[pid];
+    }
+    if (!readings || readings.length === 0) return;
+    const labels = readings.map(r => formatShortTime(r.timestamp));
+    const values = readings.map(r => r.glucose_value);
+    _haCharts[pid] = new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          data: values,
+          borderColor: 'rgba(99,179,237,0.95)',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          pointHoverRadius: 3,
+          fill: false,
+          tension: 0.3,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { enabled: true },
+          annotation: {
+            annotations: {
+              normalZone: { type: 'box', yMin: 70, yMax: 180, backgroundColor: 'rgba(34,197,94,0.06)', borderWidth: 0 },
+              highLine:   { type: 'line', yMin: 180, yMax: 180, borderColor: 'rgba(239,68,68,0.45)', borderWidth: 1, borderDash: [3,3] },
+              lowLine:    { type: 'line', yMin: 70,  yMax: 70,  borderColor: 'rgba(96,165,250,0.45)', borderWidth: 1, borderDash: [3,3] },
+            },
+          },
+        },
+        scales: {
+          x: { display: false },
+          y: { min: 40, max: 300, ticks: { font: { size: 10 } } },
+        },
+      },
+    });
+  }
+
+  function _renderDownloadDropdown(host, patientId, range) {
+    host.innerHTML = '';
+    const cfg = RANGE_MAP[range];
+    const days = cfg.days || 1;  // 3h window still exports last 1 day to be useful
+    const wrap = document.createElement('div');
+    wrap.className = 'ha-download';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ha-download-btn';
+    btn.dataset.i18n = 'history_analysis.download_csv';
+    btn.textContent = i18n.t('history_analysis.download_csv');
+    btn.addEventListener('click', (ev) => {
+      // Plain click → CSV download. Right-click or alt-click → open menu.
+      if (ev.altKey || ev.shiftKey) { wrap.classList.toggle('is-open'); return; }
+      window.location.href = `/api/patients/${encodeURIComponent(patientId)}/history/export?days=${days}&format=csv`;
+    });
+    const caret = document.createElement('button');
+    caret.type = 'button';
+    caret.className = 'ha-download-btn';
+    caret.textContent = '▾';
+    caret.setAttribute('aria-haspopup', 'true');
+    caret.dataset.i18nAriaLabel = 'history_analysis.download_more_aria';
+    caret.setAttribute('aria-label', i18n.t('history_analysis.download_more_aria'));
+    caret.style.padding = '.35rem .5rem';
+    caret.addEventListener('click', () => wrap.classList.toggle('is-open'));
+
+    const menu = document.createElement('div');
+    menu.className = 'ha-download-menu';
+    const csvA = document.createElement('a');
+    csvA.href = `/api/patients/${encodeURIComponent(patientId)}/history/export?days=${days}&format=csv`;
+    csvA.dataset.i18n = 'history_analysis.download_csv';
+    csvA.textContent = i18n.t('history_analysis.download_csv');
+    const jsonA = document.createElement('a');
+    jsonA.href = `/api/patients/${encodeURIComponent(patientId)}/history/export?days=${days}&format=json`;
+    jsonA.dataset.i18n = 'history_analysis.download_json';
+    jsonA.textContent = i18n.t('history_analysis.download_json');
+    menu.append(csvA, jsonA);
+
+    wrap.append(btn, caret, menu);
+    host.appendChild(wrap);
+  }
+
+  async function renderHistoryAnalysisForPatient(card, patient) {
+    const pid = String(patient.patient_id);
+    const range = _chartRange;
+    // Refresh download dropdown synchronously (instant feedback while fetches resolve)
+    _renderDownloadDropdown(card.querySelector('.ha-download-host'), pid, range);
+    // Fetch chart + metrics in parallel — one failure must not block the other
+    const [historyRes, metricsRes] = await Promise.allSettled([
+      fetchHistoryForRange(pid, range),
+      fetchMetricsForRange(pid, range),
+    ]);
+    const readings = historyRes.status === 'fulfilled' ? historyRes.value : [];
+    const metrics  = metricsRes.status === 'fulfilled' ? metricsRes.value  : null;
+    _renderChart(card.querySelector('canvas.ha-chart'), readings);
+    _renderMetricsCard(card.querySelector('.ha-metrics-host'), metrics, range);
+  }
+
+  function renderHistoryAnalysis(patients) {
+    const section = document.getElementById('history-analysis-section');
+    const grid    = document.getElementById('history-analysis-grid');
+    if (!section || !grid) return;
+    if (!patients || patients.length === 0) {
+      section.style.display = 'none';
+      grid.innerHTML = '';
+      Object.values(_haCharts).forEach(c => { try { c.destroy(); } catch (e) {} });
+      Object.keys(_haCharts).forEach(k => delete _haCharts[k]);
+      return;
+    }
+    section.style.display = '';
+    _setRangeBtnActive();
+    // Rebuild grid (cheap — at most a handful of patients)
+    grid.innerHTML = '';
+    patients.forEach(p => {
+      const card = document.createElement('div');
+      card.className = 'ha-patient-card';
+      card.dataset.patientId = String(p.patient_id);
+      card.innerHTML = `
+        <div class="ha-patient-card-header">
+          <span class="ha-patient-card-title">${(p.patient_name || p.patient_id || '').replace(/[<>]/g, '')}</span>
+          <span class="ha-download-host"></span>
+        </div>
+        <div class="ha-chart-wrap"><canvas class="ha-chart" data-patient-id="${String(p.patient_id)}"></canvas></div>
+        <div class="ha-metrics-host"></div>
+      `;
+      grid.appendChild(card);
+      renderHistoryAnalysisForPatient(card, p);
+    });
+  }
+
+  // Wire up range buttons (once, on init)
+  document.querySelectorAll('.range-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const next = btn.dataset.range;
+      if (!VALID_RANGES.includes(next) || next === _chartRange) return;
+      _chartRange = next;
+      setSavedRange(next);
+      _setRangeBtnActive();
+      if (_lastPatients && _lastPatients.length) renderHistoryAnalysis(_lastPatients);
+    });
+  });
+  _setRangeBtnActive();
+
   // ── Fetch & poll (current readings) ─────────────────────────────
   async function fetchPatients() {
     try {
@@ -1915,6 +2440,7 @@ if (!isNaN(cg) && cg > 0) {
       _failCount = 0;
       updateTable(data.patients);
       updatePatientFilter(data.patients);
+      renderHistoryAnalysis(data.patients);
       updateLastUpdateLabel(new Date().toISOString());
       setStatus('connected');
     } catch (e) {
