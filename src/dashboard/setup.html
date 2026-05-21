@@ -4,6 +4,18 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title data-i18n="setup.page_title">Configuración inicial — Monitor de Glucosa Familiar</title>
+  <!-- Mode bootstrap: inherit senior/modern from localStorage. Default = modern. -->
+  <script>
+    (function(){
+      try {
+        var saved = localStorage.getItem('fgm-mode');
+        var mode = (saved === 'senior') ? 'senior' : 'modern';
+        document.documentElement.setAttribute('data-mode', mode);
+      } catch (e) {
+        document.documentElement.setAttribute('data-mode', 'modern');
+      }
+    })();
+  </script>
   <!-- PWA — installable as Android / desktop app -->
   <link rel="manifest" href="/manifest.json" />
   <meta name="theme-color" content="#1a365d" />
@@ -35,6 +47,10 @@
       --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
       --radius: 10px;
       --shadow: 0 2px 8px rgba(0,0,0,.08);
+
+      --font-scale: 1;
+      --touch-min: 36px;
+      --border-w: 1px;
     }
 
     @media (prefers-color-scheme: dark) {
@@ -55,6 +71,32 @@
       }
     }
 
+    /* Senior mode — light-only high-contrast (mirrors index.html senior block). */
+    :root[data-mode="senior"] {
+      --bg:           #f7f3ec;
+      --surface:      #ffffff;
+      --text:         #111111;
+      --subtext:      #4a4036;
+      --border:       #2a2620;
+      --header-bg:    #1a4d2e;
+      --header-fg:    #ffffff;
+      --accent:       #1a4d2e;
+      --accent-hover: #143a23;
+      --inactive:     #8a8278;
+      --error-bg:     #fde4e4;
+      --error-fg:     #a01818;
+      --success-bg:   #e8f5ec;
+      --success-fg:   #1f7a3a;
+      --radius: 6px;
+      --shadow: 0 2px 8px rgba(0,0,0,.18);
+      --font-scale: 1.45;
+      --touch-min: 56px;
+      --border-w: 2px;
+    }
+
+    html {
+      font-size: calc(16px * var(--font-scale, 1));
+    }
     body {
       font-family: var(--font);
       background: var(--bg);
