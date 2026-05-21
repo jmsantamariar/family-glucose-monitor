@@ -11,7 +11,9 @@
  *   - Handles "notificationclick" to focus or open the dashboard window.
  */
 
-const CACHE_NAME = "fgm-shell-v1";
+// Bump version when shell assets change so already-installed PWAs refresh.
+// v2: adds senior/modern mode (CSS + bootstrap script + toggle).
+const CACHE_NAME = "fgm-shell-v2";
 
 /** Pages that form the app shell and should work offline. */
 const APP_SHELL = ["/", "/login", "/setup"];
