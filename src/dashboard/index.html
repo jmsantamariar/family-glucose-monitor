@@ -60,6 +60,13 @@
       --blue-fg:  #2c5282;
       --orange-bg: #feebc8;
       --orange-fg: #7b341e;
+
+      /* Tokens parametrizables por modo (defaults = modern) */
+      --font-scale: 1;
+      --touch-min: 36px;
+      --border-w: 1px;
+      --transition-fast: .15s;
+      --transition-base: .3s;
     }
 
     @media (prefers-color-scheme: dark) {
@@ -84,7 +91,55 @@
       }
     }
 
+    /* ── Modo SENIOR (elder-friendly) ───────────────────────────
+       Activado vía <html data-mode="senior">. Sobrescribe el modo
+       modern (light/dark auto) con paleta high-contrast clara,
+       tipografía 45% más grande, sin animaciones, bordes 2px,
+       targets táctiles 56px. NO respeta prefers-color-scheme:
+       senior siempre es light por accesibilidad.
+       Mockup origen: docs/images/dual-v2.html
+       ──────────────────────────────────────────────────────── */
+    :root[data-mode="senior"] {
+      --bg:        #f7f3ec;
+      --surface:   #ffffff;
+      --text:      #111111;
+      --subtext:   #4a4036;
+      --border:    #2a2620;
+      --header-bg: #1a4d2e;
+      --header-fg: #ffffff;
+
+      --green-bg:  #e8f5ec;
+      --green-fg:  #1f7a3a;
+      --yellow-bg: #fdf3d4;
+      --yellow-fg: #8a6212;
+      --red-bg:    #fde4e4;
+      --red-fg:    #a01818;
+
+      --status-ok:   #1f7a3a;
+      --status-warn: #8a6212;
+      --status-err:  #a01818;
+
+      --blue-bg:   #dbeaf6;
+      --blue-fg:   #1e5b8c;
+      --orange-bg: #fce7d5;
+      --orange-fg: #7b341e;
+
+      --radius: 6px;
+      --shadow: 0 2px 8px rgba(0,0,0,.18);
+
+      --font-scale: 1.45;
+      --touch-min: 56px;
+      --border-w: 2px;
+      --transition-fast: 0s;
+      --transition-base: 0s;
+    }
+
     /* ── Layout ────────────────────────────────────────────────── */
+    html {
+      /* Escala global del root: senior mode lo sube a 1.45×.
+         Todos los font-size/padding/gap en rem heredan la escala. */
+      font-size: calc(16px * var(--font-scale, 1));
+    }
     body {
       font-family: var(--font);
       background: var(--bg);
@@ -133,7 +188,7 @@
       border-radius: 50%;
       background: var(--status-ok);
       box-shadow: 0 0 6px var(--status-ok);
-      transition: background .3s, box-shadow .3s;
+      transition: background var(--transition-base, .3s), box-shadow var(--transition-base, .3s);
     }
 
     .status-dot.warn {
@@ -200,7 +255,7 @@
 
     tbody tr {
       border-bottom: 1px solid var(--border);
-      transition: filter .15s;
+      transition: filter var(--transition-fast, .15s);
     }
 
     tbody tr:last-child { border-bottom: none; }
@@ -255,7 +310,7 @@
       letter-spacing: .08em;
       line-height: 1;
       color: #00e676;
-      transition: color .3s, text-shadow .3s;
+      transition: color var(--transition-base, .3s), text-shadow var(--transition-base, .3s);
     }
 
     .glucose-value.trending-up {
@@ -282,7 +337,7 @@
       line-height: 1;
       display: inline-block;
       font-weight: bold;
-      transition: color .3s;
+      transition: color var(--transition-base, .3s);
     }
 
     .trend-up-fast, .trend-up   { color: #fc8181; }
@@ -462,7 +517,7 @@
       font-size: .78rem;
       font-family: inherit;
       letter-spacing: .03em;
-      transition: background .15s, border-color .15s;
+      transition: background var(--transition-fast, .15s), border-color var(--transition-fast, .15s);
       white-space: nowrap;
     }
     #lang-toggle-btn:hover {
@@ -504,7 +559,7 @@
       padding: .3rem .75rem;
       border-radius: 8px;
       cursor: pointer;
-      transition: filter .15s, transform .1s;
+      transition: filter var(--transition-fast, .15s), transform var(--transition-fast, .1s);
       min-width: 68px;
       border: 2px solid transparent;
       user-select: none;
