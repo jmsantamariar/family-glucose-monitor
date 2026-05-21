@@ -10,7 +10,18 @@
     (function(){
       try {
         var saved = localStorage.getItem('fgm-mode');
-        var mode = (saved === 'senior') ? 'senior' : 'modern';
+        var mode;
+        if (saved === 'senior' || saved === 'modern') {
+          mode = saved;
+        } else {
+          // No saved preference. Heuristic: if the OS signals both
+          // "reduced motion" AND a "light color scheme" preference, the
+          // user likely benefits from senior mode (large text, no animations,
+          // high contrast). Otherwise default to modern.
+          var reducesMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+          var prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+          mode = (reducesMotion && prefersLight) ? 'senior' : 'modern';
+        }
         document.documentElement.setAttribute('data-mode', mode);
       } catch (e) {
         document.documentElement.setAttribute('data-mode', 'modern');
