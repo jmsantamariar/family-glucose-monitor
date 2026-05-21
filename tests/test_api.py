@@ -1376,8 +1376,14 @@ class TestPatientHistoryEndpoint:
         keys = set(data[0].keys())
         assert {"timestamp", "patient_id", "patient_name", "glucose_value"}.issubset(keys)
 
-    def test_hours_ge_1_le_24_validation(self, client, rh_db, tmp_cache):
+    def test_hours_ge_1_le_8760_validation(self, client, rh_db, tmp_cache):
+        """Range is [1, 8760] (≈1 year), matching /api/alerts."""
         resp_low = client.get("/api/patients/p1/history?hours=0")
         assert resp_low.status_code == 422
-        resp_high = client.get("/api/patients/p1/history?hours=25")
+        resp_high = client.get("/api/patients/p1/history?hours=8761")
         assert resp_high.status_code == 422
+
+    def test_hours_accepts_long_window(self, client, rh_db, tmp_cache):
+        """A 30-day window (720h) must be accepted — UI needs this for charts."""
+        resp = client.get("/api/patients/p1/history?hours=720")
+        assert resp.status_code == 200

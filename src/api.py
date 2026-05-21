@@ -425,13 +425,15 @@ def get_patient(patient_id: str):
 
 
 @app.get("/api/patients/{patient_id}/history", response_class=JSONResponse)
-def get_patient_history(patient_id: str, hours: int = Query(default=3, ge=1, le=24)):
+def get_patient_history(patient_id: str, hours: int = Query(default=3, ge=1, le=8760)):
     """Return recent glucose readings for *patient_id* within the last *hours* hours.
 
     Readings are sampled at each polling cycle (~5 min) and stored in
     ``reading_history.db``.  Returns an empty list when no history exists yet.
     Unlike ``/api/alerts``, this endpoint returns **all** readings, not just
     those that triggered an alert, making it suitable for sparkline visualisation.
+
+    Range allowed: 1 hour to 8760 hours (≈1 year), matching ``/api/alerts``.
     """
     rh_path = get_reading_history_db_path(_config)
     readings = _reading_history.get_readings(rh_path, patient_id=patient_id, hours=hours)
