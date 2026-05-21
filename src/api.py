@@ -33,7 +33,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 import requests as _requests
 import yaml
@@ -436,6 +436,76 @@ def get_patient_history(patient_id: str, hours: int = Query(default=3, ge=1, le=
     rh_path = get_reading_history_db_path(_config)
     readings = _reading_history.get_readings(rh_path, patient_id=patient_id, hours=hours)
     return readings
+
+
+@app.get("/api/patients/{patient_id}/history/export")
+def export_patient_history(
+    patient_id: str,
+    days: int = Query(default=7, ge=1, le=365),
+    format: Literal["csv", "json"] = Query(default="csv"),
+):
+    """Export the glucose reading history of *patient_id* as a downloadable file.
+
+    Window is given in **days** (default 7, clamp 1–365). Format is ``csv`` or
+    ``json``. CSV is UTF-8 with BOM for Excel compatibility. JSON wraps the
+    readings in a small metadata envelope (patient name, period, count,
+    generated_at) — useful when handing the file to a clinician.
+
+    Response sets ``Content-Disposition: attachment`` with a timestamped filename.
+    Auth is enforced by the global middleware (returns 401 if no session).
+    Returns 404 if no patient with that ID is currently known.
+    """
+    _load_and_enrich_cache()
+    with _cache_lock:
+        patient = _readings_cache.get(patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    patient_name = patient.get("patient_name", patient_id)
+    rh_path = get_reading_history_db_path(_config)
+    readings = _reading_history.get_readings(rh_path, patient_id=patient_id, days=days)
+    now = datetime.now(timezone.utc)
+    timestamp = now.strftime("%Y%m%d_%H%M%S")
+
+    if format == "json":
+        envelope = {
+            "patient_id": patient_id,
+            "patient_name": patient_name,
+            "period_days": days,
+            "count": len(readings),
+            "generated_at": now.isoformat(),
+            "readings": readings,
+        }
+        return JSONResponse(
+            content=envelope,
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="glucose_{patient_id}_{timestamp}.json"'
+                ),
+            },
+        )
+
+    import csv
+    import io
+
+    buf = io.StringIO()
+    buf.write("﻿")  # UTF-8 BOM so Excel opens the CSV as UTF-8
+    writer = csv.writer(buf)
+    writer.writerow(["timestamp", "patient_id", "patient_name", "glucose_value"])
+    for r in readings:
+        writer.writerow(
+            [r["timestamp"], r["patient_id"], r["patient_name"], r["glucose_value"]]
+        )
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="glucose_{patient_id}_{timestamp}.csv"'
+            ),
+        },
+    )
+
 
 @app.get("/api/health", response_class=JSONResponse)
 def health_check():
