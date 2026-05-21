@@ -91,12 +91,25 @@ def get_readings(
     db_path: str,
     patient_id: str,
     hours: int = 3,
+    days: int | None = None,
 ) -> list[dict]:
-    """Return readings for *patient_id* in the last *hours* hours.
+    """Return readings for *patient_id* in a recent time window.
+
+    Window is specified by either ``hours`` (default 3) or ``days``. If
+    ``days`` is provided, it overrides ``hours`` (converted internally).
 
     Results are ordered oldest-first so callers can iterate in time order.
     Returns an empty list if the database does not exist yet.
+
+    Raises ValueError if the resulting window is non-positive.
     """
+    if days is not None:
+        if not isinstance(days, int) or days <= 0:
+            raise ValueError(f"days must be a positive int, got {days!r}")
+        hours = days * 24
+    elif hours <= 0:
+        raise ValueError(f"hours must be a positive int, got {hours!r}")
+
     if not Path(db_path).exists():
         return []
 
