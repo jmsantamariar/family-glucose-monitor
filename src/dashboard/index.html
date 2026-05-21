@@ -4,6 +4,19 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Monitor de Glucosa Familiar</title>
+  <!-- Mode bootstrap: apply senior/modern from localStorage BEFORE first render
+       to avoid flash of unstyled content. Default = modern. -->
+  <script>
+    (function(){
+      try {
+        var saved = localStorage.getItem('fgm-mode');
+        var mode = (saved === 'senior') ? 'senior' : 'modern';
+        document.documentElement.setAttribute('data-mode', mode);
+      } catch (e) {
+        document.documentElement.setAttribute('data-mode', 'modern');
+      }
+    })();
+  </script>
   <!-- PWA — installable as Android / desktop app -->
   <link rel="manifest" href="/manifest.json" />
   <meta name="theme-color" content="#1a365d" />
@@ -808,7 +821,11 @@
         <div class="status-dot" id="status-dot"></div>
         <span id="status-label" data-i18n="status.connecting">Conectando…</span>
       </div>
-      <a href="/configuracion" id="settings-btn" data-i18n-aria-label="header.settings_aria_label" style="display:inline-flex;align-items:center;gap:.35rem;background:transparent;border:1px solid rgba(255,255,255,.4);color:inherit;border-radius:4px;padding:.25rem .6rem;cursor:pointer;font-size:.8rem;text-decoration:none;">
+      <button id="mode-toggle-btn" type="button" data-i18n-aria-label="header.mode_toggle_aria_label" aria-label="Cambiar entre modo Senior y Modern" style="display:inline-flex;align-items:center;gap:.35rem;background:transparent;border:1px solid rgba(255,255,255,.4);color:inherit;border-radius:4px;padding:.25rem .6rem;cursor:pointer;font-size:.8rem;min-height:var(--touch-min,36px);">
+        <span id="mode-toggle-icon" aria-hidden="true">👁</span>
+        <span id="mode-toggle-label" data-i18n="header.mode_toggle_btn">Modo Senior</span>
+      </button>
+      <a href="/configuracion" id="settings-btn" data-i18n-aria-label="header.settings_aria_label" style="display:inline-flex;align-items:center;gap:.35rem;background:transparent;border:1px solid rgba(255,255,255,.4);color:inherit;border-radius:4px;padding:.25rem .6rem;cursor:pointer;font-size:.8rem;text-decoration:none;min-height:var(--touch-min,36px);">
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
           <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
         </svg>
@@ -2002,6 +2019,34 @@ if (!isNaN(cg) && cg > 0) {
 
   const logoutBtn = document.getElementById('logout-btn');
   if (logoutBtn) logoutBtn.addEventListener('click', logout);
+
+  // ── Mode toggle (senior ↔ modern) ────────────────────────────────
+  // Persists user choice in localStorage['fgm-mode']. The bootstrap
+  // script in <head> reads it before first render to avoid FOUC.
+  function applyMode(mode) {
+    document.documentElement.setAttribute('data-mode', mode);
+    try { localStorage.setItem('fgm-mode', mode); } catch (e) { /* noop */ }
+    const labelEl = document.getElementById('mode-toggle-label');
+    const iconEl = document.getElementById('mode-toggle-icon');
+    if (labelEl) {
+      // Label invites the OTHER mode (action label, not state label)
+      const nextKey = (mode === 'senior') ? 'header.mode_toggle_to_modern' : 'header.mode_toggle_to_senior';
+      labelEl.setAttribute('data-i18n', nextKey);
+      labelEl.textContent = (typeof i18n !== 'undefined' && i18n.t) ? i18n.t(nextKey) : labelEl.textContent;
+    }
+    if (iconEl) iconEl.textContent = (mode === 'senior') ? '⚙' : '👁';
+    window.dispatchEvent(new CustomEvent('fgm:modechange', { detail: { mode } }));
+  }
+  const modeToggleBtn = document.getElementById('mode-toggle-btn');
+  if (modeToggleBtn) {
+    // Initialize label to reflect current mode (bootstrap already set the attribute)
+    const currentMode = document.documentElement.getAttribute('data-mode') || 'modern';
+    applyMode(currentMode);
+    modeToggleBtn.addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-mode') || 'modern';
+      applyMode(current === 'senior' ? 'modern' : 'senior');
+    });
+  }
 
   // ── Locale change — re-render all dynamic content ─────────────────
   window.addEventListener('fgm:localechange', () => {
