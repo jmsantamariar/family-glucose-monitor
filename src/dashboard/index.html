@@ -4,8 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Monitor de Glucosa Familiar</title>
-  <!-- Mode bootstrap: apply senior/modern from localStorage BEFORE first render
-       to avoid flash of unstyled content. Default = modern. -->
+  <!-- Mode bootstrap: applies senior/modern from localStorage BEFORE first render
+       to avoid FOUC. When no preference is saved, falls back to a heuristic:
+       prefers-reduced-motion + prefers-color-scheme: light → senior, else modern.
+       Duplicated inline across index/login/setup/configuracion by design —
+       extracting to /mode.js would either block render or cause the flash this
+       script exists to prevent. If you change the heuristic or storage key,
+       sync ALL FOUR files. For true DRY, refactor to a Jinja partial. -->
   <script>
     (function(){
       try {
@@ -156,6 +161,16 @@
       --border-w: 2px;
       --transition-fast: 0s;
       --transition-base: 0s;
+    }
+
+    /* Senior mode: kill all CSS animations for a11y. Honours the "sin
+       animaciones" promise in the comment above — transitions are
+       zeroed via --transition-* and animations are nuked here. Covers
+       warn-pulse, pulse-warning/danger/low, and live-pulse. */
+    :root[data-mode="senior"] *,
+    :root[data-mode="senior"] *::before,
+    :root[data-mode="senior"] *::after {
+      animation: none !important;
     }
 
     /* ── Layout ────────────────────────────────────────────────── */
@@ -832,7 +847,7 @@
         <div class="status-dot" id="status-dot"></div>
         <span id="status-label" data-i18n="status.connecting">Conectando…</span>
       </div>
-      <button id="mode-toggle-btn" type="button" data-i18n-aria-label="header.mode_toggle_aria_label" aria-label="Cambiar entre modo Senior y Modern" style="display:inline-flex;align-items:center;gap:.35rem;background:transparent;border:1px solid rgba(255,255,255,.4);color:inherit;border-radius:4px;padding:.25rem .6rem;cursor:pointer;font-size:.8rem;min-height:var(--touch-min,36px);">
+      <button id="mode-toggle-btn" type="button" data-i18n-aria-label="header.mode_toggle_aria_label" aria-label="Cambiar entre modo Senior y Normal" style="display:inline-flex;align-items:center;gap:.35rem;background:transparent;border:1px solid rgba(255,255,255,.4);color:inherit;border-radius:4px;padding:.25rem .6rem;cursor:pointer;font-size:.8rem;min-height:var(--touch-min,36px);">
         <span id="mode-toggle-icon" aria-hidden="true">👁</span>
         <span id="mode-toggle-label" data-i18n="header.mode_toggle_btn">Modo Senior</span>
       </button>

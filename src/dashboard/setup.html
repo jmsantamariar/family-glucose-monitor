@@ -4,7 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title data-i18n="setup.page_title">Configuración inicial — Monitor de Glucosa Familiar</title>
-  <!-- Mode bootstrap: inherit senior/modern from localStorage. Default = modern. -->
+  <!-- Mode bootstrap: applies senior/modern from localStorage BEFORE first render
+       to avoid FOUC. When no preference is saved, falls back to a heuristic:
+       prefers-reduced-motion + prefers-color-scheme: light → senior, else modern.
+       Duplicated inline across index/login/setup/configuracion by design —
+       extracting to /mode.js would either block render or cause the flash this
+       script exists to prevent. If you change the heuristic or storage key,
+       sync ALL FOUR files. For true DRY, refactor to a Jinja partial. -->
   <script>
     (function(){
       try {
