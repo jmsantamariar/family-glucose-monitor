@@ -8,6 +8,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Historial continuo de lecturas de glucosa** — `src/reading_history.py` persiste todas las lecturas en `reading_history.db` (SQLite). Ruta configurable con `reading_history_db` en `config.yaml`.
+- **Endpoint `GET /api/patients/{id}/history?hours=N`** — devuelve lecturas del período indicado (1–8760 h ≈ 1 año). Aplica downsampling automático para rangos > 24 h (cubos de 15 min / 30 min / 1 h) para mantener la respuesta manejable.
+- **Endpoint `GET /api/patients/{id}/history/export?format={csv|json}&days=N`** — exporta el historial completo a resolución nativa como archivo descargable. CSV con BOM (compatible Excel); JSON con envelope de metadatos. Ventana máxima: 365 días.
+- **Endpoint `GET /api/patients/{id}/metrics?days=N`** — calcula métricas de control glucémico estándar: TIR (5 cubos: hipo severo/hipo/rango/hiper/hiper severo), GMI, CV y MAGE. Implementado en `src/analytics/glycemic_metrics.py`. Ventana por defecto: 14 días (mínimo clínico recomendado por el consenso internacional de TIR de 2019).
+- **UI de análisis histórico en el dashboard** — selector de rango temporal, tarjeta de métricas glucémicas y botón de descarga CSV. Implementado en `src/dashboard/index.html`.
+- **Modo Senior / Moderno** — toggle de accesibilidad disponible en todas las pantallas (dashboard, login, setup, configuración). Activa tipografía grande, alto contraste y elimina animaciones. Persiste en `localStorage` (`fgm-mode`; valores `senior` | `modern`). Controlado por el atributo `data-mode` en `<html>`.
+- **Heurística de modo por defecto** — si no hay preferencia guardada, detecta `prefers-reduced-motion` + `prefers-color-scheme: light` para arrancar en modo `senior`; en caso contrario, `modern`.
+- **i18n para el toggle de modo** — cadenas `es` y `en` añadidas para el botón senior/moderno.
+- **Tema claro / oscuro** — toggle con persistencia en `localStorage` (`fgm-theme`; valores `light` | `dark`). Controlado por el atributo `data-theme` en `<html>`. Por defecto `light`.
+- **Script anti-FOUC** — script inline en `<head>` que aplica `data-mode` y `data-theme` antes del primer render, evitando el flash de contenido sin estilo.
+- **Rediseño visual del dashboard** — fuente Source Sans 3 (texto) + Source Serif 4 (display); paleta cálida; `<meta name="theme-color">` actualizado a `#3a2a20`.
+
+### Changed
+
+- **Service Worker `CACHE_NAME`** — actualizado a `fgm-shell-v3` (`src/dashboard/sw.js`) para invalidar cachés obsoletos tras el rediseño visual y los cambios de app-shell.
+- **`/api/patients/{id}/history` límite de horas** — el parámetro `hours` pasa de un tope de 24 h a 8760 h (≈1 año).
+
+### Fixed
+
+- **Streaming de exportación CSV** — el endpoint `/history/export?format=csv` ahora genera el CSV en streaming fila a fila (`iter_readings()` + `StreamingResponse`) en lugar de construir el string completo en memoria.
+- **Downsampling server-side de `/history`** — las respuestas para rangos > 24 h aplican downsampling en el servidor, reduciendo el tamaño del payload.
+- **Claves `localStorage` unificadas** — todas las páginas usan el prefijo `fgm-` (`fgm-mode`, `fgm-theme`, `fgm-accent`).
+- **Re-renderizado de sección histórica al cambiar locale** — la UI de análisis histórico se re-renderiza correctamente al cambiar el idioma.
+- **Escape de nombres/IDs de paciente en HEADLINES y tarjetas** — previene XSS en el dashboard.
+- **Sanitización de `patient_id` en `Content-Disposition`** — el nombre del archivo de exportación no puede contener caracteres que rompan la cabecera HTTP.
+
 - **Notificaciones Web Push en el navegador** — El dashboard incluye un botón de suscripción/desuscripción para recibir alertas de glucosa como notificaciones del sistema. Funciona aunque la pestaña esté en segundo plano. Implementado con el patrón [StefanNedelchev/pwa-push-example](https://github.com/StefanNedelchev/pwa-push-example) adaptado a FastAPI/Python. (PR #45)
   - `src/push_subscriptions.py` — persistencia de suscripciones en `push_subscriptions.db` (SQLite, WAL, upsert por endpoint, limpieza automática de expiradas).
   - `src/outputs/webpush.py` — `WebPushOutput(BaseOutput)` que despacha a todos los navegadores suscritos vía `pywebpush` + VAPID. Las suscripciones expiradas (HTTP 404/410) se eliminan automáticamente.
