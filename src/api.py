@@ -428,17 +428,35 @@ def get_patient(patient_id: str):
 
 @app.get("/api/patients/{patient_id}/history", response_class=JSONResponse)
 def get_patient_history(patient_id: str, hours: int = Query(default=3, ge=1, le=8760)):
-    """Return recent glucose readings for *patient_id* within the last *hours* hours.
+    """Return glucose readings for *patient_id* within the last *hours* hours.
 
     Readings are sampled at each polling cycle (~5 min) and stored in
-    ``reading_history.db``.  Returns an empty list when no history exists yet.
-    Unlike ``/api/alerts``, this endpoint returns **all** readings, not just
-    those that triggered an alert, making it suitable for sparkline visualisation.
+    ``reading_history.db``. Returns an empty list when no history exists yet.
+
+    Long ranges are **downsampled server-side** to keep the response size
+    bounded for charting. Buckets:
+
+    - ``hours <= 24``  → full resolution (~288 points max)
+    - ``hours <= 168`` (7d)  → 15-minute buckets (~672 points max)
+    - ``hours <= 720`` (30d) → 30-minute buckets (~1440 points max)
+    - ``hours <= 8760`` (1y) → 1-hour buckets (~8760 points max)
+
+    Each bucket's ``glucose_value`` is the AVG of the readings within it.
+    For full-resolution exports (e.g. handing data to a clinician), use
+    ``/api/patients/{id}/history/export?format=csv`` instead.
 
     Range allowed: 1 hour to 8760 hours (≈1 year), matching ``/api/alerts``.
     """
     rh_path = get_reading_history_db_path(_config)
     readings = _reading_history.get_readings(rh_path, patient_id=patient_id, hours=hours)
+    if hours > 24:
+        if hours <= 168:
+            bucket = 15 * 60
+        elif hours <= 720:
+            bucket = 30 * 60
+        else:
+            bucket = 60 * 60
+        readings = _reading_history.downsample(readings, bucket_seconds=bucket)
     return readings
 
 

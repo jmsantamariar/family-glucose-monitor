@@ -141,6 +141,62 @@ def get_readings(
         return []
 
 
+def downsample(readings: list[dict], bucket_seconds: int) -> list[dict]:
+    """Bucket *readings* by ``bucket_seconds`` and return one synthetic row
+    per bucket with the AVG of ``glucose_value`` and the bucket-start
+    timestamp.
+
+    Used to keep the response of ``/api/patients/{id}/history`` bounded
+    for long ranges (a year of 5-minute polling is ~105k readings — too
+    much to ship as JSON and too dense to chart). Input must be sorted
+    oldest-first (the contract of :func:`get_readings`).
+
+    Edge cases:
+    - Empty input or non-positive ``bucket_seconds`` → returns input as-is.
+    - Single-reading bucket → that reading's value is preserved (AVG of 1).
+    """
+    if not readings or bucket_seconds <= 0:
+        return list(readings)
+
+    out: list[dict] = []
+    cur_bucket_start: int | None = None
+    cur_values: list[float] = []
+    cur_pid: str | None = None
+    cur_pname: str | None = None
+
+    def _flush():
+        if cur_values and cur_bucket_start is not None:
+            avg = round(sum(cur_values) / len(cur_values))
+            out.append(
+                {
+                    "timestamp": datetime.fromtimestamp(
+                        cur_bucket_start, tz=timezone.utc
+                    ).isoformat(),
+                    "patient_id": cur_pid,
+                    "patient_name": cur_pname,
+                    "glucose_value": avg,
+                }
+            )
+
+    for r in readings:
+        ts = datetime.fromisoformat(r["timestamp"])
+        bucket_start = (int(ts.timestamp()) // bucket_seconds) * bucket_seconds
+        if cur_bucket_start is None:
+            cur_bucket_start = bucket_start
+            cur_pid = r["patient_id"]
+            cur_pname = r["patient_name"]
+        if bucket_start != cur_bucket_start:
+            _flush()
+            cur_bucket_start = bucket_start
+            cur_values = []
+            cur_pid = r["patient_id"]
+            cur_pname = r["patient_name"]
+        cur_values.append(r["glucose_value"])
+
+    _flush()
+    return out
+
+
 def iter_readings(
     db_path: str,
     patient_id: str,
