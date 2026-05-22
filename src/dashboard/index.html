@@ -3839,6 +3839,10 @@ if (!isNaN(cg) && cg > 0) {
         })
       : _alertsData;
     updateHistory(filtered, /* skipStore= */ true);
+    // Re-render historical analysis section (metrics labels use i18n.t()
+    // at creation time, so switching language without re-render leaves
+    // them partially translated until the next polling cycle).
+    if (_lastPatients && _lastPatients.length) renderHistoryAnalysis(_lastPatients);
     // Re-render patient filter "All" option (already via data-i18n but update dynamically)
     const allOpt = document.querySelector('#patient-filter option[value=""]');
     if (allOpt) allOpt.textContent = i18n.t('history.patient_all');
