@@ -89,28 +89,6 @@
         onLocaleChange: function () {}
       };
     }
-    // Preview-only: wrap SW.register so its 404 in the sandbox doesn't surface
-    // as an unhandled rejection. Production untouched (real /sw.js loads fine).
-    if (typeof navigator !== 'undefined' && navigator.serviceWorker && navigator.serviceWorker.register) {
-      var __origReg = navigator.serviceWorker.register.bind(navigator.serviceWorker);
-      navigator.serviceWorker.register = function () {
-        var p;
-        try { p = __origReg.apply(null, arguments); }
-        catch (e) { return Promise.resolve(null); }
-        return p && p.then ? p.catch(function () { return null; }) : p;
-      };
-    }
-    // Preview-only: downgrade backend-fetch errors to warnings (no /api endpoints
-    // exist in the sandbox). Real errors still pass through.
-    var __origErr = console.error.bind(console);
-    console.error = function () {
-      var msg = arguments[0];
-      if (typeof msg === 'string' && /Error al obtener|Error fetching|i18n/.test(msg)) {
-        try { console.warn.apply(console, arguments); } catch (_) {}
-        return;
-      }
-      return __origErr.apply(console, arguments);
-    };
   </script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <!-- chartjs-plugin-annotation v3.0.1 (inlined for offline use) -->
