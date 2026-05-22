@@ -106,6 +106,10 @@
       'alert_level.trend': 'TENDENCIA',
       'lang.toggle': 'Cambiar idioma',
       'header.settings_aria_label': 'Ir a Configuración del sistema',
+      'header.mode_toggle_btn': 'Modo Senior',
+      'header.mode_toggle_to_senior': 'Modo Senior',
+      'header.mode_toggle_to_modern': 'Modo Normal',
+      'header.mode_toggle_aria_label': 'Cambiar entre modo Senior (letras grandes) y modo Normal',
       'header.logout_title': 'Cerrar sesión',
       'header.app_name': 'Monitor de Glucosa Familiar',
       // ── Login page ───────────────────────────────────────────────────────
@@ -369,6 +373,10 @@
       'alert_level.trend': 'TREND',
       'lang.toggle': 'Change language',
       'header.settings_aria_label': 'Go to system settings',
+      'header.mode_toggle_btn': 'Senior Mode',
+      'header.mode_toggle_to_senior': 'Senior Mode',
+      'header.mode_toggle_to_modern': 'Normal Mode',
+      'header.mode_toggle_aria_label': 'Switch between Senior mode (large text) and Normal mode',
       'header.logout_title': 'Log out',
       'header.app_name': 'Family Glucose Monitor',
       // ── Login page ───────────────────────────────────────────────────────
