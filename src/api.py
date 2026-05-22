@@ -26,6 +26,7 @@ source of truth.
 import json
 import logging
 import os
+import re
 import secrets
 import stat
 import threading
@@ -441,6 +442,23 @@ def get_patient_history(patient_id: str, hours: int = Query(default=3, ge=1, le=
     return readings
 
 
+_FILENAME_SAFE_RE = re.compile(r"[^A-Za-z0-9_-]")
+
+
+def _safe_filename_token(s: str, fallback: str = "patient") -> str:
+    """Return *s* sanitised so it is safe to interpolate into the
+    ``filename=`` parameter of a ``Content-Disposition`` header.
+
+    Replaces every char outside ``[A-Za-z0-9_-]`` with ``_``, caps the
+    length at 64, and falls back to *fallback* when the result would
+    otherwise be empty. Without this, a caller-controlled patient_id
+    containing quotes, newlines or control chars could break the header
+    value or enable response splitting / header injection.
+    """
+    cleaned = _FILENAME_SAFE_RE.sub("_", s or "")[:64]
+    return cleaned or fallback
+
+
 @app.get("/api/patients/{patient_id}/history/export")
 def export_patient_history(
     patient_id: str,
@@ -469,6 +487,10 @@ def export_patient_history(
     readings = _reading_history.get_readings(rh_path, patient_id=patient_id, days=days)
     now = datetime.now(timezone.utc)
     timestamp = now.strftime("%Y%m%d_%H%M%S")
+    # Sanitise patient_id for use in the Content-Disposition filename. The
+    # raw value comes from the URL path and could contain quotes, newlines,
+    # or control chars that break the header (or enable header injection).
+    safe_pid = _safe_filename_token(patient_id)
 
     if format == "json":
         envelope = {
@@ -483,7 +505,7 @@ def export_patient_history(
             content=envelope,
             headers={
                 "Content-Disposition": (
-                    f'attachment; filename="glucose_{patient_id}_{timestamp}.json"'
+                    f'attachment; filename="glucose_{safe_pid}_{timestamp}.json"'
                 ),
             },
         )
@@ -504,7 +526,7 @@ def export_patient_history(
         media_type="text/csv; charset=utf-8",
         headers={
             "Content-Disposition": (
-                f'attachment; filename="glucose_{patient_id}_{timestamp}.csv"'
+                f'attachment; filename="glucose_{safe_pid}_{timestamp}.csv"'
             ),
         },
     )
