@@ -15,8 +15,18 @@ coverage.xml
 htmlcov/
 readings_cache.json
 *.db
+*.db-shm
+*.db-wal
 alert_history.db
 # Encryption key for sensitive config values
 .secret_key
 # VAPID private key for Web Push notifications
 vapid_private.pem
+# macOS metadata
+.DS_Store
+# Runtime logs
+logs/
+# Local snapshots & quarantined copies of sensitive files
+*.bak.*
+*.broken.*
+*.backup_*
