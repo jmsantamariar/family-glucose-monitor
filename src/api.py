@@ -39,7 +39,7 @@ from typing import Literal, Optional
 import requests as _requests
 import yaml
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi import Query
 
 from src import alert_engine
@@ -484,7 +484,6 @@ def export_patient_history(
 
     patient_name = patient.get("patient_name", patient_id)
     rh_path = get_reading_history_db_path(_config)
-    readings = _reading_history.get_readings(rh_path, patient_id=patient_id, days=days)
     now = datetime.now(timezone.utc)
     timestamp = now.strftime("%Y%m%d_%H%M%S")
     # Sanitise patient_id for use in the Content-Disposition filename. The
@@ -493,6 +492,13 @@ def export_patient_history(
     safe_pid = _safe_filename_token(patient_id)
 
     if format == "json":
+        # JSON envelope requires `count` and the full list. Loaded into memory
+        # by design — at 5min polling × 365 days × 1 patient ≈ 105k readings
+        # ≈ 30 MB JSON, manageable. For larger exports prefer ``format=csv``,
+        # which streams row by row.
+        readings = _reading_history.get_readings(
+            rh_path, patient_id=patient_id, days=days
+        )
         envelope = {
             "patient_id": patient_id,
             "patient_name": patient_name,
@@ -510,19 +516,32 @@ def export_patient_history(
             },
         )
 
+    # CSV: stream row by row via iter_readings() + StreamingResponse so a
+    # year-long export across many patients does not spike memory.
     import csv
     import io
 
-    buf = io.StringIO()
-    buf.write("﻿")  # UTF-8 BOM so Excel opens the CSV as UTF-8
-    writer = csv.writer(buf)
-    writer.writerow(["timestamp", "patient_id", "patient_name", "glucose_value"])
-    for r in readings:
-        writer.writerow(
-            [r["timestamp"], r["patient_id"], r["patient_name"], r["glucose_value"]]
-        )
-    return Response(
-        content=buf.getvalue(),
+    def _csv_rows():
+        out = io.StringIO()
+        writer = csv.writer(out)
+        # UTF-8 BOM so Excel opens the CSV as UTF-8.
+        out.write("﻿")
+        writer.writerow(["timestamp", "patient_id", "patient_name", "glucose_value"])
+        yield out.getvalue()
+        out.seek(0)
+        out.truncate()
+        for r in _reading_history.iter_readings(
+            rh_path, patient_id=patient_id, days=days
+        ):
+            writer.writerow(
+                [r["timestamp"], r["patient_id"], r["patient_name"], r["glucose_value"]]
+            )
+            yield out.getvalue()
+            out.seek(0)
+            out.truncate()
+
+    return StreamingResponse(
+        _csv_rows(),
         media_type="text/csv; charset=utf-8",
         headers={
             "Content-Disposition": (

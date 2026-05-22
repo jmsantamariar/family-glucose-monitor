@@ -141,6 +141,64 @@ def get_readings(
         return []
 
 
+def iter_readings(
+    db_path: str,
+    patient_id: str,
+    hours: int = 3,
+    days: int | None = None,
+):
+    """Yield readings one row at a time without loading the full result set
+    into memory.
+
+    Same window semantics as :func:`get_readings`. Used by the CSV export
+    endpoint behind ``StreamingResponse`` so that a year-long export of
+    multiple patients does not spike memory. Yields dict rows in the same
+    shape as ``get_readings`` (oldest-first).
+
+    Empty generator when the DB file does not exist or the query fails
+    (failure is logged at WARNING level, no exception propagates — same
+    contract as :func:`get_readings`).
+    """
+    if days is not None:
+        if not isinstance(days, int) or days <= 0:
+            raise ValueError(f"days must be a positive int, got {days!r}")
+        hours = days * 24
+    elif hours <= 0:
+        raise ValueError(f"hours must be a positive int, got {hours!r}")
+
+    if not Path(db_path).exists():
+        return
+
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    engine = _get_engine(db_path)
+
+    try:
+        with engine.connect() as conn:
+            # execution_options(stream_results=True) tells SQLAlchemy / DBAPI
+            # to use a server-side cursor where supported (SQLite buffers in
+            # the C layer so memory still stays modest, but the API is right
+            # if the backend ever changes to Postgres etc.).
+            result = conn.execution_options(stream_results=True, yield_per=1000).execute(
+                text(
+                    "SELECT timestamp, patient_id, patient_name, glucose_value "
+                    "FROM readings "
+                    "WHERE patient_id = :pid AND timestamp >= :since "
+                    "ORDER BY timestamp ASC"
+                ),
+                {"pid": patient_id, "since": since},
+            )
+            for row in result:
+                yield {
+                    "timestamp": row[0],
+                    "patient_id": row[1],
+                    "patient_name": row[2],
+                    "glucose_value": row[3],
+                }
+    except Exception as exc:
+        logger.warning("Failed to stream reading history for patient %s: %s", patient_id, exc)
+        return
+
+
 def cleanup_old_readings(db_path: str, max_days: int = 3) -> int:
     """Delete readings older than *max_days* days.
 
