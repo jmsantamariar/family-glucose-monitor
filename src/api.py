@@ -26,6 +26,7 @@ source of truth.
 import json
 import logging
 import os
+import re
 import secrets
 import stat
 import threading
@@ -33,16 +34,17 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 import requests as _requests
 import yaml
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi import Query
 
 from src import alert_engine
 from src.alert_history import get_alerts
+from src.analytics.glycemic_metrics import compute_metrics as _compute_glycemic_metrics
 from src.auth import hash_password, is_configured, session_manager, verify_credentials
 from src.bootstrap import check_config_writable
 from src.config_schema import validate_config as schema_validate_config
@@ -425,17 +427,201 @@ def get_patient(patient_id: str):
 
 
 @app.get("/api/patients/{patient_id}/history", response_class=JSONResponse)
-def get_patient_history(patient_id: str, hours: int = Query(default=3, ge=1, le=24)):
-    """Return recent glucose readings for *patient_id* within the last *hours* hours.
+def get_patient_history(patient_id: str, hours: int = Query(default=3, ge=1, le=8760)):
+    """Return glucose readings for *patient_id* within the last *hours* hours.
 
     Readings are sampled at each polling cycle (~5 min) and stored in
-    ``reading_history.db``.  Returns an empty list when no history exists yet.
-    Unlike ``/api/alerts``, this endpoint returns **all** readings, not just
-    those that triggered an alert, making it suitable for sparkline visualisation.
+    ``reading_history.db``. Returns an empty list when no history exists yet.
+
+    Long ranges are **downsampled server-side** to keep the response size
+    bounded for charting. Buckets:
+
+    - ``hours <= 24``  → full resolution (~288 points max)
+    - ``hours <= 168`` (7d)  → 15-minute buckets (~672 points max)
+    - ``hours <= 720`` (30d) → 30-minute buckets (~1440 points max)
+    - ``hours <= 8760`` (1y) → 1-hour buckets (~8760 points max)
+
+    Each bucket's ``glucose_value`` is the AVG of the readings within it.
+    For full-resolution exports (e.g. handing data to a clinician), use
+    ``/api/patients/{id}/history/export?format=csv`` instead.
+
+    Range allowed: 1 hour to 8760 hours (≈1 year), matching ``/api/alerts``.
     """
     rh_path = get_reading_history_db_path(_config)
     readings = _reading_history.get_readings(rh_path, patient_id=patient_id, hours=hours)
+    if hours > 24:
+        if hours <= 168:
+            bucket = 15 * 60
+        elif hours <= 720:
+            bucket = 30 * 60
+        else:
+            bucket = 60 * 60
+        readings = _reading_history.downsample(readings, bucket_seconds=bucket)
     return readings
+
+
+_FILENAME_SAFE_RE = re.compile(r"[^A-Za-z0-9_-]")
+
+
+def _safe_filename_token(s: str, fallback: str = "patient") -> str:
+    """Return *s* sanitised so it is safe to interpolate into the
+    ``filename=`` parameter of a ``Content-Disposition`` header.
+
+    Replaces every char outside ``[A-Za-z0-9_-]`` with ``_``, caps the
+    length at 64, and falls back to *fallback* when the result would
+    otherwise be empty. Without this, a caller-controlled patient_id
+    containing quotes, newlines or control chars could break the header
+    value or enable response splitting / header injection.
+    """
+    cleaned = _FILENAME_SAFE_RE.sub("_", s or "")[:64]
+    return cleaned or fallback
+
+
+@app.get("/api/patients/{patient_id}/history/export")
+def export_patient_history(
+    patient_id: str,
+    days: int = Query(default=7, ge=1, le=365),
+    format: Literal["csv", "json"] = Query(default="csv"),
+):
+    """Export the glucose reading history of *patient_id* as a downloadable file.
+
+    Window is given in **days** (default 7, clamp 1–365). Format is ``csv`` or
+    ``json``. CSV is UTF-8 with BOM for Excel compatibility. JSON wraps the
+    readings in a small metadata envelope (patient name, period, count,
+    generated_at) — useful when handing the file to a clinician.
+
+    Response sets ``Content-Disposition: attachment`` with a timestamped filename.
+    Auth is enforced by the global middleware (returns 401 if no session).
+    Returns 404 if no patient with that ID is currently known.
+    """
+    _load_and_enrich_cache()
+    with _cache_lock:
+        patient = _readings_cache.get(patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    patient_name = patient.get("patient_name", patient_id)
+    rh_path = get_reading_history_db_path(_config)
+    now = datetime.now(timezone.utc)
+    timestamp = now.strftime("%Y%m%d_%H%M%S")
+    # Sanitise patient_id for use in the Content-Disposition filename. The
+    # raw value comes from the URL path and could contain quotes, newlines,
+    # or control chars that break the header (or enable header injection).
+    safe_pid = _safe_filename_token(patient_id)
+
+    if format == "json":
+        # JSON envelope requires `count` and the full list. Loaded into memory
+        # by design — at 5min polling × 365 days × 1 patient ≈ 105k readings
+        # ≈ 30 MB JSON, manageable. For larger exports prefer ``format=csv``,
+        # which streams row by row.
+        readings = _reading_history.get_readings(
+            rh_path, patient_id=patient_id, days=days
+        )
+        envelope = {
+            "patient_id": patient_id,
+            "patient_name": patient_name,
+            "period_days": days,
+            "count": len(readings),
+            "generated_at": now.isoformat(),
+            "readings": readings,
+        }
+        return JSONResponse(
+            content=envelope,
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="glucose_{safe_pid}_{timestamp}.json"'
+                ),
+            },
+        )
+
+    # CSV: stream row by row via iter_readings() + StreamingResponse so a
+    # year-long export across many patients does not spike memory.
+    import csv
+    import io
+
+    def _csv_rows():
+        out = io.StringIO()
+        writer = csv.writer(out)
+        # UTF-8 BOM so Excel opens the CSV as UTF-8.
+        out.write("﻿")
+        writer.writerow(["timestamp", "patient_id", "patient_name", "glucose_value"])
+        yield out.getvalue()
+        out.seek(0)
+        out.truncate()
+        for r in _reading_history.iter_readings(
+            rh_path, patient_id=patient_id, days=days
+        ):
+            writer.writerow(
+                [r["timestamp"], r["patient_id"], r["patient_name"], r["glucose_value"]]
+            )
+            yield out.getvalue()
+            out.seek(0)
+            out.truncate()
+
+    return StreamingResponse(
+        _csv_rows(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="glucose_{safe_pid}_{timestamp}.csv"'
+            ),
+        },
+    )
+
+
+@app.get("/api/patients/{patient_id}/metrics", response_class=JSONResponse)
+def get_patient_metrics(
+    patient_id: str,
+    days: int = Query(default=14, ge=1, le=365),
+):
+    """Return standard glycemic-control metrics for *patient_id* over *days* days.
+
+    Metrics computed (see ``src.analytics.glycemic_metrics``):
+    descriptive stats (mean/median/stdev/min/max), TIR five-bucket
+    breakdown (severe-low/low/in-range/high/severe-high), GMI, CV, MAGE.
+
+    Default window is 14 days — the minimum considered clinically useful
+    by the 2019 International Consensus on TIR. Clamped to [1, 365].
+
+    Returns 404 if the patient is not in the in-memory cache.
+    Auth is enforced by the global middleware (401 if no session).
+
+    Response shape::
+
+        {
+            "patient_id": "...",
+            "patient_name": "...",
+            "period_days": 14,
+            "first_reading_at": "<ISO-8601 or None>",
+            "last_reading_at":  "<ISO-8601 or None>",
+            "generated_at":     "<ISO-8601 UTC now>",
+            "metrics": { ...flat dict from compute_metrics()... }
+        }
+    """
+    _load_and_enrich_cache()
+    with _cache_lock:
+        patient = _readings_cache.get(patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    patient_name = patient.get("patient_name", patient_id)
+    rh_path = get_reading_history_db_path(_config)
+    readings = _reading_history.get_readings(rh_path, patient_id=patient_id, days=days)
+    metrics = _compute_glycemic_metrics(readings)
+
+    first_at = readings[0]["timestamp"] if readings else None
+    last_at = readings[-1]["timestamp"] if readings else None
+
+    return {
+        "patient_id": patient_id,
+        "patient_name": patient_name,
+        "period_days": days,
+        "first_reading_at": first_at,
+        "last_reading_at": last_at,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "metrics": metrics,
+    }
+
 
 @app.get("/api/health", response_class=JSONResponse)
 def health_check():

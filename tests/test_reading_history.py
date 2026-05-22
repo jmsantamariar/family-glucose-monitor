@@ -140,3 +140,63 @@ class TestCleanupOldReadings:
         assert deleted == 0
         result = reading_history.get_readings(db_path, "p1", hours=48)
         assert len(result) == 1
+
+
+# ── downsample ────────────────────────────────────────────────────────────────
+
+
+def _row(ts: str, value: int, pid: str = "p1", pname: str = "Ana") -> dict:
+    return {"timestamp": ts, "patient_id": pid, "patient_name": pname, "glucose_value": value}
+
+
+class TestDownsample:
+    def test_empty_input_returns_empty(self):
+        assert reading_history.downsample([], 900) == []
+
+    def test_non_positive_bucket_returns_input_as_is(self):
+        rows = [_row("2026-05-21T12:00:00+00:00", 100)]
+        assert reading_history.downsample(rows, 0) == rows
+        assert reading_history.downsample(rows, -60) == rows
+
+    def test_single_reading_yields_single_bucket(self):
+        rows = [_row("2026-05-21T12:03:00+00:00", 120)]
+        out = reading_history.downsample(rows, 900)  # 15-min buckets
+        assert len(out) == 1
+        assert out[0]["glucose_value"] == 120
+        # Bucket start floors to the 15-min boundary
+        assert out[0]["timestamp"] == "2026-05-21T12:00:00+00:00"
+        assert out[0]["patient_id"] == "p1"
+        assert out[0]["patient_name"] == "Ana"
+
+    def test_two_readings_same_bucket_averaged(self):
+        rows = [
+            _row("2026-05-21T12:02:00+00:00", 100),
+            _row("2026-05-21T12:08:00+00:00", 140),
+        ]
+        out = reading_history.downsample(rows, 900)
+        assert len(out) == 1
+        assert out[0]["glucose_value"] == 120  # AVG(100, 140)
+
+    def test_two_readings_different_buckets_split(self):
+        rows = [
+            _row("2026-05-21T12:02:00+00:00", 100),
+            _row("2026-05-21T12:20:00+00:00", 140),
+        ]
+        out = reading_history.downsample(rows, 900)
+        assert len(out) == 2
+        assert out[0]["timestamp"] == "2026-05-21T12:00:00+00:00"
+        assert out[0]["glucose_value"] == 100
+        assert out[1]["timestamp"] == "2026-05-21T12:15:00+00:00"
+        assert out[1]["glucose_value"] == 140
+
+    def test_many_readings_one_hour_bucket(self):
+        """12 readings spread across an hour collapse to a single bucket."""
+        base = datetime(2026, 5, 21, 12, 0, tzinfo=timezone.utc)
+        rows = [
+            _row((base + timedelta(minutes=5 * i)).isoformat(), 100 + i)
+            for i in range(12)
+        ]
+        out = reading_history.downsample(rows, 3600)
+        assert len(out) == 1
+        # AVG(100..111) = 105.5 → round() → 106 (banker's rounding)
+        assert out[0]["glucose_value"] in (105, 106)

@@ -1,23 +1,26 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" data-mode="modern" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Monitor de Glucosa Familiar</title>
-  <!-- Mode bootstrap: applies senior/modern from localStorage BEFORE first render
-       to avoid FOUC. When no preference is saved, falls back to a heuristic:
-       prefers-reduced-motion + prefers-color-scheme: light → senior, else modern.
+  <!-- Mode + theme bootstrap: applies senior/modern AND light/dark from
+       localStorage BEFORE first render to avoid FOUC. Storage keys:
+       fgm-mode (senior|modern) and fgm-theme (light|dark) — same keys used by
+       the toggle JS later in this file and by login/setup/configuracion. When
+       no mode preference is saved, falls back to a heuristic: prefers-
+       reduced-motion + prefers-color-scheme: light → senior, else modern.
        Duplicated inline across index/login/setup/configuracion by design —
        extracting to /mode.js would either block render or cause the flash this
-       script exists to prevent. If you change the heuristic or storage key,
+       script exists to prevent. If you change the heuristic or storage keys,
        sync ALL FOUR files. For true DRY, refactor to a Jinja partial. -->
   <script>
     (function(){
       try {
-        var saved = localStorage.getItem('fgm-mode');
+        var savedMode = localStorage.getItem('fgm-mode');
         var mode;
-        if (saved === 'senior' || saved === 'modern') {
-          mode = saved;
+        if (savedMode === 'senior' || savedMode === 'modern') {
+          mode = savedMode;
         } else {
           // No saved preference. Heuristic: if the OS signals both
           // "reduced motion" AND a "light color scheme" preference, the
@@ -28,21 +31,65 @@
           mode = (reducesMotion && prefersLight) ? 'senior' : 'modern';
         }
         document.documentElement.setAttribute('data-mode', mode);
+
+        var savedTheme = localStorage.getItem('fgm-theme');
+        var theme = (savedTheme === 'light' || savedTheme === 'dark') ? savedTheme : 'light';
+        document.documentElement.setAttribute('data-theme', theme);
       } catch (e) {
         document.documentElement.setAttribute('data-mode', 'modern');
+        document.documentElement.setAttribute('data-theme', 'light');
       }
     })();
   </script>
   <!-- PWA — installable as Android / desktop app -->
   <link rel="manifest" href="/manifest.json" />
-  <meta name="theme-color" content="#1a365d" />
+  <meta name="theme-color" content="#3a2a20" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Glucosa" />
   <link rel="apple-touch-icon" href="/icons/icon-192.svg" />
-  <!-- i18n helper — must load before page scripts so t() is available synchronously -->
-  <script src="/i18n/i18n.js"></script>
+  <!-- Source Sans 3 (texto) + Source Serif 4 (display ligero) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" />
+  <!-- i18n helper — must load before page scripts so t() is available synchronously.
+       Wrapped so the preview sandbox (which 404s /i18n/i18n.js) stays quiet;
+       production hostnames load it normally with the same blocking semantics. -->
+  <script>
+    (function () {
+      var h = (location.hostname || '').toLowerCase();
+      var isSandbox = h.indexOf('claudeusercontent') !== -1
+                   || h.indexOf('localhost.run')     !== -1
+                   || location.protocol === 'file:';
+      if (!isSandbox) {
+        // document.write during head parsing inserts the script and blocks
+        // subsequent parsing until it loads — same behavior as a static tag.
+        document.write('<script src="/i18n/i18n.js"><\/script>');
+      }
+    })();
+  </script>
+  <!-- Defensive shim: if i18n didn't load (e.g. running outside the prod server),
+       expose a minimal stub so the rest of the app's scripts don't crash.
+       Production untouched — the real i18n.js takes precedence when it loads. -->
+  <script>
+    if (typeof window.i18n === 'undefined') {
+      window.i18n = {
+        _locale: 'es',
+        getLocale: function () { return this._locale; },
+        setLocale: function (l) { this._locale = l; },
+        t: function (key, fallback) {
+          if (fallback !== undefined) return fallback;
+          // Try the data-i18n element's own text as fallback
+          var els = document.querySelectorAll('[data-i18n="' + key + '"]');
+          if (els.length) return els[0].textContent || key;
+          return key;
+        },
+        applyTo: function () {},
+        onLocaleChange: function () {}
+      };
+    }
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <!-- chartjs-plugin-annotation v3.0.1 (inlined for offline use) -->
   <script>
@@ -61,63 +108,148 @@
     /* ── Reset & Variables ─────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    /* ════════════════════════════════════════════════════════════
+       Sistema visual — "Cuidado en casa"
+       Tonos cálidos: papel crema, terracota, oliva, salvia, ámbar.
+       Mantenemos NOMBRES de variables (JS depende de ellos), solo
+       cambian valores. Light/Dark independiente de prefers-color-scheme
+       (controlado por usuario via [data-theme]).
+       ════════════════════════════════════════════════════════════ */
+
     :root {
-      --bg:        #f0f4f8;
-      --surface:   #ffffff;
-      --text:      #1a202c;
-      --subtext:   #4a5568;
-      --border:    #e2e8f0;
-      --header-bg: #1a365d;
-      --header-fg: #ffffff;
+      /* Paleta semántica base — modern light por default */
+      --bg:        #f5ede0;        /* papel crema cálido */
+      --surface:   #fbf6ec;        /* tarjeta */
+      --surface-2: #f0e4d2;        /* hover / contraste tenue */
+      --text:      #2a1f15;        /* tinta sepia profunda */
+      --subtext:   #6b5840;        /* gris cálido */
+      --border:    #e6d8c0;        /* línea suave */
+      --border-strong: #c9b69a;
+      --header-bg: #3a2a20;        /* madera oscura */
+      --header-fg: #f5ede0;
+      --accent:    #c2553d;        /* terracota */
+      --accent-soft: #f3d9cf;
+      --accent-fg: #6f2316;
 
-      --green-bg:  #c6f6d5;
-      --green-fg:  #22543d;
-      --yellow-bg: #fefcbf;
-      --yellow-fg: #744210;
-      --red-bg:    #fed7d7;
-      --red-fg:    #742a2a;
+      /* Estado semántico — verde olivo, ámbar miel, terracota, salvia-azul */
+      --green-bg:  #dbe5b6;        --green-fg:  #455a16;
+      --yellow-bg: #f6e0b0;        --yellow-fg: #7a4d10;
+      --red-bg:    #f3c9bf;        --red-fg:    #7a2418;
+      --blue-bg:   #cbdbd9;        --blue-fg:   #2a4f54;
+      --orange-bg: #f3d9bd;        --orange-fg: #804010;
 
-      --status-ok:   #48bb78;
-      --status-warn: #f6ad55;
-      --status-err:  #fc8181;
+      --status-ok:   #6f8a2a;
+      --status-warn: #d8a13a;
+      --status-err:  #c2553d;
 
-      --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      --radius: 10px;
-      --shadow: 0 2px 8px rgba(0,0,0,.08);
+      --font: 'Source Sans 3', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      --font-display: 'Source Serif 4', 'Source Sans 3', Georgia, serif;
+      --radius:   18px;
+      --radius-sm: 10px;
+      --radius-lg: 24px;
+      --shadow:   0 1px 0 rgba(80,50,20,.04), 0 8px 24px -12px rgba(80,50,20,.18);
+      --shadow-lg: 0 2px 0 rgba(80,50,20,.04), 0 24px 48px -20px rgba(80,50,20,.22);
 
-      --blue-bg:  #bee3f8;
-      --blue-fg:  #2c5282;
-      --orange-bg: #feebc8;
-      --orange-fg: #7b341e;
-
-      /* Tokens parametrizables por modo (defaults = modern) */
+      /* Tokens parametrizables por modo (defaults = modern; senior block below
+         overrides --font-scale, --touch-min, --border-w, --transition-* for a11y) */
       --font-scale: 1;
-      --touch-min: 36px;
+      --touch-min: 44px;
       --border-w: 1px;
       --transition-fast: .15s;
-      --transition-base: .3s;
+      --transition-base: .25s;
     }
 
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg:        #0d1117;
-        --surface:   #161b22;
-        --text:      #e2e8f0;
-        --subtext:   #a0aec0;
-        --border:    #2d3748;
-        --header-bg: #0d1b2e;
+    /* Modern — DARK */
+    :root[data-mode="modern"][data-theme="dark"] {
+      --bg:        #1a1410;
+      --surface:   #221a14;
+      --surface-2: #2c211a;
+      --text:      #f0e3cf;
+      --subtext:   #b39d7e;
+      --border:    #3b2d20;
+      --border-strong: #5a4530;
+      --header-bg: #0f0a07;
+      --header-fg: #f0e3cf;
+      --accent:    #e58062;
+      --accent-soft: #4a2418;
+      --accent-fg: #f8d7c8;
 
-        --green-bg:  #1c4532;
-        --green-fg:  #9ae6b4;
-        --yellow-bg: #2d2700;
-        --yellow-fg: #f6e05e;
-        --red-bg:    #3b1515;
-        --red-fg:    #feb2b2;
-        --blue-bg:   #1a3a5c;
-        --blue-fg:   #90cdf4;
-        --orange-bg: #3b1a00;
-        --orange-fg: #fbd38d;
-      }
+      --green-bg:  #2d3a14;        --green-fg:  #c4d472;
+      --yellow-bg: #3a2a0a;        --yellow-fg: #f0c060;
+      --red-bg:    #3b1f18;        --red-fg:    #f0a690;
+      --blue-bg:   #1d2e30;        --blue-fg:   #92c0c4;
+      --orange-bg: #3a2210;        --orange-fg: #f0bd80;
+
+      --status-ok:   #a8c455;
+      --status-warn: #e8b860;
+      --status-err:  #e58062;
+
+      --shadow:    0 1px 0 rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.7);
+      --shadow-lg: 0 2px 0 rgba(0,0,0,.4), 0 24px 48px -20px rgba(0,0,0,.7);
+    }
+
+    /* ── SENIOR — siempre tipografía grande, sin animaciones,
+       contraste AAA (7:1). El usuario pidió expresamente que senior
+       también tenga light y dark. */
+    :root[data-mode="senior"] {
+      --font-scale: 1.45;
+      --touch-min: 64px;
+      --border-w: 2px;
+      --transition-fast: 0s;
+      --transition-base: 0s;
+      --radius:   22px;
+      --radius-sm: 14px;
+      --radius-lg: 28px;
+    }
+
+    :root[data-mode="senior"][data-theme="light"] {
+      --bg:        #f9f3e8;
+      --surface:   #ffffff;
+      --surface-2: #f1e6d2;
+      --text:      #1a1208;        /* near-black, AAA en crema */
+      --subtext:   #4a3a25;
+      --border:    #d4bf95;
+      --border-strong: #a08855;
+      --header-bg: #2a1d12;
+      --header-fg: #fdf8ec;
+      --accent:    #8e2a18;        /* terracota oscura — AAA */
+      --accent-soft: #f0d4c5;
+      --accent-fg: #4a1308;
+
+      --green-bg:  #d5e2a4;        --green-fg:  #2e4008;
+      --yellow-bg: #f5d896;        --yellow-fg: #553308;
+      --red-bg:    #f0baa8;        --red-fg:    #5a1808;
+      --blue-bg:   #b5cdcb;        --blue-fg:   #1a3a40;
+      --orange-bg: #f0c896;        --orange-fg: #5a2808;
+
+      --status-ok:   #4e6818;
+      --status-warn: #a06808;
+      --status-err:  #8e2a18;
+    }
+
+    :root[data-mode="senior"][data-theme="dark"] {
+      --bg:        #14100a;
+      --surface:   #1f1812;
+      --surface-2: #2a2018;
+      --text:      #fdf4dc;        /* AAA contraste sobre #14100a */
+      --subtext:   #d4be95;
+      --border:    #4a3a25;
+      --border-strong: #75603e;
+      --header-bg: #0a0703;
+      --header-fg: #fdf4dc;
+      --accent:    #f5a080;
+      --accent-soft: #4a2418;
+      --accent-fg: #fde2d2;
+
+      --green-bg:  #3d4e15;        --green-fg:  #e4f0a8;
+      --yellow-bg: #4a3608;        --yellow-fg: #f8d480;
+      --red-bg:    #4f2418;        --red-fg:    #f8c0a8;
+      --blue-bg:   #20383a;        --blue-fg:   #b8d8d8;
+      --orange-bg: #4a2a10;        --orange-fg: #f8cc95;
+
+      --status-ok:   #c4d472;
+      --status-warn: #f0c060;
+      --status-err:  #f5a080;
     }
 
     /* ── Modo SENIOR (elder-friendly) ───────────────────────────
@@ -186,27 +318,50 @@
       min-height: 100vh;
       display: flex;
       flex-direction: column;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      letter-spacing: -.005em;
+    }
+
+    *:focus-visible {
+      outline: 3px solid var(--accent);
+      outline-offset: 2px;
+      border-radius: 4px;
     }
 
     /* ── Header ────────────────────────────────────────────────── */
     header {
-      background: var(--header-bg);
+      background:
+        linear-gradient(135deg, var(--header-bg) 0%, color-mix(in oklab, var(--header-bg) 80%, var(--accent)) 100%);
       color: var(--header-fg);
-      padding: 1rem 1.5rem;
+      padding: 1.1rem 1.5rem 1.25rem;
       display: flex;
       align-items: center;
       justify-content: space-between;
       flex-wrap: wrap;
       gap: .5rem;
-      box-shadow: 0 2px 10px rgba(0,0,0,.3);
+      box-shadow: 0 1px 0 rgba(0,0,0,.15), 0 12px 32px -16px rgba(60,30,10,.45);
+      position: relative;
+    }
+    header::after {
+      content: '';
+      position: absolute;
+      inset: auto 0 0 0;
+      height: 3px;
+      background: linear-gradient(90deg,
+        transparent 0%,
+        var(--accent) 30%,
+        var(--status-ok) 50%,
+        var(--status-warn) 70%,
+        transparent 100%);
+      opacity: .55;
     }
 
     .header-right {
       display: flex;
       align-items: center;
-      gap: 1rem;
+      gap: .75rem;
       font-size: .85rem;
-      opacity: .9;
     }
 
     #clock { font-variant-numeric: tabular-nums; }
@@ -257,12 +412,24 @@
 
     /* ── Section titles ─────────────────────────────────────────── */
     .section-title {
-      font-size: 1rem;
-      font-weight: 700;
-      color: var(--subtext);
-      text-transform: uppercase;
-      letter-spacing: .06em;
-      margin: 1.5rem 0 .75rem;
+      font-family: var(--font-display);
+      font-size: 1.35rem;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: -.01em;
+      text-transform: none;
+      margin: 2rem 0 1rem;
+      display: flex;
+      align-items: center;
+      gap: .55rem;
+    }
+    .section-title::before {
+      content: '';
+      width: 4px;
+      height: 1.05em;
+      background: var(--accent);
+      border-radius: 2px;
+      flex-shrink: 0;
     }
 
     /* ── Table wrapper ─────────────────────────────────────────── */
@@ -271,7 +438,7 @@
       border-radius: var(--radius);
       box-shadow: var(--shadow);
       overflow: hidden;
-      border: 1px solid var(--border);
+      border: var(--border-w) solid var(--border);
     }
 
     table {
@@ -281,27 +448,28 @@
     }
 
     thead th {
-      background: var(--header-bg);
-      color: var(--header-fg);
-      padding: .75rem 1rem;
+      background: var(--surface-2);
+      color: var(--subtext);
+      padding: .85rem 1rem;
       text-align: left;
-      font-size: .8rem;
-      font-weight: 600;
+      font-size: .72rem;
+      font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: .06em;
+      letter-spacing: .08em;
       white-space: nowrap;
+      border-bottom: var(--border-w) solid var(--border);
     }
 
     tbody tr {
       border-bottom: 1px solid var(--border);
-      transition: filter var(--transition-fast, .15s);
+      transition: filter var(--transition-fast), background-color var(--transition-fast);
     }
 
     tbody tr:last-child { border-bottom: none; }
-    tbody tr:hover { filter: brightness(.97); }
+    tbody tr:hover { filter: brightness(.98); }
 
     tbody td {
-      padding: .9rem 1rem;
+      padding: 1rem 1rem;
       vertical-align: middle;
     }
 
@@ -315,59 +483,51 @@
 
     @keyframes pulse-warning {
       0%, 100% { background: var(--yellow-bg); }
-      50%       { background: #f6e05e; }
+      50%       { background: color-mix(in oklab, var(--yellow-bg) 55%, var(--status-warn)); }
     }
     @keyframes pulse-danger {
       0%, 100% { background: var(--red-bg); }
-      50%       { background: #fc8181; }
+      50%       { background: color-mix(in oklab, var(--red-bg) 50%, var(--status-err)); }
     }
     @keyframes pulse-low {
       0%, 100% { background: var(--blue-bg); }
-      50%       { background: #90cdf4; }
+      50%       { background: color-mix(in oklab, var(--blue-bg) 55%, #6fa0a8); }
     }
     @media (prefers-reduced-motion: reduce) {
       .row-warning, .row-danger, .row-danger-low { animation: none; }
       .status-dot.warn { animation: none; }
     }
 
-    /* ── Digital glucose display ───────────────────────────────── */
+    /* ── Glucose display (warm restyle) ────────────────────────── */
     .glucose-display {
       display: inline-flex;
       align-items: baseline;
-      gap: .25rem;
-      background: #1a1a1a;
-      border: 1px solid #333;
-      border-radius: 6px;
-      padding: .15rem .55rem .15rem .45rem;
+      gap: .35rem;
+      background: transparent;
+      border: none;
+      padding: .1rem 0;
     }
 
     .glucose-value {
-      font-family: 'DSEG7 Classic', 'Courier New', monospace;
-      font-size: 1.8rem;
-      font-weight: normal;
+      font-family: var(--font-display);
+      font-size: 1.85rem;
+      font-weight: 700;
       font-variant-numeric: tabular-nums;
-      letter-spacing: .08em;
+      letter-spacing: -.02em;
       line-height: 1;
-      color: #00e676;
-      transition: color var(--transition-base, .3s), text-shadow var(--transition-base, .3s);
+      color: currentColor;
+      transition: color var(--transition-base);
     }
 
-    .glucose-value.trending-up {
-      color: #ff5555;
-      text-shadow: 0 0 8px #ff4444, 0 0 16px #ff2222;
-    }
-
-    .glucose-value.trending-down {
-      color: #5599ff;
-      text-shadow: 0 0 8px #4488ff, 0 0 16px #2266ff;
-    }
+    .glucose-value.trending-up   { color: var(--red-fg); }
+    .glucose-value.trending-down { color: var(--blue-fg); }
 
     .glucose-unit {
-      font-size: .65rem;
+      font-size: .78rem;
       font-weight: 600;
       font-family: var(--font);
-      color: rgba(200,200,200,.7);
-      margin-left: .05rem;
+      color: var(--subtext);
+      letter-spacing: .02em;
     }
 
     /* ── Trend arrow ───────────────────────────────────────────── */
@@ -379,19 +539,22 @@
       transition: color var(--transition-base, .3s);
     }
 
-    .trend-up-fast, .trend-up   { color: #fc8181; }
-    .trend-down-fast,.trend-down { color: #63b3ed; }
-    .trend-stable               { color: var(--subtext); }
+    .trend-up-fast, .trend-up   { color: var(--status-err); }
+    .trend-down-fast,.trend-down { color: var(--blue-fg); }
+    .trend-stable               { color: var(--subtext); opacity: .55; }
 
     /* ── Level badge ───────────────────────────────────────────── */
     .level-badge {
       display: inline-block;
-      padding: .2rem .55rem;
-      border-radius: 4px;
-      font-size: .78rem;
+      padding: .28rem .7rem;
+      border-radius: 999px;
+      font-size: .7rem;
       font-weight: 700;
-      letter-spacing: .04em;
-      background: rgba(0,0,0,.12);
+      letter-spacing: .05em;
+      background: color-mix(in oklab, currentColor 14%, transparent);
+      border: 1px solid color-mix(in oklab, currentColor 28%, transparent);
+      text-transform: uppercase;
+      white-space: nowrap;
     }
 
     /* ── Trend alert ───────────────────────────────────────────── */
@@ -439,13 +602,18 @@
     }
 
     .history-controls select {
-      font-size: .88rem;
-      padding: .3rem .6rem;
-      border: 1px solid var(--border);
-      border-radius: 6px;
+      font-size: .9rem;
+      padding: .5rem .8rem;
+      border: var(--border-w) solid var(--border);
+      border-radius: var(--radius-sm);
       background: var(--surface);
       color: var(--text);
+      min-height: var(--touch-min);
+      font-family: inherit;
+      cursor: pointer;
+      transition: border-color var(--transition-fast);
     }
+    .history-controls select:hover { border-color: var(--border-strong); }
 
     /* ── Charts grid ───────────────────────────────────────────── */
     .charts-grid {
@@ -463,17 +631,18 @@
       background: var(--surface);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
-      border: 1px solid var(--border);
-      padding: 1rem;
+      border: var(--border-w) solid var(--border);
+      padding: 1.25rem 1.25rem 1.1rem;
     }
 
     .chart-card h3 {
-      font-size: .85rem;
-      font-weight: 700;
-      color: var(--subtext);
-      text-transform: uppercase;
-      letter-spacing: .05em;
-      margin-bottom: .75rem;
+      font-family: var(--font-display);
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: -.005em;
+      margin-bottom: 1rem;
+      text-transform: none;
     }
 
     /* ── Alert history table row colors ────────────────────────── */
@@ -481,113 +650,221 @@
     .alert-high   { background: var(--yellow-bg); color: var(--yellow-fg); }
     .alert-trend  { background: var(--green-bg);  color: var(--green-fg);  }
 
-    /* ── Hero header ───────────────────────────────────────────── */
+    /* ── Hero header (override) ────────────────────────────────── */
     header {
-      padding: 1.1rem 1.5rem;
+      padding: 1.25rem 1.75rem 1.4rem;
       flex-direction: column;
       align-items: stretch;
+      gap: 1rem;
     }
 
     .header-top {
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 1.25rem;
       flex-wrap: wrap;
-      gap: .5rem;
     }
 
     .header-brand {
       display: flex;
       align-items: center;
-      gap: .9rem;
+      gap: 1rem;
+      min-width: 0;
+      flex: 1 1 320px;
     }
-
-    .header-icon {
-      font-size: 2.4rem;
-      line-height: 1;
-      filter: drop-shadow(0 0 10px rgba(255,120,120,.7));
-    }
-
-    .header-title {
-      font-size: 1.45rem;
-      font-weight: 800;
-      letter-spacing: .01em;
-      line-height: 1.2;
-    }
-
-    .title-family  { color: #ffffff; }
-    .title-glucose { color: #63b3ed; margin: 0 .25rem; }
-    .title-monitor { color: #ffffff; }
-
+    .header-brand > div { min-width: 0; }
     .header-subtitle {
-      font-size: .76rem;
-      color: rgba(255,255,255,.72);
+      font-size: .8rem;
+      color: color-mix(in oklab, var(--header-fg) 70%, transparent);
       display: flex;
       align-items: center;
       gap: .65rem;
-      margin-top: .2rem;
+      margin-top: .3rem;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .header-subtitle > span:first-child {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
     }
 
+    .header-icon {
+      width: 44px; height: 44px;
+      border-radius: 12px;
+      background: color-mix(in oklab, var(--accent) 28%, transparent);
+      border: 1px solid color-mix(in oklab, var(--accent) 55%, transparent);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      line-height: 1;
+      filter: none;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
+    }
+
+    .header-title {
+      font-family: var(--font-display);
+      font-size: 1.55rem;
+      font-weight: 600;
+      letter-spacing: -.015em;
+      line-height: 1.15;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .title-family  { color: var(--header-fg); opacity: .92; font-weight: 500; }
+    .title-glucose { color: var(--accent); margin: 0 .2rem; font-style: italic; font-weight: 700; }
+    .title-monitor { color: var(--header-fg); opacity: .92; font-weight: 500; }
+
     .live-badge {
-      background: rgba(72,187,120,.18);
-      color: #68d391;
-      border: 1px solid rgba(72,187,120,.45);
-      border-radius: 20px;
-      padding: .1rem .45rem;
+      background: color-mix(in oklab, var(--status-ok) 22%, transparent);
+      color: color-mix(in oklab, var(--status-ok) 85%, white);
+      border: 1px solid color-mix(in oklab, var(--status-ok) 55%, transparent);
+      border-radius: 999px;
+      padding: .15rem .55rem;
       font-weight: 700;
-      font-size: .7rem;
-      letter-spacing: .08em;
-      animation: live-pulse 2s ease-in-out infinite;
+      font-size: .65rem;
+      letter-spacing: .14em;
+      animation: live-pulse 2.4s ease-in-out infinite;
     }
 
     @keyframes live-pulse {
       0%, 100% { opacity: 1; }
-      50%       { opacity: .45; }
+      50%       { opacity: .55; }
     }
 
-    /* ── Language toggle button ─────────────────────────────────── */
-    #lang-toggle-btn {
-      background: transparent;
-      border: 1px solid rgba(255,255,255,.35);
+    /* ── Header pill buttons (lang/mode/theme/settings/logout) ── */
+    .header-btn,
+    #lang-toggle-btn,
+    #logout-btn,
+    #settings-btn {
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.18);
       color: inherit;
-      border-radius: 4px;
-      padding: .2rem .5rem;
+      border-radius: 999px;
+      padding: .45rem .85rem;
       cursor: pointer;
       font-size: .78rem;
       font-family: inherit;
-      letter-spacing: .03em;
-      transition: background var(--transition-fast, .15s), border-color var(--transition-fast, .15s);
+      font-weight: 600;
+      letter-spacing: .01em;
+      transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
       white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
+      min-height: var(--touch-min);
+      text-decoration: none;
     }
-    #lang-toggle-btn:hover {
-      background: rgba(255,255,255,.1);
-      border-color: rgba(255,255,255,.6);
+    .header-btn:hover,
+    #lang-toggle-btn:hover,
+    #logout-btn:hover,
+    #settings-btn:hover {
+      background: rgba(255,255,255,.12);
+      border-color: rgba(255,255,255,.32);
+    }
+    .header-btn.is-primary {
+      background: var(--accent);
+      border-color: color-mix(in oklab, var(--accent) 70%, white);
+      color: white;
+    }
+    .header-btn.is-primary:hover {
+      background: color-mix(in oklab, var(--accent) 85%, white);
+    }
+    .header-btn .ico {
+      font-size: 1rem;
+      line-height: 1;
+      opacity: .9;
+    }
+
+    /* Clock + status badge */
+    #clock {
+      font-variant-numeric: tabular-nums;
+      font-family: var(--font);
+      font-weight: 600;
+      font-size: .85rem;
+      opacity: .92;
+      padding: .35rem .75rem;
+      border-radius: 999px;
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.1);
+    }
+    .status-badge {
+      padding: .4rem .8rem;
+      background: rgba(255,255,255,.06);
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.15);
+      font-size: .72rem;
+    }
+
+    /* ── Header meta row (2nd row): clock/status (left) + controls (right) */
+    .header-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      padding-top: .75rem;
+      border-top: 1px solid rgba(255,255,255,.06);
+    }
+    .header-meta-left {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      flex-wrap: wrap;
+    }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: .45rem;
+      flex-wrap: wrap;
+    }
+
+    /* Responsive: hide labels in pill buttons at narrow widths */
+    @media (max-width: 760px) {
+      .header-right .lbl { display: none; }
+      .header-meta-left { width: 100%; justify-content: space-between; }
+      .header-right { width: 100%; justify-content: flex-end; }
+    }
+    @media (max-width: 460px) {
+      #clock { display: none; }
+      .header-title { font-size: 1.3rem; }
+      .header-icon { width: 38px; height: 38px; font-size: 1.25rem; }
     }
     .alert-strip {
       background: var(--surface);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
-      border: 1px solid var(--border);
-      padding: .7rem 1rem;
+      border: var(--border-w) solid var(--border);
+      padding: 1rem 1.25rem;
       margin-bottom: 1rem;
       display: flex;
       align-items: center;
-      gap: 1rem;
+      gap: 1.25rem;
       flex-wrap: wrap;
     }
 
     .alert-strip-title {
-      font-size: .82rem;
-      font-weight: 700;
-      color: var(--subtext);
-      text-transform: uppercase;
-      letter-spacing: .05em;
+      font-family: var(--font-display);
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text);
+      text-transform: none;
+      letter-spacing: -.005em;
       white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
     }
 
     .alert-strip-cards {
       display: flex;
-      gap: .5rem;
+      gap: .55rem;
       flex-wrap: wrap;
     }
 
@@ -595,37 +872,52 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: .3rem .75rem;
-      border-radius: 8px;
+      justify-content: center;
+      padding: .55rem 1rem;
+      border-radius: var(--radius-sm);
       cursor: pointer;
-      transition: filter var(--transition-fast, .15s), transform var(--transition-fast, .1s);
-      min-width: 68px;
-      border: 2px solid transparent;
+      transition: filter var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
+      min-width: 84px;
+      min-height: var(--touch-min);
+      border: var(--border-w) solid transparent;
       user-select: none;
+      gap: .15rem;
     }
 
-    .alert-card:hover  { filter: brightness(.9); transform: translateY(-1px); }
-    .alert-card.active { border-color: currentColor; }
+    .alert-card:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px -8px rgba(80,50,20,.25);
+    }
+    .alert-card.active {
+      border-color: currentColor;
+      box-shadow: inset 0 0 0 1px currentColor;
+    }
 
-    .alert-card-total { background: var(--border);    color: var(--text);       }
-    .alert-card-high  { background: var(--yellow-bg); color: var(--yellow-fg);  }
-    .alert-card-low   { background: var(--blue-bg);   color: var(--blue-fg);    }
-    .alert-card-trend { background: var(--orange-bg); color: var(--orange-fg);  }
+    .alert-card-total {
+      background: var(--surface-2);
+      color: var(--text);
+      border-color: var(--border);
+    }
+    .alert-card-high  { background: var(--yellow-bg); color: var(--yellow-fg); }
+    .alert-card-low   { background: var(--blue-bg);   color: var(--blue-fg);   }
+    .alert-card-trend { background: var(--orange-bg); color: var(--orange-fg); }
 
     .alert-card-count {
-      font-size: 1.35rem;
-      font-weight: 800;
+      font-family: var(--font-display);
+      font-size: 1.5rem;
+      font-weight: 700;
       font-variant-numeric: tabular-nums;
       line-height: 1;
+      letter-spacing: -.02em;
     }
 
     .alert-card-label {
       font-size: .62rem;
-      font-weight: 600;
+      font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: .04em;
-      margin-top: .12rem;
+      letter-spacing: .06em;
       text-align: center;
+      opacity: .85;
     }
 
     /* ── Inline sparkline column ────────────────────────────────── */
@@ -707,9 +999,9 @@
       overflow: hidden;
     }
 
-    .tir-seg-high  { background: #fc8181; }
-    .tir-seg-range { background: #68d391; }
-    .tir-seg-low   { background: #63b3ed; }
+    .tir-seg-high  { background: var(--status-err); }
+    .tir-seg-range { background: var(--status-ok); }
+    .tir-seg-low   { background: var(--blue-fg); }
 
     .tir-labels {
       display: flex;
@@ -820,6 +1112,736 @@
       table { font-size: .88rem; }
       tbody td { padding: .7rem .6rem; }
     }
+
+    /* ── Historical analysis section ─────────────────────────────────
+       Selector + per-patient cards (chart + metrics + download).      */
+    .history-analysis {
+      margin-top: 2rem;
+      padding: 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+    .history-analysis-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: .75rem;
+      margin-bottom: 1rem;
+    }
+    .range-selector {
+      display: inline-flex;
+      gap: .25rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: .2rem;
+    }
+    .range-btn {
+      background: transparent;
+      border: none;
+      color: var(--subtext);
+      padding: .4rem .85rem;
+      border-radius: calc(var(--radius) - 3px);
+      font-size: .85rem;
+      font-family: var(--font);
+      cursor: pointer;
+      min-height: var(--touch-min, 36px);
+      transition: background var(--transition-fast, .15s), color var(--transition-fast, .15s);
+    }
+    .range-btn:hover { background: var(--surface-2); color: var(--text); }
+    .range-btn.is-active {
+      background: var(--accent);
+      color: white;
+      font-weight: 700;
+      box-shadow: 0 2px 8px -4px color-mix(in oklab, var(--accent) 60%, transparent);
+    }
+    .history-analysis-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1rem;
+    }
+    .ha-patient-card {
+      background: var(--bg);
+      border: var(--border-w, 1px) solid var(--border);
+      border-radius: var(--radius);
+      padding: .85rem;
+      display: flex;
+      flex-direction: column;
+      gap: .75rem;
+    }
+    .ha-patient-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .5rem;
+    }
+    .ha-patient-card-title {
+      font-weight: 700;
+      font-size: 1rem;
+      color: var(--text);
+    }
+    .ha-chart-wrap {
+      position: relative;
+      height: 140px;
+      width: 100%;
+    }
+    .ha-metrics-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) - 2px);
+      padding: .65rem .75rem;
+      display: flex;
+      flex-direction: column;
+      gap: .4rem;
+    }
+    .ha-metrics-headline {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: .5rem;
+      text-align: center;
+    }
+    .ha-metric {
+      display: flex;
+      flex-direction: column;
+      gap: .15rem;
+    }
+    .ha-metric-label {
+      font-size: .65rem;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--subtext);
+    }
+    .ha-metric-value {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+    .ha-metric-value.is-good { color: var(--green-fg); }
+    .ha-metric-value.is-warn { color: var(--yellow-fg); }
+    .ha-metric-value.is-bad  { color: var(--red-fg); }
+    .ha-metrics-detail {
+      display: none;
+      grid-template-columns: repeat(2, 1fr);
+      gap: .3rem .75rem;
+      font-size: .78rem;
+      color: var(--subtext);
+      padding-top: .4rem;
+      border-top: 1px dashed var(--border);
+    }
+    .ha-metrics-detail.is-open { display: grid; }
+    .ha-metrics-detail-row { display: flex; justify-content: space-between; gap: .5rem; }
+    .ha-metrics-detail-row .v {
+      color: var(--text);
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .ha-metrics-toggle {
+      align-self: flex-end;
+      background: transparent;
+      border: none;
+      color: var(--accent, var(--header-bg));
+      font-size: .75rem;
+      font-family: var(--font);
+      cursor: pointer;
+      padding: .15rem .3rem;
+      min-height: var(--touch-min, 36px);
+    }
+    .ha-metrics-toggle:hover { text-decoration: underline; }
+    .ha-metrics-empty {
+      text-align: center;
+      color: var(--subtext);
+      font-size: .8rem;
+      padding: .75rem .5rem;
+    }
+    .ha-badge-partial {
+      display: inline-block;
+      background: var(--yellow-bg);
+      color: var(--yellow-fg);
+      font-size: .65rem;
+      padding: .12rem .45rem;
+      border-radius: 999px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      font-weight: 700;
+      margin-left: .35rem;
+    }
+    .ha-download {
+      display: inline-flex;
+      align-items: center;
+      gap: .25rem;
+      position: relative;
+    }
+    .ha-download-btn {
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 999px;
+      padding: .5rem .9rem;
+      font-size: .78rem;
+      font-weight: 600;
+      font-family: var(--font);
+      cursor: pointer;
+      min-height: var(--touch-min, 36px);
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
+      transition: background var(--transition-fast);
+    }
+    .ha-download-btn:hover { background: color-mix(in oklab, var(--accent) 85%, black); }
+    .ha-download-menu {
+      display: none;
+      position: absolute;
+      right: 0;
+      top: calc(100% + 4px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: .25rem;
+      z-index: 10;
+      min-width: 130px;
+    }
+    .ha-download.is-open .ha-download-menu { display: block; }
+    .ha-download-menu a {
+      display: block;
+      padding: .4rem .6rem;
+      color: var(--text);
+      text-decoration: none;
+      font-size: .8rem;
+      border-radius: calc(var(--radius) - 4px);
+    }
+    .ha-download-menu a:hover { background: var(--bg); }
+
+    /* ════════════════════════════════════════════════════════════
+       SENIOR MODE — vista distinta, una sola pantalla
+       ════════════════════════════════════════════════════════════ */
+
+    /* Visibility switches */
+    .senior-only { display: none; }
+    .modern-only { display: revert; }
+    :root[data-mode="senior"] .senior-only { display: revert; }
+    :root[data-mode="senior"] .modern-only { display: none !important; }
+    :root[data-mode="senior"] .senior-only-grid { display: grid; }
+    :root[data-mode="senior"] .senior-only-flex { display: flex; }
+
+    /* Senior main padding + max-width */
+    :root[data-mode="senior"] main {
+      max-width: 1100px;
+      padding: 1.75rem 1.5rem 2.5rem;
+    }
+
+    /* Senior header simpler / more spacious */
+    :root[data-mode="senior"] .header-subtitle { font-size: 1rem; }
+    :root[data-mode="senior"] .header-title { font-size: 1.9rem; }
+    :root[data-mode="senior"] .header-icon { width: 56px; height: 56px; font-size: 1.9rem; border-radius: 16px; }
+    :root[data-mode="senior"] .header-btn,
+    :root[data-mode="senior"] #lang-toggle-btn,
+    :root[data-mode="senior"] #settings-btn,
+    :root[data-mode="senior"] #logout-btn {
+      font-size: .95rem;
+      padding: .6rem 1.1rem;
+      min-height: 56px;
+    }
+    :root[data-mode="senior"] #clock { font-size: 1.05rem; padding: .45rem .9rem; }
+    :root[data-mode="senior"] .status-badge { font-size: .85rem; padding: .5rem .9rem; }
+    /* In senior, hide secondary controls — mantener foco en lo esencial */
+    :root[data-mode="senior"] #lang-toggle-btn,
+    :root[data-mode="senior"] #logout-btn { display: none; }
+    :root[data-mode="senior"] .header-meta { border-top: 1px solid rgba(255,255,255,.1); padding-top: 1rem; }
+    :root[data-mode="senior"] .live-badge { font-size: .75rem; padding: .2rem .65rem; }
+
+    /* ── Senior hero card ─────────────────────────────────────── */
+    .senior-hero {
+      background:
+        radial-gradient(at 90% 0%, color-mix(in oklab, var(--accent) 14%, transparent) 0%, transparent 60%),
+        var(--surface);
+      border: var(--border-w) solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      padding: 2.25rem 2rem 2rem;
+      margin-bottom: 1.5rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .senior-hero::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: linear-gradient(180deg, transparent 0%, transparent 75%, color-mix(in oklab, var(--accent) 8%, transparent) 100%);
+    }
+
+    .senior-hero-eyebrow {
+      font-size: .95rem;
+      font-weight: 600;
+      color: var(--subtext);
+      letter-spacing: .02em;
+      margin-bottom: .35rem;
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
+    .senior-hero-eyebrow .dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--status-ok);
+    }
+    .senior-hero[data-state="warning"] .senior-hero-eyebrow .dot { background: var(--status-warn); }
+    .senior-hero[data-state="critical"] .senior-hero-eyebrow .dot { background: var(--status-err); }
+
+    .senior-hero-headline {
+      font-family: var(--font-display);
+      font-size: clamp(2rem, 4.2vw, 2.85rem);
+      font-weight: 600;
+      letter-spacing: -.025em;
+      line-height: 1.15;
+      color: var(--text);
+      margin-bottom: 1.25rem;
+      text-wrap: balance;
+    }
+    .senior-hero-headline strong {
+      color: var(--accent);
+      font-weight: 700;
+    }
+    .senior-hero[data-state="warning"] .senior-hero-headline strong { color: var(--yellow-fg); }
+    .senior-hero[data-state="critical"] .senior-hero-headline strong { color: var(--red-fg); }
+
+    .senior-hero-meta {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+      padding-top: 1.25rem;
+      border-top: 1px dashed var(--border);
+      font-size: 1.05rem;
+    }
+    .senior-hero-meta-item {
+      display: flex;
+      align-items: center;
+      gap: .65rem;
+      color: var(--subtext);
+      font-weight: 500;
+    }
+    .senior-hero-meta-item .ico {
+      width: 36px; height: 36px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      background: var(--surface-2);
+      font-size: 1.2rem;
+    }
+    .senior-hero-meta-item .val {
+      color: var(--text);
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ── Senior patient cards grid ─────────────────────────────── */
+    .senior-patient-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1.1rem;
+      margin-bottom: 1.25rem;
+    }
+    @media (min-width: 820px) {
+      .senior-patient-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (min-width: 1200px) {
+      .senior-patient-grid.has-three { grid-template-columns: repeat(3, 1fr); }
+    }
+
+    .senior-patient-card {
+      position: relative;
+      background: var(--surface);
+      border: 2px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+      padding: 1.75rem 1.6rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      transition: transform var(--transition-base), box-shadow var(--transition-base);
+    }
+    .senior-patient-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-lg);
+    }
+    .senior-patient-card[data-state="normal"]   { border-color: color-mix(in oklab, var(--status-ok) 55%, var(--border)); }
+    .senior-patient-card[data-state="warning"]  { border-color: color-mix(in oklab, var(--status-warn) 65%, var(--border)); }
+    .senior-patient-card[data-state="critical"] { border-color: color-mix(in oklab, var(--status-err) 70%, var(--border)); }
+    .senior-patient-card[data-state="low"]      { border-color: color-mix(in oklab, var(--blue-fg) 60%, var(--border)); }
+
+    .senior-patient-card::before {
+      content: '';
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 6px;
+      border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+      background: var(--status-ok);
+    }
+    .senior-patient-card[data-state="warning"]::before  { background: var(--status-warn); }
+    .senior-patient-card[data-state="critical"]::before { background: var(--status-err); }
+    .senior-patient-card[data-state="low"]::before      { background: var(--blue-fg); }
+
+    .senior-patient-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .senior-patient-name {
+      font-family: var(--font-display);
+      font-size: 1.75rem;
+      font-weight: 600;
+      letter-spacing: -.015em;
+      line-height: 1.1;
+      color: var(--text);
+    }
+    .senior-patient-avatar {
+      width: 56px; height: 56px;
+      border-radius: 50%;
+      background: var(--surface-2);
+      border: 2px solid var(--border);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-display);
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -.02em;
+      flex-shrink: 0;
+    }
+
+    .senior-status-pill {
+      align-self: flex-start;
+      display: inline-flex;
+      align-items: center;
+      gap: .55rem;
+      padding: .55rem 1.1rem;
+      border-radius: 999px;
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: .02em;
+      border: 2px solid currentColor;
+      white-space: nowrap;
+    }
+    .senior-status-pill[data-state="normal"]   { background: var(--green-bg);  color: var(--green-fg); }
+    .senior-status-pill[data-state="warning"]  { background: var(--yellow-bg); color: var(--yellow-fg); }
+    .senior-status-pill[data-state="critical"] { background: var(--red-bg);    color: var(--red-fg); }
+    .senior-status-pill[data-state="low"]      { background: var(--blue-bg);   color: var(--blue-fg); }
+    .senior-status-pill::before {
+      width: 20px; height: 20px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: currentColor;
+      color: var(--surface);
+      font-size: .9rem;
+      font-weight: 900;
+      line-height: 1;
+    }
+    .senior-status-pill[data-state="normal"]::before   { content: '✓'; }
+    .senior-status-pill[data-state="warning"]::before  { content: '!'; }
+    .senior-status-pill[data-state="critical"]::before { content: '!'; }
+    .senior-status-pill[data-state="low"]::before      { content: '↓'; }
+
+    .senior-glucose {
+      display: flex;
+      align-items: baseline;
+      gap: .65rem;
+    }
+    .senior-glucose-value {
+      font-family: var(--font-display);
+      font-size: clamp(3.5rem, 7vw, 5rem);
+      font-weight: 700;
+      line-height: .95;
+      letter-spacing: -.035em;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+    }
+    .senior-patient-card[data-state="normal"]   .senior-glucose-value { color: var(--green-fg); }
+    .senior-patient-card[data-state="warning"]  .senior-glucose-value { color: var(--yellow-fg); }
+    .senior-patient-card[data-state="critical"] .senior-glucose-value { color: var(--red-fg); }
+    .senior-patient-card[data-state="low"]      .senior-glucose-value { color: var(--blue-fg); }
+
+    .senior-glucose-unit {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--subtext);
+      letter-spacing: .01em;
+    }
+
+    .senior-trend {
+      display: flex;
+      align-items: center;
+      gap: .85rem;
+      padding: .85rem 1.1rem;
+      background: var(--surface-2);
+      border-radius: var(--radius);
+      border: var(--border-w) solid var(--border);
+    }
+    .senior-trend-arrow {
+      font-size: 1.8rem;
+      line-height: 1;
+      font-weight: 700;
+      width: 38px;
+      text-align: center;
+    }
+    .senior-trend-text {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .senior-trend-text .label {
+      display: block;
+      font-size: .75rem;
+      font-weight: 600;
+      color: var(--subtext);
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      margin-bottom: .15rem;
+    }
+
+    .senior-patient-meta {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      padding-top: 1rem;
+      border-top: 1px dashed var(--border);
+    }
+    .senior-meta-item {
+      display: flex;
+      flex-direction: column;
+      gap: .2rem;
+    }
+    .senior-meta-label {
+      font-size: .75rem;
+      font-weight: 600;
+      color: var(--subtext);
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .senior-meta-value {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .senior-empty {
+      text-align: center;
+      padding: 4rem 1rem;
+      color: var(--subtext);
+    }
+    .senior-empty .ico { font-size: 4rem; display: block; margin-bottom: 1rem; opacity: .6; }
+    .senior-empty p { font-size: 1.2rem; }
+
+    /* Senior bottom hint to switch to modern */
+    .senior-footnote {
+      margin-top: 1rem;
+      text-align: center;
+      font-size: .95rem;
+      color: var(--subtext);
+    }
+    .senior-footnote button {
+      background: transparent;
+      border: 2px solid var(--border-strong);
+      color: var(--text);
+      border-radius: 999px;
+      padding: .6rem 1.4rem;
+      font-size: 1rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      margin-top: .6rem;
+      min-height: var(--touch-min);
+      transition: background var(--transition-fast);
+    }
+    .senior-footnote button:hover { background: var(--surface-2); }
+
+    /* ── Mode toggle (header) — looks like a pill segmented control ── */
+    .mode-switch {
+      display: inline-flex;
+      background: rgba(0,0,0,.18);
+      border-radius: 999px;
+      padding: 3px;
+      gap: 2px;
+      border: 1px solid rgba(255,255,255,.12);
+    }
+    .mode-switch button {
+      background: transparent;
+      border: none;
+      color: rgba(255,255,255,.7);
+      padding: .45rem .85rem;
+      border-radius: 999px;
+      font-size: .78rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      min-height: var(--touch-min);
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
+      transition: color var(--transition-fast), background var(--transition-fast);
+    }
+    .mode-switch button:hover { color: white; }
+    .mode-switch button[aria-pressed="true"] {
+      background: var(--accent);
+      color: white;
+      box-shadow: 0 2px 8px -4px color-mix(in oklab, var(--accent) 60%, transparent);
+    }
+    :root[data-mode="senior"] .mode-switch button {
+      font-size: .95rem;
+      padding: .65rem 1.2rem;
+    }
+
+    /* Theme toggle (single button) */
+    #theme-toggle-btn .ico { font-size: 1.05rem; }
+    [data-theme="dark"] #theme-toggle-btn .ico-sun { display: inline; }
+    [data-theme="dark"] #theme-toggle-btn .ico-moon { display: none; }
+    [data-theme="light"] #theme-toggle-btn .ico-sun { display: none; }
+    [data-theme="light"] #theme-toggle-btn .ico-moon { display: inline; }
+
+    /* Push button — warmer */
+    #push-section {
+      background: var(--surface) !important;
+      border-radius: var(--radius) !important;
+      border: var(--border-w) solid var(--border) !important;
+      padding: 1rem 1.25rem !important;
+    }
+    #push-btn {
+      background: var(--accent) !important;
+      color: white !important;
+      border-radius: 999px !important;
+      padding: .55rem 1.1rem !important;
+      font-weight: 600 !important;
+      min-height: var(--touch-min);
+    }
+
+    /* Modern row highlight states using new palette */
+    .row-warning      { animation-duration: 3s; }
+    .row-danger       { animation-duration: 2.5s; }
+    :root[data-mode="senior"] .row-warning,
+    :root[data-mode="senior"] .row-danger,
+    :root[data-mode="senior"] .row-danger-low { animation: none; }
+
+    /* Footer warmer */
+    footer {
+      text-align: center;
+      padding: 1.25rem 1.5rem;
+      font-size: .82rem;
+      color: var(--subtext);
+      border-top: 1px solid var(--border);
+      max-width: 960px;
+      width: 100%;
+      margin: 1rem auto 0;
+      line-height: 1.6;
+    }
+    footer strong { color: var(--accent-fg, var(--text)); font-weight: 700; }
+    :root[data-theme="dark"] footer strong { color: var(--accent); }
+
+    /* ── Tweaks panel (floating) ─────────────────────────────── */
+    #tweaks-panel {
+      position: fixed;
+      right: 1rem;
+      bottom: 1rem;
+      width: 280px;
+      background: var(--surface);
+      border: var(--border-w) solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-lg);
+      padding: 1rem 1.1rem 1.1rem;
+      z-index: 100;
+      font-family: var(--font);
+      color: var(--text);
+      display: none;
+    }
+    #tweaks-panel.is-open { display: block; }
+    .tweaks-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: .85rem;
+    }
+    .tweaks-head h4 {
+      font-family: var(--font-display);
+      font-size: 1.05rem;
+      font-weight: 600;
+      letter-spacing: -.01em;
+      color: var(--text);
+    }
+    .tweaks-close {
+      background: transparent;
+      border: none;
+      color: var(--subtext);
+      font-size: 1.2rem;
+      cursor: pointer;
+      padding: .25rem .4rem;
+      border-radius: 6px;
+      line-height: 1;
+    }
+    .tweaks-close:hover { background: var(--surface-2); color: var(--text); }
+    .tweaks-row { margin-bottom: .9rem; }
+    .tweaks-label {
+      font-size: .72rem;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--subtext);
+      margin-bottom: .4rem;
+      display: block;
+    }
+    .tweaks-swatches {
+      display: flex;
+      gap: .5rem;
+    }
+    .tweaks-swatch {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      cursor: pointer;
+      transition: transform var(--transition-fast), border-color var(--transition-fast);
+      padding: 0;
+    }
+    .tweaks-swatch:hover { transform: scale(1.08); }
+    .tweaks-swatch.is-active {
+      border-color: var(--text);
+      transform: scale(1.08);
+      box-shadow: 0 0 0 2px var(--bg);
+    }
+    .tweaks-slider {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    /* Tweaks FAB */
+    #tweaks-fab {
+      position: fixed;
+      right: 1rem;
+      bottom: 1rem;
+      width: 48px; height: 48px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: white;
+      border: none;
+      box-shadow: 0 8px 20px -8px color-mix(in oklab, var(--accent) 60%, transparent);
+      cursor: pointer;
+      font-size: 1.1rem;
+      z-index: 99;
+      display: none;
+    }
+    #tweaks-fab.is-shown { display: flex; align-items: center; justify-content: center; }
+
+    /* Hide push section in senior (out of scope for "una sola pantalla") */
+    :root[data-mode="senior"] #push-section { display: none; }
   </style>
 </head>
 <body>
@@ -827,8 +1849,7 @@
 <header>
   <div class="header-top">
     <div class="header-brand">
-      <button id="lang-toggle-btn">🌐 EN</button>
-      <div class="header-icon">🩸</div>
+      <div class="header-icon" aria-hidden="true">🩸</div>
       <div>
         <div class="header-title">
           <span class="title-family">Family</span>
@@ -841,28 +1862,101 @@
         </div>
       </div>
     </div>
-    <div class="header-right">
+    <div class="header-mode">
+      <div class="mode-switch" role="group" aria-label="Modo de visualización">
+        <button id="btn-modern" type="button" aria-pressed="true" title="Vista normal">
+          <span class="ico" aria-hidden="true">⊞</span>
+          <span class="lbl">Normal</span>
+        </button>
+        <button id="btn-senior" type="button" aria-pressed="false" title="Vista accesible">
+          <span class="ico" aria-hidden="true">✦</span>
+          <span class="lbl">Accesible</span>
+        </button>
+      </div>
+    </div>
+  </div>
+  <div class="header-meta">
+    <div class="header-meta-left">
       <span id="clock">--:--:--</span>
       <div class="status-badge">
         <div class="status-dot" id="status-dot"></div>
         <span id="status-label" data-i18n="status.connecting">Conectando…</span>
       </div>
-      <button id="mode-toggle-btn" type="button" data-i18n-aria-label="header.mode_toggle_aria_label" aria-label="Cambiar entre modo Senior y Normal" style="display:inline-flex;align-items:center;gap:.35rem;background:transparent;border:1px solid rgba(255,255,255,.4);color:inherit;border-radius:4px;padding:.25rem .6rem;cursor:pointer;font-size:.8rem;min-height:var(--touch-min,36px);">
-        <span id="mode-toggle-icon" aria-hidden="true">👁</span>
-        <span id="mode-toggle-label" data-i18n="header.mode_toggle_btn">Modo Senior</span>
+    </div>
+    <div class="header-right">
+      <button id="theme-toggle-btn" class="header-btn" type="button" title="Cambiar tema claro/oscuro" aria-label="Cambiar tema">
+        <span class="ico ico-sun" aria-hidden="true">☀</span>
+        <span class="ico ico-moon" aria-hidden="true">☾</span>
       </button>
-      <a href="/configuracion" id="settings-btn" data-i18n-aria-label="header.settings_aria_label" style="display:inline-flex;align-items:center;gap:.35rem;background:transparent;border:1px solid rgba(255,255,255,.4);color:inherit;border-radius:4px;padding:.25rem .6rem;cursor:pointer;font-size:.8rem;text-decoration:none;min-height:var(--touch-min,36px);">
+      <button id="mode-toggle-btn" class="header-btn" type="button" data-i18n-aria-label="header.mode_toggle_aria_label" aria-label="Cambiar entre modo Senior y Normal">
+        <span id="mode-toggle-icon" aria-hidden="true">👁</span>
+        <span id="mode-toggle-label" class="lbl" data-i18n="header.mode_toggle_btn">Modo Senior</span>
+      </button>
+      <button id="lang-toggle-btn" class="header-btn" type="button" title="Switch language">
+        <span aria-hidden="true">🌐</span>
+        <span class="lbl">EN</span>
+      </button>
+      <a href="/configuracion" id="settings-btn" class="header-btn" data-i18n-aria-label="header.settings_aria_label">
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-          <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          <circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
         </svg>
-        <span data-i18n="header.settings_btn">Configuración</span>
+        <span class="lbl" data-i18n="header.settings_btn">Configuración</span>
       </a>
-      <button id="logout-btn" data-i18n-title="header.logout_title" style="background:transparent;border:1px solid rgba(255,255,255,.4);color:inherit;border-radius:4px;padding:.25rem .6rem;cursor:pointer;font-size:.8rem;" data-i18n="header.logout_btn">⏏ Salir</button>
+      <button id="logout-btn" class="header-btn" data-i18n-title="header.logout_title">
+        <span aria-hidden="true">⏏</span>
+        <span class="lbl" data-i18n="header.logout_btn">Salir</span>
+      </button>
     </div>
   </div>
 </header>
 
 <main>
+  <!-- ═══════════════════════════════════════════════════════════
+       SENIOR VIEW — una sola pantalla, lo esencial.
+       Datos se espejean desde #patients-body via MutationObserver
+       (cero modificación de updateTable()).
+       ═══════════════════════════════════════════════════════════ -->
+  <section class="senior-only" id="senior-view" aria-label="Vista accesible">
+    <div class="senior-hero" id="senior-hero" data-state="normal">
+      <div class="senior-hero-eyebrow">
+        <span class="dot" aria-hidden="true"></span>
+        <span id="senior-eyebrow-text">Estado de la familia</span>
+      </div>
+      <h1 class="senior-hero-headline" id="senior-headline">
+        Cargando…
+      </h1>
+      <div class="senior-hero-meta">
+        <div class="senior-hero-meta-item">
+          <span class="ico" aria-hidden="true">🕒</span>
+          <span>Última lectura&nbsp;<span class="val" id="senior-last-update">—</span></span>
+        </div>
+        <div class="senior-hero-meta-item">
+          <span class="ico" aria-hidden="true">👥</span>
+          <span><span class="val" id="senior-patient-count">—</span>&nbsp;personas monitoreadas</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="senior-patient-grid" id="senior-patient-grid">
+      <div class="senior-empty">
+        <span class="ico" aria-hidden="true">⏳</span>
+        <p>Cargando lecturas…</p>
+      </div>
+    </div>
+
+    <div class="senior-footnote">
+      ¿Necesitas ver gráficas y detalles?
+      <br />
+      <button type="button" id="btn-go-modern" title="Cambiar a vista normal">
+        Cambiar a vista detallada
+      </button>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       MODERN VIEW — todo el contenido existente
+       ═══════════════════════════════════════════════════════════ -->
+  <div class="modern-only">
   <!-- ── Alert strip (last 24h summary) ───────────────────────── -->
   <div id="alert-strip" class="alert-strip">
     <span class="alert-strip-title" data-i18n="alerts.title">🔔 Historial de alertas (24h)</span>
@@ -957,6 +2051,20 @@
     <div id="glucose-charts-grid" class="charts-grid"></div>
   </div>
 
+  <!-- ── Historical analysis (per-patient chart + TIR/GMI/CV metrics + CSV/JSON download) ─── -->
+  <div id="history-analysis-section" class="history-analysis" style="display:none">
+    <div class="history-analysis-header">
+      <p class="section-title" data-i18n="history_analysis.title">📈 Análisis histórico</p>
+      <div class="range-selector" role="group" data-i18n-aria-label="history_analysis.range_aria_label" aria-label="Rango temporal de análisis">
+        <button type="button" class="range-btn" data-range="3h" data-i18n="history_analysis.range_3h">3 horas</button>
+        <button type="button" class="range-btn" data-range="24h" data-i18n="history_analysis.range_24h">24 horas</button>
+        <button type="button" class="range-btn" data-range="14d" data-i18n="history_analysis.range_14d">14 días</button>
+        <button type="button" class="range-btn" data-range="90d" data-i18n="history_analysis.range_90d">90 días</button>
+      </div>
+    </div>
+    <div id="history-analysis-grid" class="history-analysis-grid"></div>
+  </div>
+
   <!-- history table -->
   <div class="table-wrap">
     <table id="history-table">
@@ -981,12 +2089,320 @@
       </tbody>
     </table>
   </div>
+  </div><!-- /.modern-only -->
 </main>
 
 <footer>
   <strong data-i18n="footer.warning">⚠️ Este no es un dispositivo médico.</strong>
   <span data-i18n="footer.disclaimer">Esta herramienta es solo para referencia informativa y no reemplaza la atención médica profesional ni los sistemas de alarma del medidor de glucosa.</span>
 </footer>
+
+<!-- ═══════════════════════════════════════════════════════════
+     Tweaks panel — acento + densidad (visible solo cuando se activa)
+     ═══════════════════════════════════════════════════════════ -->
+<button id="tweaks-fab" type="button" title="Personalización" aria-label="Personalización" aria-controls="tweaks-panel" aria-expanded="false">✦</button>
+<aside id="tweaks-panel" role="dialog" aria-label="Personalización">
+  <div class="tweaks-head">
+    <h4>Personalización</h4>
+    <button type="button" class="tweaks-close" aria-label="Cerrar">✕</button>
+  </div>
+  <div class="tweaks-row">
+    <label class="tweaks-label">Color de acento</label>
+    <div class="tweaks-swatches" id="tweaks-accents">
+      <button class="tweaks-swatch" type="button" data-accent="#c2553d" style="background:#c2553d" title="Terracota" aria-label="Terracota"></button>
+      <button class="tweaks-swatch" type="button" data-accent="#6f8a2a" style="background:#6f8a2a" title="Olivo" aria-label="Olivo"></button>
+      <button class="tweaks-swatch" type="button" data-accent="#3d6c7a" style="background:#3d6c7a" title="Salvia" aria-label="Salvia"></button>
+      <button class="tweaks-swatch" type="button" data-accent="#a06808" style="background:#a06808" title="Miel" aria-label="Miel"></button>
+    </div>
+  </div>
+  <div class="tweaks-row">
+    <label class="tweaks-label" for="tweaks-density">Escala tipográfica (Normal)</label>
+    <input class="tweaks-slider" type="range" id="tweaks-density" min="0.95" max="1.15" step="0.025" value="1" />
+  </div>
+</aside>
+<script>
+  /* ════════════════════════════════════════════════════════════
+     UI Mode + Theme + Senior mirror + Tweaks
+     (No tocamos JS existente — todo vive aquí.)
+     ════════════════════════════════════════════════════════════ */
+  (function () {
+    // Unified storage keys — same ones used by the head bootstrap and by
+    // applyMode() further down. Previously the redesign used app-* keys
+    // while elder-mode used fgm-* keys, causing mode to drift between
+    // reloads and between pages. See Copilot review feedback on PR #92.
+    var STORAGE_MODE  = 'fgm-mode';
+    var STORAGE_THEME = 'fgm-theme';
+    var STORAGE_ACCENT = 'fgm-accent';
+
+    // ── Mode toggle ────────────────────────────────────────────
+    function setMode(m) {
+      if (m !== 'senior' && m !== 'modern') return;
+      try { localStorage.setItem(STORAGE_MODE, m); } catch (e) {}
+      document.documentElement.setAttribute('data-mode', m);
+      syncModeButtons();
+      // When entering senior, ensure mirror is up to date even if no DOM event fired
+      if (m === 'senior') mirrorToSenior();
+    }
+    function syncModeButtons() {
+      var m = document.documentElement.getAttribute('data-mode');
+      var s = document.getElementById('btn-senior');
+      var n = document.getElementById('btn-modern');
+      if (s) s.setAttribute('aria-pressed', String(m === 'senior'));
+      if (n) n.setAttribute('aria-pressed', String(m === 'modern'));
+    }
+    var bs = document.getElementById('btn-senior');
+    var bm = document.getElementById('btn-modern');
+    if (bs) bs.addEventListener('click', function () { setMode('senior'); });
+    if (bm) bm.addEventListener('click', function () { setMode('modern'); });
+    var bgm = document.getElementById('btn-go-modern');
+    if (bgm) bgm.addEventListener('click', function () { setMode('modern'); });
+    syncModeButtons();
+
+    // ── Theme toggle ───────────────────────────────────────────
+    function setTheme(t) {
+      if (t !== 'light' && t !== 'dark') return;
+      try { localStorage.setItem(STORAGE_THEME, t); } catch (e) {}
+      document.documentElement.setAttribute('data-theme', t);
+    }
+    var tt = document.getElementById('theme-toggle-btn');
+    if (tt) tt.addEventListener('click', function () {
+      var cur = document.documentElement.getAttribute('data-theme');
+      setTheme(cur === 'dark' ? 'light' : 'dark');
+    });
+
+    // ── Tweaks: accent + density ──────────────────────────────
+    function setAccent(hex) {
+      try { localStorage.setItem(STORAGE_ACCENT, hex); } catch (e) {}
+      document.documentElement.style.setProperty('--accent', hex);
+      var soft = 'color-mix(in oklab, ' + hex + ' 22%, transparent)';
+      document.documentElement.style.setProperty('--accent-soft', soft);
+      document.querySelectorAll('#tweaks-accents .tweaks-swatch').forEach(function (b) {
+        b.classList.toggle('is-active', b.getAttribute('data-accent') === hex);
+      });
+    }
+    try {
+      var savedAccent = localStorage.getItem(STORAGE_ACCENT);
+      if (savedAccent) setAccent(savedAccent);
+      else setAccent('#c2553d');
+    } catch (e) { setAccent('#c2553d'); }
+
+    document.querySelectorAll('#tweaks-accents .tweaks-swatch').forEach(function (b) {
+      b.addEventListener('click', function () { setAccent(b.getAttribute('data-accent')); });
+    });
+    var ds = document.getElementById('tweaks-density');
+    if (ds) {
+      ds.addEventListener('input', function () {
+        // density slider modifies font-size of html (modern only — senior keeps its own scale)
+        var v = parseFloat(ds.value);
+        document.documentElement.style.fontSize = (16 * v) + 'px';
+      });
+    }
+    var fab = document.getElementById('tweaks-fab');
+    var panel = document.getElementById('tweaks-panel');
+    var closeBtn = panel ? panel.querySelector('.tweaks-close') : null;
+    function setTweaksOpen(open) {
+      if (!panel || !fab) return;
+      panel.classList.toggle('is-open', open);
+      fab.classList.toggle('is-shown', !open);
+      fab.setAttribute('aria-expanded', String(open));
+    }
+    if (fab)      fab.addEventListener('click', function () { setTweaksOpen(true); });
+    if (closeBtn) closeBtn.addEventListener('click', function () { setTweaksOpen(false); });
+    // FAB shows; panel hidden by default
+    setTweaksOpen(false);
+
+    // ── Senior view mirror via MutationObserver ───────────────
+    var EYEBROW_TEXTS = {
+      normal:   'Todo en orden',
+      warning:  'Atención',
+      critical: 'Alerta',
+      low:      'Glucosa baja'
+    };
+    // Patient names are escaped at call-time to prevent DOM XSS via innerHTML
+    // (escapeHtml is defined later in this script; HEADLINES values are
+    // functions, so the reference resolves when HEADLINES[worst](...) is
+    // invoked, not at define-time).
+    var HEADLINES = {
+      normal:   function (names)  { return names.length === 1
+                  ? '<strong>' + escapeHtml(names[0]) + '</strong> está bien.'
+                  : 'Toda la familia está <strong>en rango</strong>.'; },
+      warning:  function (names)  { return '<strong>' + names.map(escapeHtml).join(', ') + '</strong> necesita atención.'; },
+      critical: function (names)  { return '<strong>' + names.map(escapeHtml).join(', ') + '</strong> requiere ayuda ahora.'; },
+      low:      function (names)  { return 'Glucosa baja en <strong>' + names.map(escapeHtml).join(', ') + '</strong>.'; }
+    };
+
+    function classifyState(rowClassList) {
+      // Priority: danger > danger-low > warning > trending-up > trending-down > normal
+      if (rowClassList.contains('row-danger'))       return 'critical';
+      if (rowClassList.contains('row-danger-low'))   return 'low';
+      if (rowClassList.contains('row-warning'))      return 'warning';
+      if (rowClassList.contains('row-trending-up'))  return 'warning';
+      if (rowClassList.contains('row-trending-down'))return 'low';
+      return 'normal';
+    }
+    function stateRank(s) { return ({critical:4, low:3, warning:2, normal:1})[s] || 0; }
+    function stateLabel(s) {
+      return ({
+        critical: 'ALERTA ALTA',
+        low:      'BAJA',
+        warning:  'ATENCIÓN',
+        normal:   'NORMAL'
+      })[s] || s.toUpperCase();
+    }
+
+    function initials(name) {
+      if (!name) return '?';
+      var parts = name.trim().split(/\s+/).filter(Boolean);
+      if (!parts.length) return '?';
+      var a = parts[0].charAt(0);
+      var b = parts.length > 1 ? parts[parts.length - 1].charAt(0) : '';
+      return (a + b).toUpperCase();
+    }
+
+    function trendVerbal(arrowText, trendAlertText) {
+      // arrowText is something like "↑" or "→"; map to verbal
+      if (!arrowText && !trendAlertText) return { arrow: '→', label: 'Estable' };
+      var t = (arrowText || '').trim();
+      var verbal = 'Estable';
+      if (/↑↑|⇈|⤊/.test(t)) verbal = 'Subiendo rápido';
+      else if (/↑/.test(t))  verbal = 'Subiendo';
+      else if (/↗/.test(t))  verbal = 'Subiendo lento';
+      else if (/↓↓|⇊/.test(t)) verbal = 'Bajando rápido';
+      else if (/↓/.test(t))  verbal = 'Bajando';
+      else if (/↘/.test(t))  verbal = 'Bajando lento';
+      else if (/→|↔/.test(t)) verbal = 'Estable';
+      return { arrow: t || '→', label: verbal };
+    }
+
+    function mirrorToSenior() {
+      var grid = document.getElementById('senior-patient-grid');
+      var hero = document.getElementById('senior-hero');
+      var headline = document.getElementById('senior-headline');
+      var eyebrow = document.getElementById('senior-eyebrow-text');
+      var lastUpdate = document.getElementById('senior-last-update');
+      var patientCount = document.getElementById('senior-patient-count');
+      if (!grid || !hero) return;
+
+      var tbody = document.getElementById('patients-body');
+      if (!tbody) return;
+
+      var rows = tbody.querySelectorAll('tr.patient-row');
+      if (!rows.length) {
+        // Loading or empty
+        grid.innerHTML = ''
+          + '<div class="senior-empty">'
+          + '<span class="ico" aria-hidden="true">📭</span>'
+          + '<p>Aún no hay lecturas. Esperando datos del medidor…</p>'
+          + '</div>';
+        headline.innerHTML = 'Esperando lecturas del medidor…';
+        eyebrow.textContent = 'Sin datos';
+        hero.setAttribute('data-state', 'normal');
+        if (patientCount) patientCount.textContent = '0';
+        return;
+      }
+
+      // Extract per-patient
+      var patients = [];
+      rows.forEach(function (row) {
+        var state = classifyState(row.classList);
+        var nameEl = row.querySelector('.patient-name');
+        var glucoseEl = row.querySelector('.glucose-value');
+        var arrowEl = row.querySelector('.trend-arrow-icon');
+        var levelEl = row.querySelector('.level-badge');
+        var trendAlertEl = row.querySelector('.trend-alert-text');
+        var timeEl = row.querySelector('.time-text');
+        patients.push({
+          state: state,
+          name: nameEl ? nameEl.textContent.trim() : '—',
+          glucose: glucoseEl ? glucoseEl.textContent.trim() : '—',
+          arrow: arrowEl ? arrowEl.textContent.trim() : '',
+          level: levelEl ? levelEl.textContent.trim() : '',
+          trendAlert: trendAlertEl ? trendAlertEl.textContent.trim() : '',
+          time: timeEl ? timeEl.textContent.trim() : ''
+        });
+      });
+
+      // Hero — pick worst state
+      var worst = patients.reduce(function (acc, p) {
+        return stateRank(p.state) > stateRank(acc) ? p.state : acc;
+      }, 'normal');
+      hero.setAttribute('data-state', worst === 'normal' ? 'normal' : (worst === 'low' || worst === 'warning' ? 'warning' : 'critical'));
+      eyebrow.textContent = EYEBROW_TEXTS[worst] || 'Estado de la familia';
+      var affectedNames = patients.filter(function (p) { return p.state === worst; }).map(function (p) { return p.name; });
+      var allNames = patients.map(function (p) { return p.name; });
+      var subject = worst === 'normal' ? allNames : affectedNames;
+      headline.innerHTML = (HEADLINES[worst] || HEADLINES.normal)(subject);
+      if (patientCount) patientCount.textContent = String(patients.length);
+
+      // Last update = most recent time across patients
+      // We just use the value from #last-update in the header (already i18n'd)
+      var headerLast = document.getElementById('last-update');
+      if (headerLast && lastUpdate) {
+        var txt = headerLast.textContent || '';
+        // Strip leading "Última actualización: " label if present
+        var m = txt.split(':');
+        var val = m.length > 1 ? m.slice(1).join(':').trim() : txt.trim();
+        lastUpdate.textContent = val || '—';
+      }
+
+      // Render patient cards
+      grid.classList.toggle('has-three', patients.length === 3);
+      grid.innerHTML = patients.map(function (p) {
+        var t = trendVerbal(p.arrow, p.trendAlert);
+        return ''
+          + '<article class="senior-patient-card" data-state="' + p.state + '" aria-label="' + escapeAttr(p.name) + ': ' + escapeAttr(p.glucose) + ' mg/dL">'
+          +   '<div class="senior-patient-head">'
+          +     '<div>'
+          +       '<h2 class="senior-patient-name">' + escapeHtml(p.name) + '</h2>'
+          +       '<span class="senior-status-pill" data-state="' + p.state + '">' + escapeHtml(stateLabel(p.state)) + '</span>'
+          +     '</div>'
+          +     '<div class="senior-patient-avatar" aria-hidden="true">' + escapeHtml(initials(p.name)) + '</div>'
+          +   '</div>'
+          +   '<div class="senior-glucose">'
+          +     '<span class="senior-glucose-value">' + escapeHtml(p.glucose) + '</span>'
+          +     '<span class="senior-glucose-unit">mg/dL</span>'
+          +   '</div>'
+          +   '<div class="senior-trend">'
+          +     '<span class="senior-trend-arrow" aria-hidden="true">' + escapeHtml(t.arrow) + '</span>'
+          +     '<div class="senior-trend-text"><span class="label">Tendencia</span>' + escapeHtml(t.label) + '</div>'
+          +   '</div>'
+          +   '<div class="senior-patient-meta">'
+          +     '<div class="senior-meta-item">'
+          +       '<span class="senior-meta-label">Nivel</span>'
+          +       '<span class="senior-meta-value">' + escapeHtml(p.level || '—') + '</span>'
+          +     '</div>'
+          +     '<div class="senior-meta-item">'
+          +       '<span class="senior-meta-label">Última lectura</span>'
+          +       '<span class="senior-meta-value">' + escapeHtml(p.time || '—') + '</span>'
+          +     '</div>'
+          +   '</div>'
+          + '</article>';
+      }).join('');
+    }
+
+    function escapeHtml(s) { return String(s).replace(/[&<>"']/g, function (c) {
+      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
+    }); }
+    function escapeAttr(s) { return escapeHtml(s); }
+
+    // Observe the patients-body for changes — re-render senior whenever modern table updates
+    var tbody = document.getElementById('patients-body');
+    if (tbody) {
+      var mo = new MutationObserver(function () { mirrorToSenior(); });
+      mo.observe(tbody, { childList: true, subtree: true, characterData: true });
+      // Also re-mirror when header last-update changes
+      var lu = document.getElementById('last-update');
+      if (lu) {
+        var moLU = new MutationObserver(function () {
+          if (document.documentElement.getAttribute('data-mode') === 'senior') mirrorToSenior();
+        });
+        moLU.observe(lu, { childList: true, characterData: true, subtree: true });
+      }
+    }
+    // Initial render attempt (data may already be present)
+    mirrorToSenior();
+  })();
+</script>
 
 <script>
   // ── i18n helper: map app locale code to a JS Intl locale string ────────────
@@ -2003,6 +3419,341 @@ if (!isNaN(cg) && cg > 0) {
   document.getElementById('patient-filter').addEventListener('change', fetchHistory);
   document.getElementById('hours-filter').addEventListener('change', fetchHistory);
 
+  // ── Historical analysis (range selector + per-patient chart + metrics + download) ──
+  // Range tokens map to the API parameters of /history (?hours=N) and
+  // /metrics (?days=N). Buckets in `metricsMode`:
+  //   - 'off'     → < 24h window, hide metrics card (statistically meaningless)
+  //   - 'partial' → 24h-7d window, show metrics with "muestra parcial" badge
+  //   - 'full'    → ≥ 14d window, show metrics, no badge
+  const RANGE_MAP = {
+    '3h':  { hours: 3,    days: null, metricsMode: 'off'     },
+    '24h': { hours: 24,   days: 1,    metricsMode: 'partial' },
+    '14d': { hours: 336,  days: 14,   metricsMode: 'full'    },
+    '90d': { hours: 2160, days: 90,   metricsMode: 'full'    },
+  };
+  const VALID_RANGES = Object.keys(RANGE_MAP);
+
+  function getSavedRange() {
+    try {
+      const v = localStorage.getItem('fgm-chart-range');
+      return VALID_RANGES.includes(v) ? v : '24h';
+    } catch (e) { return '24h'; }
+  }
+  function setSavedRange(r) {
+    try { localStorage.setItem('fgm-chart-range', r); } catch (e) { /* noop */ }
+  }
+
+  let _chartRange = getSavedRange();
+  const _haCharts = {};  // chartjs instances keyed by patient_id
+
+  function _setRangeBtnActive() {
+    document.querySelectorAll('.range-btn').forEach(btn => {
+      btn.classList.toggle('is-active', btn.dataset.range === _chartRange);
+    });
+  }
+
+  function _classifyMetric(metric, value) {
+    // Returns 'is-good' | 'is-warn' | 'is-bad' for color cueing, or '' if N/A.
+    if (value === null || value === undefined) return '';
+    if (metric === 'tir_in_range_pct') {
+      if (value >= 70) return 'is-good';
+      if (value >= 50) return 'is-warn';
+      return 'is-bad';
+    }
+    if (metric === 'gmi') {
+      if (value < 5.7) return 'is-good';
+      if (value < 7) return 'is-warn';
+      return 'is-bad';
+    }
+    if (metric === 'cv_pct') {
+      if (value < 36) return 'is-good';
+      if (value < 50) return 'is-warn';
+      return 'is-bad';
+    }
+    return '';
+  }
+
+  function _fmtMetric(value, unit = '') {
+    if (value === null || value === undefined) return '—';
+    return unit ? `${value}${unit}` : String(value);
+  }
+
+  async function fetchHistoryForRange(patientId, range) {
+    const cfg = RANGE_MAP[range];
+    try {
+      const resp = await fetch(`/api/patients/${encodeURIComponent(patientId)}/history?hours=${cfg.hours}`);
+      if (!resp.ok) return [];
+      return await resp.json();
+    } catch (e) { return []; }
+  }
+  async function fetchMetricsForRange(patientId, range) {
+    const cfg = RANGE_MAP[range];
+    if (cfg.metricsMode === 'off' || !cfg.days) return null;
+    try {
+      const resp = await fetch(`/api/patients/${encodeURIComponent(patientId)}/metrics?days=${cfg.days}`);
+      if (!resp.ok) return null;
+      return await resp.json();
+    } catch (e) { return null; }
+  }
+
+  function _renderMetricsCard(host, envelope, range) {
+    host.innerHTML = '';
+    const cfg = RANGE_MAP[range];
+    if (cfg.metricsMode === 'off') return;  // hidden in <24h
+    if (!envelope || !envelope.metrics || envelope.metrics.n_readings === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'ha-metrics-empty';
+      empty.dataset.i18n = 'history_analysis.metrics_empty';
+      empty.textContent = i18n.t('history_analysis.metrics_empty');
+      host.appendChild(empty);
+      return;
+    }
+    const m = envelope.metrics;
+    const card = document.createElement('div');
+    card.className = 'ha-metrics-card';
+
+    const headline = document.createElement('div');
+    headline.className = 'ha-metrics-headline';
+    const cells = [
+      ['history_analysis.metric.tir', _fmtMetric(m.tir_in_range_pct, '%'), _classifyMetric('tir_in_range_pct', m.tir_in_range_pct)],
+      ['history_analysis.metric.gmi', _fmtMetric(m.gmi, '%'), _classifyMetric('gmi', m.gmi)],
+      ['history_analysis.metric.cv',  _fmtMetric(m.cv_pct, '%'), _classifyMetric('cv_pct', m.cv_pct)],
+      ['history_analysis.metric.n',   _fmtMetric(m.n_readings), ''],
+    ];
+    cells.forEach(([labelKey, val, cls]) => {
+      const cell = document.createElement('div');
+      cell.className = 'ha-metric';
+      const lbl = document.createElement('span');
+      lbl.className = 'ha-metric-label';
+      lbl.dataset.i18n = labelKey;
+      lbl.textContent = i18n.t(labelKey);
+      const vEl = document.createElement('span');
+      vEl.className = 'ha-metric-value' + (cls ? ` ${cls}` : '');
+      vEl.textContent = val;
+      cell.append(lbl, vEl);
+      headline.appendChild(cell);
+    });
+
+    if (cfg.metricsMode === 'partial') {
+      const badge = document.createElement('span');
+      badge.className = 'ha-badge-partial';
+      badge.dataset.i18n = 'history_analysis.partial_badge';
+      badge.textContent = i18n.t('history_analysis.partial_badge');
+      headline.appendChild(badge);
+    }
+
+    const detail = document.createElement('div');
+    detail.className = 'ha-metrics-detail';
+    const detailRows = [
+      ['history_analysis.metric.mean',   _fmtMetric(m.mean, ' mg/dL')],
+      ['history_analysis.metric.median', _fmtMetric(m.median, ' mg/dL')],
+      ['history_analysis.metric.stdev',  _fmtMetric(m.stdev, ' mg/dL')],
+      ['history_analysis.metric.mage',   _fmtMetric(m.mage, ' mg/dL')],
+      ['history_analysis.metric.min',    _fmtMetric(m.min, ' mg/dL')],
+      ['history_analysis.metric.max',    _fmtMetric(m.max, ' mg/dL')],
+      ['history_analysis.metric.tir_low_pct',  _fmtMetric(m.tir_low_pct, '%')],
+      ['history_analysis.metric.tir_high_pct', _fmtMetric(m.tir_high_pct, '%')],
+    ];
+    detailRows.forEach(([lk, v]) => {
+      const row = document.createElement('div');
+      row.className = 'ha-metrics-detail-row';
+      const lEl = document.createElement('span');
+      lEl.dataset.i18n = lk;
+      lEl.textContent = i18n.t(lk);
+      const vEl = document.createElement('span');
+      vEl.className = 'v';
+      vEl.textContent = v;
+      row.append(lEl, vEl);
+      detail.appendChild(row);
+    });
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'ha-metrics-toggle';
+    toggle.dataset.i18n = 'history_analysis.show_detail';
+    toggle.textContent = i18n.t('history_analysis.show_detail');
+    toggle.addEventListener('click', () => {
+      const isOpen = detail.classList.toggle('is-open');
+      toggle.dataset.i18n = isOpen ? 'history_analysis.hide_detail' : 'history_analysis.show_detail';
+      toggle.textContent = i18n.t(toggle.dataset.i18n);
+    });
+
+    card.append(headline, detail, toggle);
+    host.appendChild(card);
+  }
+
+  function _renderChart(canvas, readings) {
+    // Dispose previous chart for this canvas if any
+    const pid = canvas.dataset.patientId;
+    if (_haCharts[pid]) {
+      try { _haCharts[pid].destroy(); } catch (e) {}
+      delete _haCharts[pid];
+    }
+    if (!readings || readings.length === 0) return;
+    const labels = readings.map(r => formatShortTime(r.timestamp));
+    const values = readings.map(r => r.glucose_value);
+    _haCharts[pid] = new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          data: values,
+          borderColor: 'rgba(99,179,237,0.95)',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          pointHoverRadius: 3,
+          fill: false,
+          tension: 0.3,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { enabled: true },
+          annotation: {
+            annotations: {
+              normalZone: { type: 'box', yMin: 70, yMax: 180, backgroundColor: 'rgba(34,197,94,0.06)', borderWidth: 0 },
+              highLine:   { type: 'line', yMin: 180, yMax: 180, borderColor: 'rgba(239,68,68,0.45)', borderWidth: 1, borderDash: [3,3] },
+              lowLine:    { type: 'line', yMin: 70,  yMax: 70,  borderColor: 'rgba(96,165,250,0.45)', borderWidth: 1, borderDash: [3,3] },
+            },
+          },
+        },
+        scales: {
+          x: { display: false },
+          y: { min: 40, max: 300, ticks: { font: { size: 10 } } },
+        },
+      },
+    });
+  }
+
+  function _renderDownloadDropdown(host, patientId, range) {
+    host.innerHTML = '';
+    const cfg = RANGE_MAP[range];
+    const days = cfg.days || 1;  // 3h window still exports last 1 day to be useful
+    const wrap = document.createElement('div');
+    wrap.className = 'ha-download';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ha-download-btn';
+    btn.dataset.i18n = 'history_analysis.download_csv';
+    btn.textContent = i18n.t('history_analysis.download_csv');
+    btn.addEventListener('click', (ev) => {
+      // Plain click → CSV download. Right-click or alt-click → open menu.
+      if (ev.altKey || ev.shiftKey) { wrap.classList.toggle('is-open'); return; }
+      window.location.href = `/api/patients/${encodeURIComponent(patientId)}/history/export?days=${days}&format=csv`;
+    });
+    const caret = document.createElement('button');
+    caret.type = 'button';
+    caret.className = 'ha-download-btn';
+    caret.textContent = '▾';
+    caret.setAttribute('aria-haspopup', 'true');
+    caret.dataset.i18nAriaLabel = 'history_analysis.download_more_aria';
+    caret.setAttribute('aria-label', i18n.t('history_analysis.download_more_aria'));
+    caret.style.padding = '.35rem .5rem';
+    caret.addEventListener('click', () => wrap.classList.toggle('is-open'));
+
+    const menu = document.createElement('div');
+    menu.className = 'ha-download-menu';
+    const csvA = document.createElement('a');
+    csvA.href = `/api/patients/${encodeURIComponent(patientId)}/history/export?days=${days}&format=csv`;
+    csvA.dataset.i18n = 'history_analysis.download_csv';
+    csvA.textContent = i18n.t('history_analysis.download_csv');
+    const jsonA = document.createElement('a');
+    jsonA.href = `/api/patients/${encodeURIComponent(patientId)}/history/export?days=${days}&format=json`;
+    jsonA.dataset.i18n = 'history_analysis.download_json';
+    jsonA.textContent = i18n.t('history_analysis.download_json');
+    menu.append(csvA, jsonA);
+
+    wrap.append(btn, caret, menu);
+    host.appendChild(wrap);
+  }
+
+  async function renderHistoryAnalysisForPatient(card, patient) {
+    const pid = String(patient.patient_id);
+    const range = _chartRange;
+    // Refresh download dropdown synchronously (instant feedback while fetches resolve)
+    _renderDownloadDropdown(card.querySelector('.ha-download-host'), pid, range);
+    // Fetch chart + metrics in parallel — one failure must not block the other
+    const [historyRes, metricsRes] = await Promise.allSettled([
+      fetchHistoryForRange(pid, range),
+      fetchMetricsForRange(pid, range),
+    ]);
+    const readings = historyRes.status === 'fulfilled' ? historyRes.value : [];
+    const metrics  = metricsRes.status === 'fulfilled' ? metricsRes.value  : null;
+    _renderChart(card.querySelector('canvas.ha-chart'), readings);
+    _renderMetricsCard(card.querySelector('.ha-metrics-host'), metrics, range);
+  }
+
+  function renderHistoryAnalysis(patients) {
+    const section = document.getElementById('history-analysis-section');
+    const grid    = document.getElementById('history-analysis-grid');
+    if (!section || !grid) return;
+    if (!patients || patients.length === 0) {
+      section.style.display = 'none';
+      grid.innerHTML = '';
+      Object.values(_haCharts).forEach(c => { try { c.destroy(); } catch (e) {} });
+      Object.keys(_haCharts).forEach(k => delete _haCharts[k]);
+      return;
+    }
+    section.style.display = '';
+    _setRangeBtnActive();
+    // Rebuild grid (cheap — at most a handful of patients)
+    grid.innerHTML = '';
+    patients.forEach(p => {
+      // Build the card with createElement + textContent/setAttribute rather
+      // than innerHTML — patient_name and patient_id come from an external
+      // source (LibreLinkUp) and may contain characters that need full HTML
+      // escaping, not just stripping '<' and '>'. See Copilot review on PR #92.
+      const pidStr = String(p.patient_id);
+      const card = document.createElement('div');
+      card.className = 'ha-patient-card';
+      card.dataset.patientId = pidStr;
+
+      const header = document.createElement('div');
+      header.className = 'ha-patient-card-header';
+      const title = document.createElement('span');
+      title.className = 'ha-patient-card-title';
+      title.textContent = p.patient_name || p.patient_id || '';
+      const downloadHost = document.createElement('span');
+      downloadHost.className = 'ha-download-host';
+      header.appendChild(title);
+      header.appendChild(downloadHost);
+
+      const chartWrap = document.createElement('div');
+      chartWrap.className = 'ha-chart-wrap';
+      const canvas = document.createElement('canvas');
+      canvas.className = 'ha-chart';
+      canvas.setAttribute('data-patient-id', pidStr);
+      chartWrap.appendChild(canvas);
+
+      const metricsHost = document.createElement('div');
+      metricsHost.className = 'ha-metrics-host';
+
+      card.appendChild(header);
+      card.appendChild(chartWrap);
+      card.appendChild(metricsHost);
+
+      grid.appendChild(card);
+      renderHistoryAnalysisForPatient(card, p);
+    });
+  }
+
+  // Wire up range buttons (once, on init)
+  document.querySelectorAll('.range-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const next = btn.dataset.range;
+      if (!VALID_RANGES.includes(next) || next === _chartRange) return;
+      _chartRange = next;
+      setSavedRange(next);
+      _setRangeBtnActive();
+      if (_lastPatients && _lastPatients.length) renderHistoryAnalysis(_lastPatients);
+    });
+  });
+  _setRangeBtnActive();
+
   // ── Fetch & poll (current readings) ─────────────────────────────
   async function fetchPatients() {
     try {
@@ -2013,6 +3764,7 @@ if (!isNaN(cg) && cg > 0) {
       _failCount = 0;
       updateTable(data.patients);
       updatePatientFilter(data.patients);
+      renderHistoryAnalysis(data.patients);
       updateLastUpdateLabel(new Date().toISOString());
       setStatus('connected');
     } catch (e) {
@@ -2087,6 +3839,10 @@ if (!isNaN(cg) && cg > 0) {
         })
       : _alertsData;
     updateHistory(filtered, /* skipStore= */ true);
+    // Re-render historical analysis section (metrics labels use i18n.t()
+    // at creation time, so switching language without re-render leaves
+    // them partially translated until the next polling cycle).
+    if (_lastPatients && _lastPatients.length) renderHistoryAnalysis(_lastPatients);
     // Re-render patient filter "All" option (already via data-i18n but update dynamically)
     const allOpt = document.querySelector('#patient-filter option[value=""]');
     if (allOpt) allOpt.textContent = i18n.t('history.patient_all');

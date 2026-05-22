@@ -342,6 +342,94 @@ class TestUserOverrodeLocaleNaming:
         assert "_userOverrodeLocale" in resp.text
 
 
+# ── Historical analysis (range selector + metrics card + download) ───────────
+
+
+class TestHistoryAnalysisUI:
+    """The historical analysis section (step A of history-ui plan) must be
+    wired across index.html, i18n and service worker."""
+
+    # Section + selector present in dashboard
+
+    def test_index_has_history_analysis_section(self, client):
+        resp = client.get("/")
+        assert 'id="history-analysis-section"' in resp.text
+
+    def test_index_has_history_analysis_grid_container(self, client):
+        resp = client.get("/")
+        assert 'id="history-analysis-grid"' in resp.text
+
+    def test_index_has_4_range_buttons(self, client):
+        resp = client.get("/")
+        # data-range="3h" / "24h" / "14d" / "90d"
+        for token in ("3h", "24h", "14d", "90d"):
+            assert f'data-range="{token}"' in resp.text, f"missing range button {token}"
+
+    def test_index_section_uses_data_i18n_for_title(self, client):
+        resp = client.get("/")
+        assert 'data-i18n="history_analysis.title"' in resp.text
+
+    def test_index_range_buttons_use_data_i18n(self, client):
+        resp = client.get("/")
+        for key in ("history_analysis.range_3h",
+                    "history_analysis.range_24h",
+                    "history_analysis.range_14d",
+                    "history_analysis.range_90d"):
+            assert f'data-i18n="{key}"' in resp.text
+
+    # JS wiring
+
+    def test_index_defines_range_map(self, client):
+        resp = client.get("/")
+        assert "RANGE_MAP" in resp.text
+
+    def test_index_persists_range_in_localStorage(self, client):
+        resp = client.get("/")
+        assert "fgm-chart-range" in resp.text
+
+    def test_index_uses_promise_allsettled_for_parallel_fetch(self, client):
+        """Chart and metrics must be fetched in parallel; one failure must not
+        block the other."""
+        resp = client.get("/")
+        assert "Promise.allSettled" in resp.text
+
+    def test_index_calls_render_history_analysis_in_fetch_patients(self, client):
+        resp = client.get("/")
+        assert "renderHistoryAnalysis(data.patients)" in resp.text
+
+    # i18n keys present in both locales
+
+    def test_history_analysis_keys_in_es_json(self, client):
+        resp = client.get("/i18n/es.json")
+        for key in (
+            "history_analysis.title",
+            "history_analysis.range_3h", "history_analysis.range_24h",
+            "history_analysis.range_14d", "history_analysis.range_90d",
+            "history_analysis.metric.tir", "history_analysis.metric.gmi",
+            "history_analysis.metric.cv", "history_analysis.metric.n",
+            "history_analysis.partial_badge",
+            "history_analysis.show_detail", "history_analysis.hide_detail",
+            "history_analysis.metrics_empty",
+            "history_analysis.download_csv", "history_analysis.download_json",
+        ):
+            assert key in resp.text, f"missing es key {key!r}"
+
+    def test_history_analysis_keys_in_en_json(self, client):
+        resp = client.get("/i18n/en.json")
+        for key in (
+            "history_analysis.title",
+            "history_analysis.range_3h", "history_analysis.range_24h",
+            "history_analysis.range_14d", "history_analysis.range_90d",
+            "history_analysis.metric.tir", "history_analysis.metric.gmi",
+            "history_analysis.metric.cv", "history_analysis.metric.n",
+            "history_analysis.partial_badge",
+            "history_analysis.show_detail", "history_analysis.hide_detail",
+            "history_analysis.metrics_empty",
+            "history_analysis.download_csv", "history_analysis.download_json",
+        ):
+            assert key in resp.text, f"missing en key {key!r}"
+
+
 # ── Senior mode toggle (elder-friendly accessibility) ────────────────────────
 
 class TestSeniorModeToggle:
@@ -462,5 +550,5 @@ class TestSeniorModeToggle:
         resp = client.get("/sw.js")
         assert resp.status_code == 200
         assert 'CACHE_NAME = "fgm-shell-v1"' not in resp.text
-        # Must be v2 or newer
+        # Must be v2 or newer (currently v3 after merging history-ui + elder-mode)
         assert 'CACHE_NAME = "fgm-shell-v' in resp.text
