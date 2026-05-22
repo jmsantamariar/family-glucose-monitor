@@ -2218,13 +2218,17 @@
       critical: 'Alerta',
       low:      'Glucosa baja'
     };
+    // Patient names are escaped at call-time to prevent DOM XSS via innerHTML
+    // (escapeHtml is defined later in this script; HEADLINES values are
+    // functions, so the reference resolves when HEADLINES[worst](...) is
+    // invoked, not at define-time).
     var HEADLINES = {
       normal:   function (names)  { return names.length === 1
-                  ? '<strong>' + names[0] + '</strong> está bien.'
+                  ? '<strong>' + escapeHtml(names[0]) + '</strong> está bien.'
                   : 'Toda la familia está <strong>en rango</strong>.'; },
-      warning:  function (names)  { return '<strong>' + names.join(', ') + '</strong> necesita atención.'; },
-      critical: function (names)  { return '<strong>' + names.join(', ') + '</strong> requiere ayuda ahora.'; },
-      low:      function (names)  { return 'Glucosa baja en <strong>' + names.join(', ') + '</strong>.'; }
+      warning:  function (names)  { return '<strong>' + names.map(escapeHtml).join(', ') + '</strong> necesita atención.'; },
+      critical: function (names)  { return '<strong>' + names.map(escapeHtml).join(', ') + '</strong> requiere ayuda ahora.'; },
+      low:      function (names)  { return 'Glucosa baja en <strong>' + names.map(escapeHtml).join(', ') + '</strong>.'; }
     };
 
     function classifyState(rowClassList) {
@@ -3699,17 +3703,39 @@ if (!isNaN(cg) && cg > 0) {
     // Rebuild grid (cheap — at most a handful of patients)
     grid.innerHTML = '';
     patients.forEach(p => {
+      // Build the card with createElement + textContent/setAttribute rather
+      // than innerHTML — patient_name and patient_id come from an external
+      // source (LibreLinkUp) and may contain characters that need full HTML
+      // escaping, not just stripping '<' and '>'. See Copilot review on PR #92.
+      const pidStr = String(p.patient_id);
       const card = document.createElement('div');
       card.className = 'ha-patient-card';
-      card.dataset.patientId = String(p.patient_id);
-      card.innerHTML = `
-        <div class="ha-patient-card-header">
-          <span class="ha-patient-card-title">${(p.patient_name || p.patient_id || '').replace(/[<>]/g, '')}</span>
-          <span class="ha-download-host"></span>
-        </div>
-        <div class="ha-chart-wrap"><canvas class="ha-chart" data-patient-id="${String(p.patient_id)}"></canvas></div>
-        <div class="ha-metrics-host"></div>
-      `;
+      card.dataset.patientId = pidStr;
+
+      const header = document.createElement('div');
+      header.className = 'ha-patient-card-header';
+      const title = document.createElement('span');
+      title.className = 'ha-patient-card-title';
+      title.textContent = p.patient_name || p.patient_id || '';
+      const downloadHost = document.createElement('span');
+      downloadHost.className = 'ha-download-host';
+      header.appendChild(title);
+      header.appendChild(downloadHost);
+
+      const chartWrap = document.createElement('div');
+      chartWrap.className = 'ha-chart-wrap';
+      const canvas = document.createElement('canvas');
+      canvas.className = 'ha-chart';
+      canvas.setAttribute('data-patient-id', pidStr);
+      chartWrap.appendChild(canvas);
+
+      const metricsHost = document.createElement('div');
+      metricsHost.className = 'ha-metrics-host';
+
+      card.appendChild(header);
+      card.appendChild(chartWrap);
+      card.appendChild(metricsHost);
+
       grid.appendChild(card);
       renderHistoryAnalysisForPatient(card, p);
     });
