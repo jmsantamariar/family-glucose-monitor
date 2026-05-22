@@ -4,6 +4,35 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Monitor de Glucosa Familiar</title>
+  <!-- Mode bootstrap: applies senior/modern from localStorage BEFORE first render
+       to avoid FOUC. When no preference is saved, falls back to a heuristic:
+       prefers-reduced-motion + prefers-color-scheme: light → senior, else modern.
+       Duplicated inline across index/login/setup/configuracion by design —
+       extracting to /mode.js would either block render or cause the flash this
+       script exists to prevent. If you change the heuristic or storage key,
+       sync ALL FOUR files. For true DRY, refactor to a Jinja partial. -->
+  <script>
+    (function(){
+      try {
+        var saved = localStorage.getItem('fgm-mode');
+        var mode;
+        if (saved === 'senior' || saved === 'modern') {
+          mode = saved;
+        } else {
+          // No saved preference. Heuristic: if the OS signals both
+          // "reduced motion" AND a "light color scheme" preference, the
+          // user likely benefits from senior mode (large text, no animations,
+          // high contrast). Otherwise default to modern.
+          var reducesMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+          var prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+          mode = (reducesMotion && prefersLight) ? 'senior' : 'modern';
+        }
+        document.documentElement.setAttribute('data-mode', mode);
+      } catch (e) {
+        document.documentElement.setAttribute('data-mode', 'modern');
+      }
+    })();
+  </script>
   <!-- PWA — installable as Android / desktop app -->
   <link rel="manifest" href="/manifest.json" />
   <meta name="theme-color" content="#1a365d" />
@@ -60,6 +89,13 @@
       --blue-fg:  #2c5282;
       --orange-bg: #feebc8;
       --orange-fg: #7b341e;
+
+      /* Tokens parametrizables por modo (defaults = modern) */
+      --font-scale: 1;
+      --touch-min: 36px;
+      --border-w: 1px;
+      --transition-fast: .15s;
+      --transition-base: .3s;
     }
 
     @media (prefers-color-scheme: dark) {
@@ -84,7 +120,65 @@
       }
     }
 
+    /* ── Modo SENIOR (elder-friendly) ───────────────────────────
+       Activado vía <html data-mode="senior">. Sobrescribe el modo
+       modern (light/dark auto) con paleta high-contrast clara,
+       tipografía 45% más grande, sin animaciones, bordes 2px,
+       targets táctiles 56px. NO respeta prefers-color-scheme:
+       senior siempre es light por accesibilidad.
+       Mockup origen: docs/images/dual-v2.html
+       ──────────────────────────────────────────────────────── */
+    :root[data-mode="senior"] {
+      --bg:        #f7f3ec;
+      --surface:   #ffffff;
+      --text:      #111111;
+      --subtext:   #4a4036;
+      --border:    #2a2620;
+      --header-bg: #1a4d2e;
+      --header-fg: #ffffff;
+
+      --green-bg:  #e8f5ec;
+      --green-fg:  #1f7a3a;
+      --yellow-bg: #fdf3d4;
+      --yellow-fg: #8a6212;
+      --red-bg:    #fde4e4;
+      --red-fg:    #a01818;
+
+      --status-ok:   #1f7a3a;
+      --status-warn: #8a6212;
+      --status-err:  #a01818;
+
+      --blue-bg:   #dbeaf6;
+      --blue-fg:   #1e5b8c;
+      --orange-bg: #fce7d5;
+      --orange-fg: #7b341e;
+
+      --radius: 6px;
+      --shadow: 0 2px 8px rgba(0,0,0,.18);
+
+      --font-scale: 1.45;
+      --touch-min: 56px;
+      --border-w: 2px;
+      --transition-fast: 0s;
+      --transition-base: 0s;
+    }
+
+    /* Senior mode: kill all CSS animations for a11y. Honours the "sin
+       animaciones" promise in the comment above — transitions are
+       zeroed via --transition-* and animations are nuked here. Covers
+       warn-pulse, pulse-warning/danger/low, and live-pulse. */
+    :root[data-mode="senior"] *,
+    :root[data-mode="senior"] *::before,
+    :root[data-mode="senior"] *::after {
+      animation: none !important;
+    }
+
     /* ── Layout ────────────────────────────────────────────────── */
+    html {
+      /* Escala global del root: senior mode lo sube a 1.45×.
+         Todos los font-size/padding/gap en rem heredan la escala. */
+      font-size: calc(16px * var(--font-scale, 1));
+    }
     body {
       font-family: var(--font);
       background: var(--bg);
@@ -133,7 +227,7 @@
       border-radius: 50%;
       background: var(--status-ok);
       box-shadow: 0 0 6px var(--status-ok);
-      transition: background .3s, box-shadow .3s;
+      transition: background var(--transition-base, .3s), box-shadow var(--transition-base, .3s);
     }
 
     .status-dot.warn {
@@ -200,7 +294,7 @@
 
     tbody tr {
       border-bottom: 1px solid var(--border);
-      transition: filter .15s;
+      transition: filter var(--transition-fast, .15s);
     }
 
     tbody tr:last-child { border-bottom: none; }
@@ -255,7 +349,7 @@
       letter-spacing: .08em;
       line-height: 1;
       color: #00e676;
-      transition: color .3s, text-shadow .3s;
+      transition: color var(--transition-base, .3s), text-shadow var(--transition-base, .3s);
     }
 
     .glucose-value.trending-up {
@@ -282,7 +376,7 @@
       line-height: 1;
       display: inline-block;
       font-weight: bold;
-      transition: color .3s;
+      transition: color var(--transition-base, .3s);
     }
 
     .trend-up-fast, .trend-up   { color: #fc8181; }
@@ -462,7 +556,7 @@
       font-size: .78rem;
       font-family: inherit;
       letter-spacing: .03em;
-      transition: background .15s, border-color .15s;
+      transition: background var(--transition-fast, .15s), border-color var(--transition-fast, .15s);
       white-space: nowrap;
     }
     #lang-toggle-btn:hover {
@@ -504,7 +598,7 @@
       padding: .3rem .75rem;
       border-radius: 8px;
       cursor: pointer;
-      transition: filter .15s, transform .1s;
+      transition: filter var(--transition-fast, .15s), transform var(--transition-fast, .1s);
       min-width: 68px;
       border: 2px solid transparent;
       user-select: none;
@@ -753,7 +847,11 @@
         <div class="status-dot" id="status-dot"></div>
         <span id="status-label" data-i18n="status.connecting">Conectando…</span>
       </div>
-      <a href="/configuracion" id="settings-btn" data-i18n-aria-label="header.settings_aria_label" style="display:inline-flex;align-items:center;gap:.35rem;background:transparent;border:1px solid rgba(255,255,255,.4);color:inherit;border-radius:4px;padding:.25rem .6rem;cursor:pointer;font-size:.8rem;text-decoration:none;">
+      <button id="mode-toggle-btn" type="button" data-i18n-aria-label="header.mode_toggle_aria_label" aria-label="Cambiar entre modo Senior y Normal" style="display:inline-flex;align-items:center;gap:.35rem;background:transparent;border:1px solid rgba(255,255,255,.4);color:inherit;border-radius:4px;padding:.25rem .6rem;cursor:pointer;font-size:.8rem;min-height:var(--touch-min,36px);">
+        <span id="mode-toggle-icon" aria-hidden="true">👁</span>
+        <span id="mode-toggle-label" data-i18n="header.mode_toggle_btn">Modo Senior</span>
+      </button>
+      <a href="/configuracion" id="settings-btn" data-i18n-aria-label="header.settings_aria_label" style="display:inline-flex;align-items:center;gap:.35rem;background:transparent;border:1px solid rgba(255,255,255,.4);color:inherit;border-radius:4px;padding:.25rem .6rem;cursor:pointer;font-size:.8rem;text-decoration:none;min-height:var(--touch-min,36px);">
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
           <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
         </svg>
@@ -1947,6 +2045,34 @@ if (!isNaN(cg) && cg > 0) {
 
   const logoutBtn = document.getElementById('logout-btn');
   if (logoutBtn) logoutBtn.addEventListener('click', logout);
+
+  // ── Mode toggle (senior ↔ modern) ────────────────────────────────
+  // Persists user choice in localStorage['fgm-mode']. The bootstrap
+  // script in <head> reads it before first render to avoid FOUC.
+  function applyMode(mode) {
+    document.documentElement.setAttribute('data-mode', mode);
+    try { localStorage.setItem('fgm-mode', mode); } catch (e) { /* noop */ }
+    const labelEl = document.getElementById('mode-toggle-label');
+    const iconEl = document.getElementById('mode-toggle-icon');
+    if (labelEl) {
+      // Label invites the OTHER mode (action label, not state label)
+      const nextKey = (mode === 'senior') ? 'header.mode_toggle_to_modern' : 'header.mode_toggle_to_senior';
+      labelEl.setAttribute('data-i18n', nextKey);
+      labelEl.textContent = (typeof i18n !== 'undefined' && i18n.t) ? i18n.t(nextKey) : labelEl.textContent;
+    }
+    if (iconEl) iconEl.textContent = (mode === 'senior') ? '⚙' : '👁';
+    window.dispatchEvent(new CustomEvent('fgm:modechange', { detail: { mode } }));
+  }
+  const modeToggleBtn = document.getElementById('mode-toggle-btn');
+  if (modeToggleBtn) {
+    // Initialize label to reflect current mode (bootstrap already set the attribute)
+    const currentMode = document.documentElement.getAttribute('data-mode') || 'modern';
+    applyMode(currentMode);
+    modeToggleBtn.addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-mode') || 'modern';
+      applyMode(current === 'senior' ? 'modern' : 'senior');
+    });
+  }
 
   // ── Locale change — re-render all dynamic content ─────────────────
   window.addEventListener('fgm:localechange', () => {
