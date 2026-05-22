@@ -4,6 +4,31 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title data-i18n="login.page_title">Iniciar sesión — Monitor de Glucosa Familiar</title>
+  <!-- Mode bootstrap: applies senior/modern from localStorage BEFORE first render
+       to avoid FOUC. When no preference is saved, falls back to a heuristic:
+       prefers-reduced-motion + prefers-color-scheme: light → senior, else modern.
+       Duplicated inline across index/login/setup/configuracion by design —
+       extracting to /mode.js would either block render or cause the flash this
+       script exists to prevent. If you change the heuristic or storage key,
+       sync ALL FOUR files. For true DRY, refactor to a Jinja partial. -->
+  <script>
+    (function(){
+      try {
+        var saved = localStorage.getItem('fgm-mode');
+        var mode;
+        if (saved === 'senior' || saved === 'modern') {
+          mode = saved;
+        } else {
+          var reducesMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+          var prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+          mode = (reducesMotion && prefersLight) ? 'senior' : 'modern';
+        }
+        document.documentElement.setAttribute('data-mode', mode);
+      } catch (e) {
+        document.documentElement.setAttribute('data-mode', 'modern');
+      }
+    })();
+  </script>
   <!-- PWA — installable as Android / desktop app -->
   <link rel="manifest" href="/manifest.json" />
   <meta name="theme-color" content="#1a365d" />
@@ -32,6 +57,10 @@
       --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
       --radius: 10px;
       --shadow: 0 2px 8px rgba(0,0,0,.08);
+
+      --font-scale: 1;
+      --touch-min: 36px;
+      --border-w: 1px;
     }
 
     @media (prefers-color-scheme: dark) {
@@ -49,6 +78,29 @@
       }
     }
 
+    /* Senior mode — light-only high-contrast (mirrors index.html senior block). */
+    :root[data-mode="senior"] {
+      --bg:        #f7f3ec;
+      --surface:   #ffffff;
+      --text:      #111111;
+      --subtext:   #4a4036;
+      --border:    #2a2620;
+      --header-bg: #1a4d2e;
+      --header-fg: #ffffff;
+      --accent:    #1a4d2e;
+      --accent-hover: #143a23;
+      --error-bg:  #fde4e4;
+      --error-fg:  #a01818;
+      --radius: 6px;
+      --shadow: 0 2px 8px rgba(0,0,0,.18);
+      --font-scale: 1.45;
+      --touch-min: 56px;
+      --border-w: 2px;
+    }
+
+    html {
+      font-size: calc(16px * var(--font-scale, 1));
+    }
     body {
       font-family: var(--font);
       background: var(--bg);
