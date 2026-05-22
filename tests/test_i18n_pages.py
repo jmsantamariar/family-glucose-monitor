@@ -433,6 +433,19 @@ class TestSeniorModeToggle:
         assert "header.mode_toggle_to_modern" in resp.text
         assert "header.mode_toggle_aria_label" in resp.text
 
+    def test_mode_toggle_keys_in_runtime_i18n_js(self, client):
+        """The runtime translator embeds its own dictionary in i18n.js.
+        Tests against es.json/en.json (above) give false security if these
+        keys are missing here — applyTranslations() would render the raw
+        key string as visible text. Covers Copilot review feedback from
+        the elder-mode PR."""
+        resp = client.get("/i18n/i18n.js")
+        assert resp.status_code == 200
+        assert "header.mode_toggle_btn" in resp.text
+        assert "header.mode_toggle_to_senior" in resp.text
+        assert "header.mode_toggle_to_modern" in resp.text
+        assert "header.mode_toggle_aria_label" in resp.text
+
     # Heuristic default uses both prefers-reduced-motion and prefers-color-scheme
 
     def test_index_heuristic_uses_prefers_reduced_motion(self, client):
