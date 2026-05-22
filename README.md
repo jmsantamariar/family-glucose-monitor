@@ -25,6 +25,9 @@ Para **familias** donde uno o varios miembros usan un sensor FreeStyle Libre y t
 - 🔔 Notificaciones push en el navegador (Web Push / VAPID) — suscripción desde el dashboard
 - 📱 **PWA instalable en Android** (y escritorio) — icono en pantalla de inicio, modo standalone, soporte offline
 - 🖥️ Dashboard web autenticado con semáforo de colores y gráficos por paciente
+- 📊 **Análisis histórico de glucosa** — selector de rango temporal (hasta 1 año), métricas glucémicas (TIR/GMI/CV/MAGE), descarga CSV/JSON
+- 👴 **Modo Senior / Moderno** — tipografía grande, alto contraste y animaciones reducidas; persiste en `localStorage` (`fgm-mode`); disponible en todas las pantallas
+- 🎨 **Tema claro / oscuro** — persiste en `localStorage` (`fgm-theme`); aplicado antes del primer render para evitar FOUC
 - ⚙️ **Pantalla de Configuración integrada** — edita credenciales, umbrales y Telegram desde el navegador sin tocar `config.yaml`
 - 🔐 Autenticación con sesiones persistentes (SQLite) y contraseñas PBKDF2
 - 🔒 Credenciales de LibreLinkUp encriptadas en disco (Fernet/AES-128-CBC + HMAC-SHA256)
@@ -195,7 +198,7 @@ src/
   glucose_reader.py      ← lee TODOS los pacientes vía pylibrelinkup
   alert_engine.py        ← evalúa umbrales, cooldown, construye mensajes
   state.py               ← persistencia JSON por patient_id (escritura atómica)
-  api.py                 ← dashboard web + API interna autenticada (modo dashboard/full)
+  api.py                 ← dashboard web + API interna autenticada (modo dashboard/full) — incluye /history, /history/export y /metrics
   connection_tester.py   ← funciones reutilizables para probar LibreLinkUp y Telegram
   api_server.py          ← API REST externa autenticada de solo lectura (para widgets/apps)
   auth.py                ← gestión de sesiones y credenciales del dashboard
@@ -204,6 +207,9 @@ src/
   db.py                  ← fábrica centralizada de conexiones SQLite (WAL, FK, timeout)
   setup_status.py        ← detección de setup completo vs. modo wizard inicial
   push_subscriptions.py  ← persistencia de suscripciones Web Push (push_subscriptions.db)
+  reading_history.py     ← historial continuo de lecturas de glucosa (reading_history.db)
+  analytics/
+    glycemic_metrics.py  ← métricas glucémicas: TIR (5 cubos), GMI, CV, MAGE
   models/
     __init__.py          ← dataclasses de dominio: GlucoseReading, AlertsConfig, PatientState
     db_models.py         ← modelos SQLAlchemy ORM: SessionToken, LoginAttempt, AlertHistory
@@ -596,7 +602,69 @@ Para una guía completa de despliegue incluyendo HTTPS, reverse proxy y configur
 
 ---
 
-## 🖥️ Dashboard
+## 📊 Endpoints de historial y métricas del dashboard (`src/api.py`)
+
+Los siguientes endpoints forman parte del **dashboard web interno** (`src/api.py`, puerto 8080). Requieren sesión activa (mismo login que el dashboard). El historial continuo de lecturas se persiste en `reading_history.db`.
+
+| Method | Path | Parámetros | Descripción |
+|--------|------|------------|-------------|
+| `GET` | `/api/patients/{id}/history` | `hours` (1–8760, default 3) | Lecturas de glucosa dentro del período indicado, con downsampling automático para rangos largos |
+| `GET` | `/api/patients/{id}/history/export` | `days` (1–365, default 7), `format` (`csv`\|`json`) | Descarga del historial completo como archivo |
+| `GET` | `/api/patients/{id}/metrics` | `days` (1–365, default 14) | Métricas glucémicas estándar (TIR / GMI / CV / MAGE) |
+
+### `GET /api/patients/{patient_id}/history?hours=N`
+
+Devuelve las lecturas de glucosa del paciente dentro de las últimas `N` horas (1–8760 ≈ 1 año). Para evitar payloads masivos, el endpoint aplica downsampling automático según el rango:
+
+| Rango | Resolución | Puntos máximos aprox. |
+|-------|------------|----------------------|
+| `hours ≤ 24` | Resolución completa (~5 min) | ~288 |
+| `hours ≤ 168` (7d) | Cubos de 15 min | ~672 |
+| `hours ≤ 720` (30d) | Cubos de 30 min | ~1 440 |
+| `hours ≤ 8760` (1y) | Cubos de 1 hora | ~8 760 |
+
+> **Limitación conocida:** este endpoint no está paginado. Aunque el downsampling limita el número de puntos, en escenarios extremos (CGM con alta densidad de lecturas en el período máximo) la respuesta puede ser grande. Para exportaciones completas a un clínico, usa `/history/export?format=csv`.
+
+### `GET /api/patients/{patient_id}/history/export?format={csv|json}&days=N`
+
+Descarga el historial completo del paciente (sin downsampling) como archivo adjunto.
+
+- `format=csv` — UTF-8 con BOM (compatible Excel); el CSV se genera en streaming fila a fila para no consumir memoria.
+- `format=json` — Envelope con metadatos (nombre, período, `count`, `generated_at`) + array de lecturas. Carga el array completo en memoria antes de responder; para exportaciones muy largas (365 días con CGM continuo, ~100k lecturas ≈ 30 MB) se recomienda `format=csv`.
+
+### `GET /api/patients/{patient_id}/metrics?days=N`
+
+Calcula métricas de control glucémico estándar para los últimos `N` días (1–365, default 14). Implementado en `src/analytics/glycemic_metrics.py`.
+
+```json
+{
+  "patient_id": "abc-123",
+  "patient_name": "Juan García",
+  "period_days": 14,
+  "first_reading_at": "2026-05-01T00:00:00+00:00",
+  "last_reading_at":  "2026-05-14T23:55:00+00:00",
+  "generated_at":     "2026-05-15T08:00:00+00:00",
+  "metrics": {
+    "mean": 142.3,
+    "median": 138.0,
+    "stdev": 32.1,
+    "min": 67,
+    "max": 287,
+    "tir_severe_low":  0.8,
+    "tir_low":         3.2,
+    "tir_in_range":   68.5,
+    "tir_high":       24.1,
+    "tir_severe_high": 3.4,
+    "gmi":  7.1,
+    "cv":   22.5,
+    "mage": 95.0
+  }
+}
+```
+
+> Las métricas siguen el consenso internacional de TIR de 2019. Se recomienda un mínimo de 14 días de datos para resultados clínicamente relevantes.
+
+---
 
 El sistema incluye un dashboard web en tiempo real que muestra el estado de todos los pacientes monitoreados. Sirve desde `src/dashboard/` (HTML/JS) a través de `src/api.py`.
 
@@ -607,8 +675,11 @@ El sistema incluye un dashboard web en tiempo real que muestra el estado de todo
 - **Gráficas de alertas por hora**: Histograma apilado por paciente (últimas 24h)
 - **Distribución por nivel**: Gráfica de dona mostrando proporción bajo/normal/alto
 - **Valores de glucosa en alertas**: Gráfica de línea por paciente con zonas de rango
+- **Análisis histórico**: Selector de rango temporal (1h–8760h ≈ 1 año), tarjeta de métricas glucémicas (TIR/GMI/CV/MAGE) y botón de descarga CSV/JSON
 - **Filtros**: Por paciente y por período de tiempo
-- **Modo oscuro**: Adaptación automática al tema del sistema
+- **Modo Senior / Moderno**: Toggle persistido en `localStorage` (`fgm-mode`); modo senior activa tipografía grande, alto contraste y elimina animaciones. Disponible en login, setup, configuración y dashboard principal. El modo por defecto se detecta heurísticamente (`prefers-reduced-motion` + `prefers-color-scheme: light` → senior; si no, modern)
+- **Tema claro / oscuro**: Toggle persistido en `localStorage` (`fgm-theme`); aplicado antes del primer render (script inline en `<head>`) para evitar flash de contenido sin estilo (FOUC). Por defecto: `light`
+- **Rediseño visual**: Tipografía Source Sans 3 (texto) + Source Serif 4 (display); paleta cálida; `theme-color` `#3a2a20`
 - **Auto-actualización**: Los datos se refrescan automáticamente
 - **Notificaciones push**: Botón de suscripción/desuscripción en el dashboard; las alertas llegan al navegador aunque la pestaña esté en segundo plano (requiere HTTPS en producción)
 
@@ -648,6 +719,7 @@ La lógica de detección está en `src/setup_status.py`, que verifica: existenci
 |---------|--------|-------------|
 | `state.json` | `src/state.py` | Estado de alertas por paciente (última alerta, nivel, timestamp). Escritura atómica. |
 | `readings_cache.json` | `src/main.py` (escritura) / `src/api.py`, `src/api_server.py` (lectura) | Caché de lecturas más recientes. Lo escribe `src/main.py` de forma atómica y lo consumen el dashboard y la API; para que ambos vean exactamente los mismos datos deben usar la misma ruta de caché. Actualmente `src/api_server.py` lee `PROJECT_ROOT/readings_cache.json`, por lo que puede divergir si `api.cache_file` apunta a otro archivo. |
+| `reading_history.db` | `src/reading_history.py` | Historial continuo de lecturas de glucosa por paciente. Usado por `/history`, `/history/export` y `/metrics`. Ruta configurable con `reading_history_db` en `config.yaml`. |
 | `alert_history.db` | `src/alert_history.py` | Historial de alertas enviadas (SQLite, tabla `alerts`). Gestionado con SQLAlchemy ORM. Migraciones con Alembic. |
 | `sessions.db` | `src/auth.py` | Sesiones del dashboard (tabla `sessions`) y log de intentos de login (tabla `login_attempts`). SQLite con SQLAlchemy ORM para sesiones, `text()` para login_attempts. |
 | `push_subscriptions.db` | `src/push_subscriptions.py` | Suscripciones Web Push de los navegadores (tabla `push_subscriptions`). Creado automáticamente al arrancar. |
@@ -829,7 +901,8 @@ poetry run alembic history
 
 - **No es un dispositivo médico.** No está certificado por ninguna autoridad sanitaria.
 - **Depende de LibreLinkUp.** Si la API de Abbott no está disponible, no habrá lecturas.
-- **No almacena histórico completo de glucosa.** Persiste el estado de la última alerta por paciente (`state.json`) y un historial de alertas enviadas (`alert_history.db`). No guarda el historial continuo de lecturas de glucosa.
+- **El endpoint `/history` no está paginado.** Para rangos muy largos con CGM continuo puede devolver miles de puntos. Se aplica downsampling automático para rangos > 24h; para exportar datos completos a alta resolución usa `/history/export?format=csv`.
+- **La exportación JSON (`/history/export?format=json`) carga el array completo en memoria.** Para exportaciones de larga duración (365 días) se recomienda `format=csv`, que hace streaming fila a fila.
 - **No garantiza entrega en tiempo real.** Pueden ocurrir retrasos por red, API o servicios de mensajería.
 - **No reemplaza las alarmas del sensor.** Las alarmas del FreeStyle Libre son el mecanismo primario.
 - **API no oficial.** LibreLinkUp no provee una API pública documentada; puede cambiar sin aviso.

@@ -56,7 +56,9 @@ Servidor FastAPI del panel de control. Responsabilidades:
 - Gestionar autenticación por cookie de sesión (middleware HTTP)
 - Mantener una caché en memoria de las últimas lecturas por paciente, recargada desde `readings_cache.json` cuando cambia el mtime del archivo
 - En modo `full`, `main.py` llama a `update_readings_cache()` después de cada ciclo para forzar recarga incluso en escrituras del mismo segundo
+- Persistir cada lectura en `reading_history.db` (best-effort) al actualizar el caché
 - Exponer endpoints protegidos: `/api/patients`, `/api/patients/{id}`, `/api/health`, `/api/alerts`
+- **Historial y métricas:** `/api/patients/{id}/history?hours=N` (1–8760 h, con downsampling automático), `/api/patients/{id}/history/export?format={csv|json}&days=N` (streaming CSV o JSON envelope), `/api/patients/{id}/metrics?days=N` (TIR/GMI/CV/MAGE via `src/analytics/glycemic_metrics.py`)
 - Gestionar el flujo de configuración inicial (`/setup`) y login (`/login`)
 - Protección CSRF: patrón double-submit cookie (`csrf_token` + `X-CSRF-Token`) en todos los POST autenticados
 - Se inicia automáticamente con `monitoring.mode: dashboard` o `full`
@@ -164,6 +166,25 @@ Gestiona las suscripciones de navegadores al servicio Web Push. Responsabilidade
 
 Usa `connect_db()` para todas las conexiones SQLite (WAL, FK, timeout).
 
+### `src/reading_history.py` — Historial continuo de lecturas de glucosa
+
+Persiste y consulta todas las lecturas de glucosa en `reading_history.db` (SQLite). Responsabilidades:
+- `init_db(path)` — inicializa el esquema (idempotente)
+- `log_reading(path, patient_id, patient_name, value)` — persiste cada lectura recibida del poller
+- `get_readings(path, patient_id, hours, days)` — consulta lecturas dentro de un período
+- `iter_readings(path, patient_id, days)` — iterador para streaming en la exportación CSV
+- `downsample(readings, bucket_seconds)` — reduce la densidad de puntos para rangos largos
+
+La ruta al archivo se resuelve con `src/paths.get_reading_history_db_path()`, configurable con `reading_history_db` en `config.yaml`.
+
+### `src/analytics/glycemic_metrics.py` — Métricas de control glucémico
+
+Calcula métricas clínicas estándar a partir de una lista de lecturas de glucosa. Responsabilidades:
+- `compute_metrics(readings)` — devuelve un dict plano con: estadísticas descriptivas (mean/median/stdev/min/max), TIR en cinco cubos (severe-low/low/in-range/high/severe-high), GMI, CV y MAGE.
+- Sin efectos secundarios: recibe una lista de lecturas y devuelve métricas calculadas.
+
+Usado por `GET /api/patients/{id}/metrics` en `src/api.py`.
+
 ### `src/outputs/webpush.py` — Salida Web Push
 
 Implementa `BaseOutput` para entregar alertas de glucosa como notificaciones push en el navegador. Responsabilidades:
@@ -229,6 +250,7 @@ El sistema usa tres bases de datos SQLite independientes:
 | `alert_history.db` | `src/alert_history.py` | Historial de alertas enviadas (tabla `alerts`) |
 | `sessions.db` | `src/auth.py` | Sesiones de dashboard (tabla `sessions`) y log de intentos de login fallidos (tabla `login_attempts`) |
 | `push_subscriptions.db` | `src/push_subscriptions.py` | Suscripciones de navegadores para Web Push (tabla `push_subscriptions`) |
+| `reading_history.db` | `src/reading_history.py` | Historial continuo de lecturas de glucosa por paciente (tabla `readings`); usado por los endpoints `/history`, `/history/export` y `/metrics` |
 
 El arranque normal crea las tablas base con `IF NOT EXISTS` sin alterar bases de datos existentes.
 Los cambios de schema entre versiones de `alert_history.db` se gestionan con Alembic (`alembic.ini`, directorio `migrations/`) y deben aplicarse manualmente con `poetry run alembic upgrade head`. `sessions.db` no usa Alembic: su DDL lo gestiona `src/auth.py` directamente.

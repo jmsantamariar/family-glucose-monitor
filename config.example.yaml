@@ -79,3 +79,8 @@ api:
 
 alert_history_db: "alert_history.db"
 alert_history_max_days: 7
+
+# Optional: path for the continuous glucose reading history database (used by
+# /history, /history/export, and /metrics dashboard endpoints). Defaults to
+# reading_history.db in the project root.
+# reading_history_db: "reading_history.db"
