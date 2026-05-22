@@ -4,7 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title data-i18n="config.page_title">Configuración del sistema — Monitor de Glucosa Familiar</title>
-  <!-- Mode bootstrap: inherit senior/modern from localStorage. Default = modern. -->
+  <!-- Mode bootstrap: applies senior/modern from localStorage BEFORE first render
+       to avoid FOUC. When no preference is saved, falls back to a heuristic:
+       prefers-reduced-motion + prefers-color-scheme: light → senior, else modern.
+       Duplicated inline across index/login/setup/configuracion by design —
+       extracting to /mode.js would either block render or cause the flash this
+       script exists to prevent. If you change the heuristic or storage key,
+       sync ALL FOUR files. For true DRY, refactor to a Jinja partial. -->
   <script>
     (function(){
       try {
@@ -478,7 +484,7 @@
     <span data-i18n="config.header.title">Configuración del sistema</span>
   </h1>
   <div class="header-right">
-    <button id="mode-toggle-btn" type="button" data-i18n-aria-label="header.mode_toggle_aria_label" aria-label="Cambiar entre modo Senior y Modern" style="min-height:var(--touch-min,36px);">
+    <button id="mode-toggle-btn" type="button" data-i18n-aria-label="header.mode_toggle_aria_label" aria-label="Cambiar entre modo Senior y Normal" style="min-height:var(--touch-min,36px);">
       <span id="mode-toggle-icon" aria-hidden="true">👁</span>
       <span id="mode-toggle-label" data-i18n="header.mode_toggle_btn">Modo Senior</span>
     </button>
