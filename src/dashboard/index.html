@@ -4,20 +4,23 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Monitor de Glucosa Familiar</title>
-  <!-- Mode bootstrap: applies senior/modern from localStorage BEFORE first render
-       to avoid FOUC. When no preference is saved, falls back to a heuristic:
-       prefers-reduced-motion + prefers-color-scheme: light → senior, else modern.
+  <!-- Mode + theme bootstrap: applies senior/modern AND light/dark from
+       localStorage BEFORE first render to avoid FOUC. Storage keys:
+       fgm-mode (senior|modern) and fgm-theme (light|dark) — same keys used by
+       the toggle JS later in this file and by login/setup/configuracion. When
+       no mode preference is saved, falls back to a heuristic: prefers-
+       reduced-motion + prefers-color-scheme: light → senior, else modern.
        Duplicated inline across index/login/setup/configuracion by design —
        extracting to /mode.js would either block render or cause the flash this
-       script exists to prevent. If you change the heuristic or storage key,
+       script exists to prevent. If you change the heuristic or storage keys,
        sync ALL FOUR files. For true DRY, refactor to a Jinja partial. -->
   <script>
     (function(){
       try {
-        var saved = localStorage.getItem('fgm-mode');
+        var savedMode = localStorage.getItem('fgm-mode');
         var mode;
-        if (saved === 'senior' || saved === 'modern') {
-          mode = saved;
+        if (savedMode === 'senior' || savedMode === 'modern') {
+          mode = savedMode;
         } else {
           // No saved preference. Heuristic: if the OS signals both
           // "reduced motion" AND a "light color scheme" preference, the
@@ -28,8 +31,13 @@
           mode = (reducesMotion && prefersLight) ? 'senior' : 'modern';
         }
         document.documentElement.setAttribute('data-mode', mode);
+
+        var savedTheme = localStorage.getItem('fgm-theme');
+        var theme = (savedTheme === 'light' || savedTheme === 'dark') ? savedTheme : 'light';
+        document.documentElement.setAttribute('data-theme', theme);
       } catch (e) {
         document.documentElement.setAttribute('data-mode', 'modern');
+        document.documentElement.setAttribute('data-theme', 'light');
       }
     })();
   </script>
@@ -41,22 +49,6 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Glucosa" />
   <link rel="apple-touch-icon" href="/icons/icon-192.svg" />
-  <!-- Bootstrap mode + theme BEFORE paint to avoid flash -->
-  <script>
-    (function () {
-      try {
-        var m = localStorage.getItem('app-mode');
-        var t = localStorage.getItem('app-theme');
-        if (m !== 'senior' && m !== 'modern') m = 'modern';
-        if (t !== 'light' && t !== 'dark')   t = 'light';
-        document.documentElement.setAttribute('data-mode', m);
-        document.documentElement.setAttribute('data-theme', t);
-      } catch (e) {
-        document.documentElement.setAttribute('data-mode', 'modern');
-        document.documentElement.setAttribute('data-theme', 'light');
-      }
-    })();
-  </script>
   <!-- Source Sans 3 (texto) + Source Serif 4 (display ligero) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -2156,9 +2148,13 @@
      (No tocamos JS existente — todo vive aquí.)
      ════════════════════════════════════════════════════════════ */
   (function () {
-    var STORAGE_MODE  = 'app-mode';
-    var STORAGE_THEME = 'app-theme';
-    var STORAGE_ACCENT = 'app-accent';
+    // Unified storage keys — same ones used by the head bootstrap and by
+    // applyMode() further down. Previously the redesign used app-* keys
+    // while elder-mode used fgm-* keys, causing mode to drift between
+    // reloads and between pages. See Copilot review feedback on PR #92.
+    var STORAGE_MODE  = 'fgm-mode';
+    var STORAGE_THEME = 'fgm-theme';
+    var STORAGE_ACCENT = 'fgm-accent';
 
     // ── Mode toggle ────────────────────────────────────────────
     function setMode(m) {
