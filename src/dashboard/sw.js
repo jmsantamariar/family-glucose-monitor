@@ -12,8 +12,10 @@
  */
 
 // Bump version when shell assets change so already-installed PWAs refresh.
-// v2: adds senior/modern mode (CSS + bootstrap script + toggle).
-const CACHE_NAME = "fgm-shell-v2";
+// v3: history-ui (range selector + metrics card + download) merged with
+// senior/modern mode (CSS + bootstrap script + toggle). Both branches
+// bumped to v2 independently; v3 invalidates either stale cache on deploy.
+const CACHE_NAME = "fgm-shell-v3";
 
 /** Pages that form the app shell and should work offline. */
 const APP_SHELL = ["/", "/login", "/setup"];

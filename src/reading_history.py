@@ -91,12 +91,25 @@ def get_readings(
     db_path: str,
     patient_id: str,
     hours: int = 3,
+    days: int | None = None,
 ) -> list[dict]:
-    """Return readings for *patient_id* in the last *hours* hours.
+    """Return readings for *patient_id* in a recent time window.
+
+    Window is specified by either ``hours`` (default 3) or ``days``. If
+    ``days`` is provided, it overrides ``hours`` (converted internally).
 
     Results are ordered oldest-first so callers can iterate in time order.
     Returns an empty list if the database does not exist yet.
+
+    Raises ValueError if the resulting window is non-positive.
     """
+    if days is not None:
+        if not isinstance(days, int) or days <= 0:
+            raise ValueError(f"days must be a positive int, got {days!r}")
+        hours = days * 24
+    elif hours <= 0:
+        raise ValueError(f"hours must be a positive int, got {hours!r}")
+
     if not Path(db_path).exists():
         return []
 
@@ -126,6 +139,120 @@ def get_readings(
     except Exception as exc:
         logger.warning("Failed to query reading history for patient %s: %s", patient_id, exc)
         return []
+
+
+def downsample(readings: list[dict], bucket_seconds: int) -> list[dict]:
+    """Bucket *readings* by ``bucket_seconds`` and return one synthetic row
+    per bucket with the AVG of ``glucose_value`` and the bucket-start
+    timestamp.
+
+    Used to keep the response of ``/api/patients/{id}/history`` bounded
+    for long ranges (a year of 5-minute polling is ~105k readings — too
+    much to ship as JSON and too dense to chart). Input must be sorted
+    oldest-first (the contract of :func:`get_readings`).
+
+    Edge cases:
+    - Empty input or non-positive ``bucket_seconds`` → returns input as-is.
+    - Single-reading bucket → that reading's value is preserved (AVG of 1).
+    """
+    if not readings or bucket_seconds <= 0:
+        return list(readings)
+
+    out: list[dict] = []
+    cur_bucket_start: int | None = None
+    cur_values: list[float] = []
+    cur_pid: str | None = None
+    cur_pname: str | None = None
+
+    def _flush():
+        if cur_values and cur_bucket_start is not None:
+            avg = round(sum(cur_values) / len(cur_values))
+            out.append(
+                {
+                    "timestamp": datetime.fromtimestamp(
+                        cur_bucket_start, tz=timezone.utc
+                    ).isoformat(),
+                    "patient_id": cur_pid,
+                    "patient_name": cur_pname,
+                    "glucose_value": avg,
+                }
+            )
+
+    for r in readings:
+        ts = datetime.fromisoformat(r["timestamp"])
+        bucket_start = (int(ts.timestamp()) // bucket_seconds) * bucket_seconds
+        if cur_bucket_start is None:
+            cur_bucket_start = bucket_start
+            cur_pid = r["patient_id"]
+            cur_pname = r["patient_name"]
+        if bucket_start != cur_bucket_start:
+            _flush()
+            cur_bucket_start = bucket_start
+            cur_values = []
+            cur_pid = r["patient_id"]
+            cur_pname = r["patient_name"]
+        cur_values.append(r["glucose_value"])
+
+    _flush()
+    return out
+
+
+def iter_readings(
+    db_path: str,
+    patient_id: str,
+    hours: int = 3,
+    days: int | None = None,
+):
+    """Yield readings one row at a time without loading the full result set
+    into memory.
+
+    Same window semantics as :func:`get_readings`. Used by the CSV export
+    endpoint behind ``StreamingResponse`` so that a year-long export of
+    multiple patients does not spike memory. Yields dict rows in the same
+    shape as ``get_readings`` (oldest-first).
+
+    Empty generator when the DB file does not exist or the query fails
+    (failure is logged at WARNING level, no exception propagates — same
+    contract as :func:`get_readings`).
+    """
+    if days is not None:
+        if not isinstance(days, int) or days <= 0:
+            raise ValueError(f"days must be a positive int, got {days!r}")
+        hours = days * 24
+    elif hours <= 0:
+        raise ValueError(f"hours must be a positive int, got {hours!r}")
+
+    if not Path(db_path).exists():
+        return
+
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    engine = _get_engine(db_path)
+
+    try:
+        with engine.connect() as conn:
+            # execution_options(stream_results=True) tells SQLAlchemy / DBAPI
+            # to use a server-side cursor where supported (SQLite buffers in
+            # the C layer so memory still stays modest, but the API is right
+            # if the backend ever changes to Postgres etc.).
+            result = conn.execution_options(stream_results=True, yield_per=1000).execute(
+                text(
+                    "SELECT timestamp, patient_id, patient_name, glucose_value "
+                    "FROM readings "
+                    "WHERE patient_id = :pid AND timestamp >= :since "
+                    "ORDER BY timestamp ASC"
+                ),
+                {"pid": patient_id, "since": since},
+            )
+            for row in result:
+                yield {
+                    "timestamp": row[0],
+                    "patient_id": row[1],
+                    "patient_name": row[2],
+                    "glucose_value": row[3],
+                }
+    except Exception as exc:
+        logger.warning("Failed to stream reading history for patient %s: %s", patient_id, exc)
+        return
 
 
 def cleanup_old_readings(db_path: str, max_days: int = 3) -> int:
