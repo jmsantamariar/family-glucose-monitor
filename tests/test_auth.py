@@ -529,8 +529,11 @@ class TestSetupEndpoint:
 class TestTelegramFetchChatId:
     """Tests for the Telegram chat-ID discovery endpoint used by the setup wizard."""
 
+    # Well-formed (but fake) bot token: "<digits>:<30+ chars>".
+    _DUMMY_TOKEN = "123456:TEST-DummyTokenForUnitTests_0000000"
+
     @pytest.fixture
-    def client(self):
+    def client(self, isolated_config):
         yield TestClient(app)
 
     def _make_updates(self, *chats):
@@ -572,6 +575,7 @@ class TestTelegramFetchChatId:
         assert resp.status_code == 400
 
     def test_invalid_token_returns_422(self, client):
+        """A well-formed token that Telegram rejects (401) returns 422."""
         from unittest.mock import MagicMock, patch
 
         mock_resp = MagicMock()
@@ -580,10 +584,40 @@ class TestTelegramFetchChatId:
         with patch("src.api._requests.get", return_value=mock_resp):
             resp = client.post(
                 "/api/setup/telegram/fetch-chat-id",
-                json={"bot_token": "bad_token"},
+                json={"bot_token": self._DUMMY_TOKEN},
             )
         assert resp.status_code == 422
         assert "inválido" in resp.json()["detail"].lower()
+
+    @pytest.mark.parametrize(
+        "bad_token",
+        [
+            "bad_token",                      # no <id>:<secret> shape
+            "123456:short",                   # secret too short
+            "123456:abc/../def_0123456789012345678",  # path traversal chars
+            "123456:abc@evil_01234567890123456789012",  # authority injection
+        ],
+    )
+    def test_malformed_token_rejected_before_network(self, client, bad_token):
+        """Malformed tokens are rejected by shape validation without any HTTP call."""
+        from unittest.mock import MagicMock, patch
+
+        with patch("src.api._requests.get") as mock_get:
+            resp = client.post(
+                "/api/setup/telegram/fetch-chat-id",
+                json={"bot_token": bad_token},
+            )
+        assert resp.status_code == 422
+        mock_get.assert_not_called()
+
+    def test_requires_session_when_already_configured(self, client, isolated_config):
+        """Once config.yaml exists, the endpoint demands an authenticated session."""
+        (isolated_config / "config.yaml").write_text("librelinkup:\n  email: a@b.com\n")
+        resp = client.post(
+            "/api/setup/telegram/fetch-chat-id",
+            json={"bot_token": self._DUMMY_TOKEN},
+        )
+        assert resp.status_code == 403
 
     def test_telegram_api_error_returns_502(self, client):
         from unittest.mock import MagicMock, patch
@@ -594,7 +628,7 @@ class TestTelegramFetchChatId:
         with patch("src.api._requests.get", return_value=mock_resp):
             resp = client.post(
                 "/api/setup/telegram/fetch-chat-id",
-                json={"bot_token": "tok"},
+                json={"bot_token": self._DUMMY_TOKEN},
             )
         assert resp.status_code == 502
 
@@ -608,7 +642,7 @@ class TestTelegramFetchChatId:
         ):
             resp = client.post(
                 "/api/setup/telegram/fetch-chat-id",
-                json={"bot_token": "tok"},
+                json={"bot_token": self._DUMMY_TOKEN},
             )
         assert resp.status_code == 502
 
@@ -621,7 +655,7 @@ class TestTelegramFetchChatId:
         with patch("src.api._requests.get", return_value=mock_resp):
             resp = client.post(
                 "/api/setup/telegram/fetch-chat-id",
-                json={"bot_token": "tok"},
+                json={"bot_token": self._DUMMY_TOKEN},
             )
         assert resp.status_code == 200
         assert resp.json()["chats"] == []
@@ -635,7 +669,7 @@ class TestTelegramFetchChatId:
         with patch("src.api._requests.get", return_value=mock_resp):
             resp = client.post(
                 "/api/setup/telegram/fetch-chat-id",
-                json={"bot_token": "tok"},
+                json={"bot_token": self._DUMMY_TOKEN},
             )
         assert resp.status_code == 200
         chats = resp.json()["chats"]
@@ -682,7 +716,7 @@ class TestTelegramFetchChatId:
         with patch("src.api._requests.get", return_value=mock_resp):
             resp = client.post(
                 "/api/setup/telegram/fetch-chat-id",
-                json={"bot_token": "tok"},
+                json={"bot_token": self._DUMMY_TOKEN},
             )
         assert resp.status_code == 200
         chats = resp.json()["chats"]
@@ -713,7 +747,7 @@ class TestTelegramFetchChatId:
         with patch("src.api._requests.get", return_value=mock_resp):
             resp = client.post(
                 "/api/setup/telegram/fetch-chat-id",
-                json={"bot_token": "tok"},
+                json={"bot_token": self._DUMMY_TOKEN},
             )
         assert resp.status_code == 200
         chats = resp.json()["chats"]
