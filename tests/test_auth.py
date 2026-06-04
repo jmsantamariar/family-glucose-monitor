@@ -36,6 +36,23 @@ def _isolated_session_manager(tmp_path, monkeypatch):
     yield sm
 
 
+@pytest.fixture
+def isolated_config(tmp_path):
+    """Redirect every config.yaml lookup to ``tmp_path``.
+
+    ``src.api.PROJECT_ROOT`` (where /api/setup writes config.yaml),
+    ``src.auth._CONFIG_PATH`` (is_configured / verify_credentials) and
+    ``src.setup_status.PROJECT_ROOT`` (is_setup_complete) all resolve against
+    the repo root at import time.  Without patching the three of them, a real
+    config.yaml present in the developer's working copy leaks into the tests
+    and /api/setup answers 403 "already configured".
+    """
+    with patch("src.api.PROJECT_ROOT", tmp_path), patch(
+        "src.auth._CONFIG_PATH", tmp_path / "config.yaml"
+    ), patch("src.setup_status.PROJECT_ROOT", tmp_path):
+        yield tmp_path
+
+
 # ── SessionManager ────────────────────────────────────────────────────────────
 
 
@@ -195,7 +212,7 @@ class TestVerifyCredentials:
 
 class TestSetupStatus:
     @pytest.fixture
-    def client(self):
+    def client(self, isolated_config):
         return TestClient(app)
 
     def test_returns_false_when_not_configured(self, client, tmp_path):
@@ -326,11 +343,9 @@ class TestLogoutEndpoint:
 
 class TestSetupEndpoint:
     @pytest.fixture
-    def client(self, tmp_path):
+    def client(self, isolated_config):
         session_manager.clear_all()
-        # Patch PROJECT_ROOT inside api.py so config.yaml goes to tmp_path
-        with patch("src.api.PROJECT_ROOT", tmp_path):
-            yield TestClient(app)
+        yield TestClient(app)
         session_manager.clear_all()
 
     def _minimal_payload(self):
@@ -714,7 +729,7 @@ class TestAuthMiddleware:
     """Tests for the auth middleware (requires auth to be enabled)."""
 
     @pytest.fixture
-    def auth_client(self, monkeypatch):
+    def auth_client(self, monkeypatch, isolated_config):
         """TestClient with auth enforcement enabled (no AUTH_DISABLED env var)."""
         monkeypatch.delenv("AUTH_DISABLED", raising=False)
         import src.api as _api_module
@@ -972,9 +987,8 @@ class TestSetupSecurity:
 
 class TestPasswordLengthValidation:
     @pytest.fixture
-    def client(self, tmp_path):
-        with patch("src.api.PROJECT_ROOT", tmp_path):
-            yield TestClient(app)
+    def client(self, isolated_config):
+        yield TestClient(app)
 
     def _payload_with_password(self, pwd: str):
         return {
@@ -1013,9 +1027,8 @@ class TestPasswordLengthValidation:
 
 class TestRegionSelector:
     @pytest.fixture
-    def client(self, tmp_path):
-        with patch("src.api.PROJECT_ROOT", tmp_path):
-            yield TestClient(app)
+    def client(self, isolated_config):
+        yield TestClient(app)
 
     def _payload_with_region(self, region: str):
         return {
@@ -1082,7 +1095,7 @@ class TestCSRFProtection:
     """
 
     @pytest.fixture
-    def csrf_client(self, monkeypatch):
+    def csrf_client(self, monkeypatch, isolated_config):
         """TestClient with auth AND CSRF enforcement enabled."""
         import src.api as _api_module
         monkeypatch.setattr(_api_module, "_ALLOW_AUTH_DISABLED", False)
@@ -1150,10 +1163,9 @@ class TestSetupOutputValidation:
     """Verify that missing required fields for each output type are rejected."""
 
     @pytest.fixture
-    def client(self, tmp_path):
+    def client(self, isolated_config):
         session_manager.clear_all()
-        with patch("src.api.PROJECT_ROOT", tmp_path):
-            yield TestClient(app)
+        yield TestClient(app)
         session_manager.clear_all()
 
     def _base(self):
@@ -1195,10 +1207,9 @@ class TestSetupConfigValidation:
     """Verify that the config is validated via schema before being written."""
 
     @pytest.fixture
-    def client(self, tmp_path):
+    def client(self, isolated_config):
         session_manager.clear_all()
-        with patch("src.api.PROJECT_ROOT", tmp_path):
-            yield TestClient(app)
+        yield TestClient(app)
         session_manager.clear_all()
 
     def test_valid_config_is_persisted(self, client, tmp_path):
