@@ -25,7 +25,8 @@ Para **familias** donde uno o varios miembros usan un sensor FreeStyle Libre y t
 - 🔔 Notificaciones push en el navegador (Web Push / VAPID) — suscripción desde el dashboard
 - 📱 **PWA instalable en Android** (y escritorio) — icono en pantalla de inicio, modo standalone, soporte offline
 - 🖥️ Dashboard web autenticado con semáforo de colores y gráficos por paciente
-- 📊 **Análisis histórico de glucosa** — selector de rango temporal (hasta 1 año), métricas glucémicas (TIR/GMI/CV/MAGE), descarga CSV/JSON
+- 📊 **Análisis histórico de glucosa** — selector de rango temporal (hasta 1 año), métricas glucémicas (TIR/GMI/CV/MAGE), descarga CSV/JSON; sobre `reading_history.db` con retención configurable (`reading_history_max_days`, default 90 días)
+- 🌐 **Bilingüe (español/inglés)** — selector de idioma en dashboard, login, setup y configuración
 - 👴 **Modo Senior / Moderno** — tipografía grande, alto contraste y animaciones reducidas; persiste en `localStorage` (`fgm-mode`); disponible en todas las pantallas
 - 🎨 **Tema claro / oscuro** — persiste en `localStorage` (`fgm-theme`); aplicado antes del primer render para evitar FOUC
 - ⚙️ **Pantalla de Configuración integrada** — edita credenciales, umbrales y Telegram desde el navegador sin tocar `config.yaml`
@@ -202,7 +203,13 @@ src/
   connection_tester.py   ← funciones reutilizables para probar LibreLinkUp y Telegram
   api_server.py          ← API REST externa autenticada de solo lectura (para widgets/apps)
   auth.py                ← gestión de sesiones y credenciales del dashboard
+  bootstrap.py           ← creación/validación de storage persistente al arrancar
+  paths.py               ← resolución centralizada de rutas (env var > config > default)
+  cache_path.py          ← shim de compatibilidad hacia paths.py
   alert_history.py       ← historial de alertas en SQLite (via SQLAlchemy ORM)
+  reading_history.py     ← histórico de lecturas de glucosa (SQLite, poda automática)
+  analytics/
+    glycemic_metrics.py  ← métricas glucémicas: TIR, GMI, CV, MAGE, media/mediana
   crypto.py              ← cifrado/descifrado Fernet para credenciales sensibles
   db.py                  ← fábrica centralizada de conexiones SQLite (WAL, FK, timeout)
   setup_status.py        ← detección de setup completo vs. modo wizard inicial
@@ -227,25 +234,8 @@ src/
     login.html           ← página de login
     setup.html           ← wizard de configuración inicial
     configuracion.html   ← pantalla de configuración (accesible desde el dashboard)
-tests/
-  conftest.py
-  test_alert_engine.py
-  test_alert_history.py
-  test_alembic_migrations.py
-  test_api.py
-  test_api_server.py
-  test_auth.py
-  test_config_schema.py
-  test_crypto.py
-  test_db_models.py
-  test_glucose_reader.py
-  test_main_startup.py
-  test_multi_notifier.py
-  test_run_once.py
-  test_setup_status.py
-  test_state.py
-  test_telegram_output.py
-  test_trend_alerts.py
+    i18n/                ← internacionalización es/en (i18n.js + es.json/en.json canónicos)
+tests/                   ← suite pytest completa (un test_*.py por módulo; ver directorio)
 docs/
   ARCHITECTURE.md        ← diseño del sistema
   DEPLOYMENT.md          ← guía de despliegue y operación
@@ -474,13 +464,14 @@ echo "API_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> .e
 chmod 600 .env
 
 # Crea los archivos de estado antes del primer arranque:
-touch state.json alert_history.db sessions.db readings_cache.json push_subscriptions.db
+touch state.json alert_history.db reading_history.db sessions.db readings_cache.json push_subscriptions.db
 
 docker build -t family-glucose-monitor .
 docker run --rm --env-file .env \
   -v $(pwd)/config.yaml:/app/config.yaml:ro \
   -v $(pwd)/state.json:/app/state.json \
   -v $(pwd)/alert_history.db:/app/alert_history.db \
+  -v $(pwd)/reading_history.db:/app/reading_history.db \
   -v $(pwd)/sessions.db:/app/sessions.db \
   -v $(pwd)/readings_cache.json:/app/readings_cache.json \
   -v $(pwd)/push_subscriptions.db:/app/push_subscriptions.db \
@@ -490,7 +481,7 @@ docker run --rm --env-file .env \
 
 > **Nota:** El Dockerfile expone el puerto 8080 y arranca con `python -m src.main`. Para el modo `full` o `dashboard`, asegúrate de que `monitoring.mode` esté configurado correctamente en `config.yaml`.
 >
-> **Archivos de estado:** Los archivos `state.json`, `alert_history.db`, `sessions.db`, `readings_cache.json` y `push_subscriptions.db` conviene crearlos en el host **antes** del primer arranque. Si no existen, Docker puede crear un directorio vacío en su lugar al hacer el bind-mount, lo que rompe la persistencia esperada y puede provocar errores. Usa `touch` para crearlos vacíos.
+> **Archivos de estado:** Los archivos `state.json`, `alert_history.db`, `reading_history.db`, `sessions.db`, `readings_cache.json` y `push_subscriptions.db` conviene crearlos en el host **antes** del primer arranque. Si no existen, Docker puede crear un directorio vacío en su lugar al hacer el bind-mount, lo que rompe la persistencia esperada y puede provocar errores. Usa `touch` para crearlos vacíos.
 > 
 > En particular, `push_subscriptions.db` debe existir si quieres persistir las suscripciones web push y evitar que Docker monte un directorio en su lugar. Si falta, la funcionalidad de push puede no inicializarse correctamente, pero no debería bloquear el arranque del resto de canales de notificación.
 >
@@ -547,6 +538,8 @@ docker run --rm \
 
 Todos los endpoints requieren `Authorization: Bearer <API_KEY>`.
 
+> **Nota:** el límite de `hours` en `/api/alerts` es **168** en esta API externa; el mismo path en el dashboard (`src/api.py`) acepta hasta **8760** (un año) porque alimenta las gráficas de histórico.
+
 #### `GET /api/readings`
 
 ```json
@@ -596,7 +589,7 @@ api:
   cache_file: "readings_cache.json"
 ```
 
-> **Nota:** `api.cache_file` configura la ruta donde `src/main.py` escribe el caché. `src/api_server.py` siempre lee desde la ruta resuelta relativa al directorio raíz del proyecto, independientemente de esta configuración.
+> **Nota:** `api.cache_file` configura la ruta del caché compartido. Tanto `src/main.py` (escritura) como `src/api_server.py` y `src/api.py` (lectura) la resuelven a través de `src/paths.py`, así que los tres ven el mismo archivo. La variable de entorno `READINGS_CACHE_FILE` tiene prioridad sobre esta clave.
 
 Para una guía completa de despliegue incluyendo HTTPS, reverse proxy y configuración de producción, consulta [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
@@ -682,6 +675,23 @@ El sistema incluye un dashboard web en tiempo real que muestra el estado de todo
 - **Rediseño visual**: Tipografía Source Sans 3 (texto) + Source Serif 4 (display); paleta cálida; `theme-color` `#3a2a20`
 - **Auto-actualización**: Los datos se refrescan automáticamente
 - **Notificaciones push**: Botón de suscripción/desuscripción en el dashboard; las alertas llegan al navegador aunque la pestaña esté en segundo plano (requiere HTTPS en producción)
+- **Análisis histórico**: Sección con gráficas por rango (3h/24h/14d/90d), métricas glucémicas (TIR, GMI, CV, MAGE, media/mediana/desviación) y descarga CSV/JSON por paciente
+- **Idioma**: Selector español/inglés en la cabecera (persistente por navegador)
+- **Modo Senior**: Vista accesible con tipografía grande y estados en texto, alternable desde la cabecera
+
+### Endpoints internos del dashboard (`src/api.py`)
+
+Requieren sesión autenticada (cookie `session_token`):
+
+| Method | Path | Descripción |
+|--------|------|-------------|
+| `GET` | `/api/patients` · `/api/patients/{id}` | Lecturas actuales por paciente |
+| `GET` | `/api/health` | Salud del servidor y frescura del caché |
+| `GET` | `/api/alerts` | Historial de alertas (hasta 8760h) |
+| `GET` | `/api/patients/{id}/history` | Serie temporal de lecturas (con downsampling server-side) |
+| `GET` | `/api/patients/{id}/history/export` | Export CSV/JSON del histórico (streaming) |
+| `GET` | `/api/patients/{id}/metrics` | Métricas glucémicas del período (TIR, GMI, CV, MAGE…) |
+| `GET` | `/i18n/{filename}` | Recursos de internacionalización (sin auth) |
 
 ### Ejecutar el Dashboard
 
@@ -718,8 +728,8 @@ La lógica de detección está en `src/setup_status.py`, que verifica: existenci
 | Archivo | Módulo | Descripción |
 |---------|--------|-------------|
 | `state.json` | `src/state.py` | Estado de alertas por paciente (última alerta, nivel, timestamp). Escritura atómica. |
-| `readings_cache.json` | `src/main.py` (escritura) / `src/api.py`, `src/api_server.py` (lectura) | Caché de lecturas más recientes. Lo escribe `src/main.py` de forma atómica y lo consumen el dashboard y la API; para que ambos vean exactamente los mismos datos deben usar la misma ruta de caché. Actualmente `src/api_server.py` lee `PROJECT_ROOT/readings_cache.json`, por lo que puede divergir si `api.cache_file` apunta a otro archivo. |
-| `reading_history.db` | `src/reading_history.py` | Historial continuo de lecturas de glucosa por paciente. Usado por `/history`, `/history/export` y `/metrics`. Ruta configurable con `reading_history_db` en `config.yaml`. |
+| `readings_cache.json` | `src/main.py` (escritura) / `src/api.py`, `src/api_server.py` (lectura) | Caché de lecturas más recientes. Lo escribe `src/main.py` de forma atómica y lo consumen el dashboard y la API externa. Los tres resuelven la ruta vía `src/paths.py` (`READINGS_CACHE_FILE` > `api.cache_file` > default), así que siempre ven el mismo archivo. |
+| `reading_history.db` | `src/reading_history.py` | Histórico continuo de lecturas de glucosa (tabla `readings`) usado por `/history`, `/history/export`, `/metrics` y las sparklines. Ruta configurable con `reading_history_db`. Poda automática en cada ciclo según `reading_history_max_days` (default 90 días, máx. 365). |
 | `alert_history.db` | `src/alert_history.py` | Historial de alertas enviadas (SQLite, tabla `alerts`). Gestionado con SQLAlchemy ORM. Migraciones con Alembic. |
 | `sessions.db` | `src/auth.py` | Sesiones del dashboard (tabla `sessions`) y log de intentos de login (tabla `login_attempts`). SQLite con SQLAlchemy ORM para sesiones, `text()` para login_attempts. |
 | `push_subscriptions.db` | `src/push_subscriptions.py` | Suscripciones Web Push de los navegadores (tabla `push_subscriptions`). Creado automáticamente al arrancar. |
@@ -901,6 +911,7 @@ poetry run alembic history
 
 - **No es un dispositivo médico.** No está certificado por ninguna autoridad sanitaria.
 - **Depende de LibreLinkUp.** Si la API de Abbott no está disponible, no habrá lecturas.
+- **Histórico de glucosa con retención limitada.** Persiste el estado de la última alerta por paciente (`state.json`), el historial de alertas enviadas (`alert_history.db`, default 7 días) y el histórico de lecturas (`reading_history.db`, default 90 días, máx. 365 vía `reading_history_max_days`). Las lecturas fuera de la ventana de retención se eliminan automáticamente.
 - **El endpoint `/history` no está paginado.** Para rangos muy largos con CGM continuo puede devolver miles de puntos. Se aplica downsampling automático para rangos > 24h; para exportar datos completos a alta resolución usa `/history/export?format=csv`.
 - **La exportación JSON (`/history/export?format=json`) carga el array completo en memoria.** Para exportaciones de larga duración (365 días) se recomienda `format=csv`, que hace streaming fila a fila.
 - **No garantiza entrega en tiempo real.** Pueden ocurrir retrasos por red, API o servicios de mensajería.
