@@ -255,7 +255,7 @@ def iter_readings(
         return
 
 
-def cleanup_old_readings(db_path: str, max_days: int = 3) -> int:
+def cleanup_old_readings(db_path: str, max_days: int = 90) -> int:
     """Delete readings older than *max_days* days.
 
     Returns the number of rows deleted.
