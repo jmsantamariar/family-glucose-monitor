@@ -21,7 +21,8 @@ from src.glucose_reader import read_all_patients
 from src.outputs import build_outputs
 from src.outputs.base import Notifier
 from src.outputs.multi_notifier import MultiNotifier
-from src.paths import get_cache_path, get_db_path, get_state_path
+from src.paths import get_cache_path, get_db_path, get_reading_history_db_path, get_state_path
+from src.reading_history import cleanup_old_readings
 from src.setup_status import check_setup
 from src.state import (
     clear_patient_state,
@@ -198,6 +199,11 @@ def run_once(
 
     max_days = config.get("alert_history_max_days", 7)
     cleanup_old_alerts(db_path, max_days)
+
+    # Prune the glucose reading history (written by the dashboard cache
+    # enrichment) so health data is not retained on disk indefinitely.
+    reading_max_days = config.get("reading_history_max_days", 90)
+    cleanup_old_readings(get_reading_history_db_path(config), reading_max_days)
 
 
 def _start_dashboard(config: dict) -> None:
