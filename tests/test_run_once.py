@@ -575,3 +575,32 @@ def test_reading_history_cleanup_respects_config_override():
 
     mock_cleanup.assert_called_once()
     assert mock_cleanup.call_args[0][1] == 30
+
+
+# ---------------------------------------------------------------------------
+# Trend-only alerts carry the effective level to outputs
+# ---------------------------------------------------------------------------
+
+def test_trend_only_alert_passes_effective_level_to_outputs():
+    """Normal glucose + falling_fast must notify with trend_falling_fast, not 'normal'."""
+    reading = _fresh_reading(glucose=120, trend_arrow="↓")  # in range, falling fast
+
+    mock_output = _MockOutput(success=True)
+    alerts = copy.deepcopy(_BASE_CONFIG["alerts"])
+    alerts["trend"] = {"enabled": True}
+
+    with (
+        patch("src.main.init_db"),
+        patch("src.main.load_state", return_value={}),
+        patch("src.main.save_state"),
+        patch("src.main.read_all_patients", return_value=[reading]),
+        patch("src.main._save_readings_cache"),
+        patch("src.main.log_alert"),
+        patch("src.main.cleanup_old_alerts"),
+        patch("src.main.cleanup_old_readings"),
+        patch("src.main.build_outputs", return_value=[mock_output]),
+    ):
+        run_once(_config(alerts=alerts))
+
+    mock_output.send_alert.assert_called_once()
+    assert mock_output.send_alert.call_args[0][2] == "trend_falling_fast"

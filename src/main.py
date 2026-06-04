@@ -175,7 +175,10 @@ def run_once(
             continue
         message = build_message(glucose_value, level, trend_arrow, patient_name, config, trend_alert)
         effective_level = level if level != "normal" else f"trend_{trend_alert}"
-        if notifier.notify(message, glucose_value, level):
+        # Pass the effective level so outputs render trend-only alerts as
+        # alerts (a web-push titled "Glucosa normal" for falling_fast was
+        # actively misleading).
+        if notifier.notify(message, glucose_value, effective_level):
             new_patient_state = {
                 "last_alert_time": datetime.now(timezone.utc).isoformat(),
                 "last_alert_level": effective_level,

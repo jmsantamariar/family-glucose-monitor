@@ -172,3 +172,18 @@ class TestPushUnsubscribeEndpoint:
             "/api/push/unsubscribe", json={"endpoint": "https://example.com/push"}
         )
         assert resp.status_code == 500
+
+
+# ---------------------------------------------------------------------------
+# Notification titles for trend-only levels
+# ---------------------------------------------------------------------------
+
+def test_title_for_trend_levels():
+    from src.outputs.webpush import _title_for_level
+
+    assert _title_for_level("trend_falling_fast") == "📉 Glucosa bajando rápido"
+    assert _title_for_level("trend_rising_fast") == "📈 Glucosa subiendo rápido"
+    # A trend-only alert must never render as "normal".
+    for lvl in ("trend_falling", "trend_rising", "trend_falling_fast", "trend_rising_fast"):
+        assert "normal" not in _title_for_level(lvl).lower()
+    assert _title_for_level("unknown_level") == "🔔 Alerta de glucosa"
