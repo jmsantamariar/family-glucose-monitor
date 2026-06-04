@@ -552,3 +552,36 @@ class TestSeniorModeToggle:
         assert 'CACHE_NAME = "fgm-shell-v1"' not in resp.text
         # Must be v2 or newer (currently v3 after merging history-ui + elder-mode)
         assert 'CACHE_NAME = "fgm-shell-v' in resp.text
+
+
+# ── Every data-i18n key referenced in HTML must exist in i18n.js ─────────────
+
+class TestI18nKeysExist:
+    """Guard against data-i18n references to keys missing from i18n.js.
+
+    t() falls back to returning the raw key, so a missing key renders
+    literally (e.g. "setup.step1.dashboard_hint_prefix") in the UI.
+    """
+
+    _PAGES = ["login.html", "setup.html", "configuracion.html", "index.html"]
+
+    def _i18n_js_keys(self):
+        from pathlib import Path
+
+        js = (
+            Path(__file__).parent.parent / "src" / "dashboard" / "i18n" / "i18n.js"
+        ).read_text(encoding="utf-8")
+        return set(re.findall(r"'([A-Za-z0-9_.]+)'\s*:", js))
+
+    @pytest.mark.parametrize("page", _PAGES)
+    def test_all_data_i18n_keys_defined(self, page):
+        from pathlib import Path
+
+        html = (
+            Path(__file__).parent.parent / "src" / "dashboard" / page
+        ).read_text(encoding="utf-8")
+        # Only literal keys: skips dynamic JS like data-i18n="' + key + '".
+        referenced = set(re.findall(r'data-i18n(?:-placeholder)?="([A-Za-z0-9_.]+)"', html))
+        defined = self._i18n_js_keys()
+        missing = sorted(referenced - defined)
+        assert not missing, f"{page} references undefined i18n keys: {missing}"
