@@ -194,7 +194,11 @@ def _title_for_level(level: str) -> str:
         "low": "🩸 Glucosa baja",
         "high": "⚠️ Glucosa alta",
         "normal": "✅ Glucosa normal",
-        "low_approaching": "📉 Glucosa bajando",
-        "high_approaching": "📈 Glucosa subiendo",
+        # Trend-only alerts: glucose still in range but moving fast.
+        # run_once passes these as ``trend_<trend_alert>``.
+        "trend_falling_fast": "📉 Glucosa bajando rápido",
+        "trend_falling": "📉 Glucosa bajando",
+        "trend_rising_fast": "📈 Glucosa subiendo rápido",
+        "trend_rising": "📈 Glucosa subiendo",
     }
     return mapping.get(level, "🔔 Alerta de glucosa")
