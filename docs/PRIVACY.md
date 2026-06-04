@@ -19,6 +19,9 @@ Este sistema procesa los siguientes datos personales y de salud:
 ### En el sistema local
 
 - **`state.json`** — almacena el `patient_id`, el nivel de la última alerta (`low`/`high`) y el timestamp de cuándo se envió. Se usa para controlar el cooldown y evitar alertas repetitivas.
+- **`reading_history.db`** — histórico de lecturas de glucosa (timestamp, `patient_id`, nombre y valor) que alimenta las gráficas, el análisis histórico, las métricas glucémicas (TIR/GMI/CV/MAGE) y el export CSV/JSON del dashboard. Se registra una fila por lectura en cada ciclo de monitoreo. **Retención**: las lecturas con más de `reading_history_max_days` días (default **90**, máximo 365) se eliminan automáticamente en cada ciclo.
+- **`alert_history.db`** — historial de alertas enviadas (paciente, valor, nivel, mensaje). Retención configurable con `alert_history_max_days` (default 7 días).
+- **`readings_cache.json`** — caché de la lectura más reciente por paciente, consumida por el dashboard y la API externa. Se sobrescribe en cada ciclo.
 - **`config.yaml`** — credenciales de LibreLinkUp y tokens de servicios de mensajería. Debe tener permisos `600`.
 
 ### En la nube / servicios externos
@@ -36,10 +39,10 @@ Este sistema **NO almacena datos en la nube**. Sin embargo, **transmite datos** 
 
 ## Qué NO hace este sistema
 
-- ❌ No almacena histórico de lecturas de glucosa.
+- ❌ No almacena histórico de glucosa indefinidamente: las lecturas se conservan en local (`reading_history.db`) solo durante la ventana de retención configurada (default 90 días) y nunca salen del sistema.
 - ❌ No comparte datos con terceros más allá de los servicios configurados.
 - ❌ No tiene acceso a datos de otros usuarios de LibreLinkUp.
-- ❌ No utiliza cookies, tracking ni analítica.
+- ❌ No utiliza cookies de tracking, telemetría ni analítica de terceros. (Las cookies de `session_token`/`csrf_token` del dashboard son estrictamente funcionales. Las métricas glucémicas —TIR, GMI, CV, MAGE— se calculan **en local** sobre tu propio histórico y no se transmiten a ningún servicio.)
 
 ---
 
@@ -60,6 +63,8 @@ El usuario es el único responsable de:
 | Dato | Recomendación |
 |------|---------------|
 | `state.json` | Purgar manualmente cuando ya no sea necesario el monitoreo |
+| `reading_history.db` | Poda automática según `reading_history_max_days` (default 90 días, máx. 365); reduce la ventana si no usas el análisis histórico |
+| `alert_history.db` | Poda automática según `alert_history_max_days` (default 7 días) |
 | Logs del sistema | Retener máximo 30 días; no incluir valores de glucosa en logs de nivel INFO+ |
 | `config.yaml` | Eliminar credenciales cuando se dejen de usar; no respaldar en la nube sin cifrado |
 | Mensajes de Telegram/WhatsApp | Configurar auto-borrado en el chat (Telegram: ajustes del chat → eliminar mensajes automáticamente) |
