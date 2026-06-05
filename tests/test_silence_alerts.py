@@ -145,3 +145,42 @@ def test_template_injection_blocked():
     cfg = {"alerts": {"silence": {"messages": {"stage1": "{patient_name.__class__}"}}}}
     msg = build_silence_message("stage1", "Ana", 75, config=cfg)
     assert "__class__" in msg  # returned raw, not evaluated
+
+
+# ── Review fixes (PR #96): null/bool config, mute merge ─────────────────────
+
+
+def test_explicit_null_does_not_override_default():
+    """A YAML `null` must not clobber the runtime default (would crash compares)."""
+    cfg = {"alerts": {"silence": {"check_after_minutes": None}}}
+    merged = get_silence_config(cfg)
+    assert merged["check_after_minutes"] == 60
+    # And evaluate_silence keeps working
+    assert evaluate_silence(_ts(90), {}, config=cfg, now=NOW) == "stage1"
+
+
+def test_merge_silence_mutes_preserves_disk_mute():
+    from src.state import merge_silence_mutes
+
+    in_memory = {"p1": {"silence": {"stage": "stage2", "last_alert_time": "x"}}}
+    disk = {"p1": {"silence": {"stage": "stage2", "muted_until": "recovery"}}}
+    merged = merge_silence_mutes(in_memory, disk)
+    assert merged["p1"]["silence"]["muted_until"] == "recovery"
+    assert merged["p1"]["silence"]["stage"] == "stage2"
+
+
+def test_merge_silence_mutes_does_not_resurrect_removed_patients():
+    from src.state import merge_silence_mutes
+
+    in_memory = {}
+    disk = {"p1": {"last_alert_level": "low"}}  # no mute → nothing grafted
+    assert merge_silence_mutes(in_memory, disk) == {}
+
+
+def test_merge_silence_mutes_in_memory_mute_wins():
+    from src.state import merge_silence_mutes
+
+    in_memory = {"p1": {"silence": {"muted_until": "2026-07-01T00:00:00+00:00"}}}
+    disk = {"p1": {"silence": {"muted_until": "recovery"}}}
+    merged = merge_silence_mutes(in_memory, disk)
+    assert merged["p1"]["silence"]["muted_until"] == "2026-07-01T00:00:00+00:00"

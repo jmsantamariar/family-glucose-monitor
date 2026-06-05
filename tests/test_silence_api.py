@@ -160,7 +160,13 @@ def test_unmute_clears_mute_keeps_stage(env):
 
 
 def test_unmute_when_nothing_muted_is_noop(env):
+    """Idempotent unmute: 200 without touching state.json at all."""
     resp = env["client"].post("/api/patients/silent-1/silence/unmute")
     assert resp.status_code == 200
-    from src.state import load_state
-    assert load_state(str(env["state_file"])) == {}
+    assert resp.json()["muted_until"] is None
+    assert not env["state_file"].exists()  # no unnecessary write
+
+
+def test_unmute_unknown_patient_404(env):
+    resp = env["client"].post("/api/patients/nope/silence/unmute")
+    assert resp.status_code == 404

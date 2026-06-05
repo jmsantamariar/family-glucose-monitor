@@ -53,7 +53,7 @@ from src.connection_tester import test_telegram as _test_telegram
 from src.crypto import decrypt_value, encrypt_value, is_encrypted
 from src.outputs.webpush import WebPushOutput, get_vapid_public_key
 from src.paths import get_cache_path, get_db_path, get_reading_history_db_path, get_state_path
-from src.state import load_state, save_state
+from src.state import load_state, save_state, state_lock
 import src.push_subscriptions as _push_subs
 from src import reading_history as _reading_history
 from src.setup_status import is_setup_complete
@@ -504,13 +504,14 @@ async def api_silence_mute(patient_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Patient not found")
 
     state_path = get_state_path(_config)
-    state = load_state(state_path)
-    patient_state = dict(state.get(patient_id, {}))
-    silence = dict(patient_state.get("silence", {}))
-    silence["muted_until"] = muted_until
-    patient_state["silence"] = silence
-    state[patient_id] = patient_state
-    save_state(state_path, state)
+    with state_lock(state_path):
+        state = load_state(state_path)
+        patient_state = dict(state.get(patient_id, {}))
+        silence = dict(patient_state.get("silence", {}))
+        silence["muted_until"] = muted_until
+        patient_state["silence"] = silence
+        state[patient_id] = patient_state
+        save_state(state_path, state)
     logger.info("Silence alerts muted for %s until %s", patient_id, muted_until)
     return {"success": True, "patient_id": patient_id, "muted_until": muted_until}
 
@@ -519,20 +520,32 @@ async def api_silence_mute(patient_id: str, request: Request):
 async def api_silence_unmute(patient_id: str, request: Request):
     """Remove an active sensor-silence mute for *patient_id*."""
     _validate_csrf(request)
+
+    _load_and_enrich_cache()
+    with _cache_lock:
+        known = patient_id in _readings_cache
+    if not known:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
     state_path = get_state_path(_config)
-    state = load_state(state_path)
-    patient_state = dict(state.get(patient_id, {}))
-    silence = dict(patient_state.get("silence", {}))
-    silence.pop("muted_until", None)
-    if silence:
-        patient_state["silence"] = silence
-    else:
-        patient_state.pop("silence", None)
-    if patient_state:
-        state[patient_id] = patient_state
-    else:
-        state.pop(patient_id, None)
-    save_state(state_path, state)
+    with state_lock(state_path):
+        state = load_state(state_path)
+        patient_state = dict(state.get(patient_id, {}))
+        silence = dict(patient_state.get("silence", {}))
+        if "muted_until" not in silence:
+            # Nothing to un-mute: keep the endpoint idempotent without an
+            # unnecessary state.json write.
+            return {"success": True, "patient_id": patient_id, "muted_until": None}
+        silence.pop("muted_until", None)
+        if silence:
+            patient_state["silence"] = silence
+        else:
+            patient_state.pop("silence", None)
+        if patient_state:
+            state[patient_id] = patient_state
+        else:
+            state.pop(patient_id, None)
+        save_state(state_path, state)
     logger.info("Silence alerts unmuted for %s", patient_id)
     return {"success": True, "patient_id": patient_id, "muted_until": None}
 

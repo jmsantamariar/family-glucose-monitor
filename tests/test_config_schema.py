@@ -688,3 +688,17 @@ def test_silence_enabled_non_bool_rejected():
     cfg["alerts"]["silence"] = {"enabled": "yes"}
     errors = validate_config(cfg)
     assert any("silence.enabled" in e for e in errors)
+
+
+def test_silence_explicit_null_rejected():
+    cfg = _valid_config()
+    cfg["alerts"]["silence"] = {"check_after_minutes": None}
+    errors = validate_config(cfg)
+    assert any("check_after_minutes" in e for e in errors)
+
+
+def test_silence_bool_rejected():
+    cfg = _valid_config()
+    cfg["alerts"]["silence"] = {"ask_after_minutes": True}
+    errors = validate_config(cfg)
+    assert any("ask_after_minutes" in e for e in errors)

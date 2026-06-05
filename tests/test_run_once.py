@@ -754,3 +754,30 @@ def test_silence_mute_only_cleared_without_notification():
 
     mock_output.send_alert.assert_not_called()
     mock_save.assert_called_once()  # state cleaned
+
+
+def test_mid_cycle_mute_survives_state_save():
+    """A mute written to disk while run_once holds its copy is preserved on save."""
+    reading = _fresh_reading(glucose=55, patient_id="p1")  # low → alert → save
+
+    mock_output = _MockOutput(success=True)
+    disk_with_mute = {"p2": {"silence": {"muted_until": "recovery"}}}
+
+    with (
+        patch("src.main.init_db"),
+        # First load (cycle start) sees no mute; second load (inside the
+        # locked save) sees the mute the dashboard wrote mid-cycle.
+        patch("src.main.load_state", side_effect=[{}, copy.deepcopy(disk_with_mute)]),
+        patch("src.main.save_state") as mock_save,
+        patch("src.main.read_all_patients", return_value=[reading]),
+        patch("src.main._save_readings_cache"),
+        patch("src.main.log_alert"),
+        patch("src.main.cleanup_old_alerts"),
+        patch("src.main.cleanup_old_readings"),
+        patch("src.main.build_outputs", return_value=[mock_output]),
+    ):
+        run_once(_config())
+
+    saved = mock_save.call_args[0][1]
+    assert saved["p2"]["silence"]["muted_until"] == "recovery"  # mute preserved
+    assert saved["p1"]["last_alert_level"] == "low"             # alert state kept

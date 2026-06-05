@@ -143,14 +143,18 @@ def validate_config(config: Any) -> list[str]:
                         f"alerts.silence.enabled must be a boolean, got {type(silence['enabled']).__name__}"
                     )
                 for field in ("check_after_minutes", "ask_after_minutes", "remind_every_hours"):
-                    val = silence.get(field)
-                    if val is not None:
-                        if not isinstance(val, (int, float)):
-                            errors.append(
-                                f"alerts.silence.{field} must be a number, got {type(val).__name__}"
-                            )
-                        elif val <= 0:
-                            errors.append(f"alerts.silence.{field} must be > 0, got {val}")
+                    if field not in silence:
+                        continue
+                    val = silence[field]
+                    # Explicit null and booleans are rejected: a YAML `null`
+                    # would override the runtime default and break threshold
+                    # comparisons, and bool is a subclass of int.
+                    if val is None or isinstance(val, bool) or not isinstance(val, (int, float)):
+                        errors.append(
+                            f"alerts.silence.{field} must be a number, got {type(val).__name__}"
+                        )
+                    elif val <= 0:
+                        errors.append(f"alerts.silence.{field} must be > 0, got {val}")
                 check_m = silence.get("check_after_minutes")
                 ask_m = silence.get("ask_after_minutes")
                 if (

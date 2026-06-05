@@ -37,8 +37,10 @@ from src.state import (
     clear_patient_state,
     get_patient_state,
     load_state,
+    merge_silence_mutes,
     save_state,
     set_patient_state,
+    state_lock,
 )
 
 logger = logging.getLogger("family-glucose-monitor")
@@ -249,7 +251,12 @@ def run_once(
         else:
             logger.error("  All outputs failed for %s, state not updated", patient_name)
     if state_changed:
-        save_state(state_path, state)
+        # Serialise against the dashboard's mute endpoints and graft any
+        # mute written mid-cycle so it survives this save: the in-memory
+        # copy was loaded at cycle start and would otherwise clobber it.
+        with state_lock(state_path):
+            state = merge_silence_mutes(state, load_state(state_path))
+            save_state(state_path, state)
 
     max_days = config.get("alert_history_max_days", 7)
     cleanup_old_alerts(db_path, max_days)
