@@ -132,6 +132,49 @@ def validate_config(config: Any) -> list[str]:
                                     f"alerts.trend.messages.{key} must be a string, got {type(tmpl).__name__}"
                                 )
 
+        # --- alerts.silence (optional) ---
+        silence = alerts.get("silence")
+        if silence is not None:
+            if not isinstance(silence, dict):
+                errors.append("alerts.silence must be a mapping (dict)")
+            else:
+                if "enabled" in silence and not isinstance(silence["enabled"], bool):
+                    errors.append(
+                        f"alerts.silence.enabled must be a boolean, got {type(silence['enabled']).__name__}"
+                    )
+                for field in ("check_after_minutes", "ask_after_minutes", "remind_every_hours"):
+                    val = silence.get(field)
+                    if val is not None:
+                        if not isinstance(val, (int, float)):
+                            errors.append(
+                                f"alerts.silence.{field} must be a number, got {type(val).__name__}"
+                            )
+                        elif val <= 0:
+                            errors.append(f"alerts.silence.{field} must be > 0, got {val}")
+                check_m = silence.get("check_after_minutes")
+                ask_m = silence.get("ask_after_minutes")
+                if (
+                    isinstance(check_m, (int, float))
+                    and isinstance(ask_m, (int, float))
+                    and check_m > 0
+                    and ask_m > 0
+                    and ask_m <= check_m
+                ):
+                    errors.append(
+                        f"alerts.silence.ask_after_minutes ({ask_m}) must be greater than "
+                        f"check_after_minutes ({check_m})"
+                    )
+                silence_messages = silence.get("messages")
+                if silence_messages is not None:
+                    if not isinstance(silence_messages, dict):
+                        errors.append("alerts.silence.messages must be a mapping (dict)")
+                    else:
+                        for key, tmpl in silence_messages.items():
+                            if not isinstance(tmpl, str):
+                                errors.append(
+                                    f"alerts.silence.messages.{key} must be a string, got {type(tmpl).__name__}"
+                                )
+
     # --- monitoring section (optional) ---
     _VALID_MODES = {"cron", "daemon", "full", "dashboard"}
     monitoring = config.get("monitoring")
