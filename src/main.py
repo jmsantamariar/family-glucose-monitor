@@ -13,7 +13,16 @@ import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-from src.alert_engine import build_message, evaluate, evaluate_trend, is_stale, should_alert
+from src.alert_engine import (
+    build_message,
+    build_silence_message,
+    evaluate,
+    evaluate_silence,
+    evaluate_trend,
+    is_stale,
+    should_alert,
+    silence_minutes,
+)
 from src.alert_history import cleanup_old_alerts, init_db, log_alert
 from src.bootstrap import BootstrapError, bootstrap_storage
 from src.config_schema import validate_config as schema_validate_config
@@ -154,12 +163,54 @@ def run_once(
         timestamp = reading["timestamp"]
         trend_arrow = reading["trend_arrow"]
         logger.info("  %s: %d mg/dL %s (%s)", patient_name, glucose_value, trend_arrow, timestamp)
+        patient_state = get_patient_state(state, patient_id)
         if is_stale(timestamp, max_age):
-            logger.warning("  Stale reading for %s from %s, skipping", patient_name, timestamp)
+            # Silence is an event, not an absence: escalate instead of
+            # skipping quietly (sensor expired, phone away, sensor failed).
+            silence_state = patient_state.get("silence", {})
+            action = evaluate_silence(timestamp, silence_state, config)
+            if action and notifier:
+                minutes = silence_minutes(timestamp)
+                message = build_silence_message(action, patient_name, minutes, config)
+                if notifier.notify(message, glucose_value, f"silence_{action}"):
+                    new_silence = dict(silence_state)
+                    new_silence["stage"] = (
+                        "stage2" if action in ("stage2", "reminder") else "stage1"
+                    )
+                    new_silence["last_alert_time"] = datetime.now(timezone.utc).isoformat()
+                    patient_state = dict(patient_state)
+                    patient_state["silence"] = new_silence
+                    state = set_patient_state(state, patient_id, patient_state)
+                    state_changed = True
+                    log_alert(
+                        db_path, patient_id, patient_name, glucose_value,
+                        f"silence_{action}", trend_arrow, message,
+                    )
+                    logger.info("  Silence alert (%s) sent for %s: %s", action, patient_name, message)
+                else:
+                    logger.error("  All outputs failed for silence alert (%s)", patient_name)
+            else:
+                logger.warning("  Stale reading for %s from %s, skipping", patient_name, timestamp)
             continue
+        # Fresh reading: if we had flagged this patient as silent, notify
+        # recovery and clear the silence sub-state (including any mute).
+        silence_state = patient_state.get("silence")
+        if silence_state:
+            if silence_state.get("stage") and notifier:
+                message = build_silence_message(
+                    "recovered", patient_name, 0, config,
+                    glucose_value=glucose_value, trend_arrow=trend_arrow,
+                )
+                notifier.notify(message, glucose_value, "silence_recovered")
+                logger.info("  Silence recovered for %s", patient_name)
+            patient_state = {k: v for k, v in patient_state.items() if k != "silence"}
+            if patient_state:
+                state = set_patient_state(state, patient_id, patient_state)
+            else:
+                state = clear_patient_state(state, patient_id)
+            state_changed = True
         level = evaluate(glucose_value, config)
         trend_alert = evaluate_trend(glucose_value, trend_arrow, config)
-        patient_state = get_patient_state(state, patient_id)
         if level == "normal" and trend_alert == "normal":
             if patient_state:
                 state = clear_patient_state(state, patient_id)
