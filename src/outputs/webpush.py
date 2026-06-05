@@ -200,5 +200,10 @@ def _title_for_level(level: str) -> str:
         "trend_falling": "📉 Glucosa bajando",
         "trend_rising_fast": "📈 Glucosa subiendo rápido",
         "trend_rising": "📈 Glucosa subiendo",
+        # Sensor-silence alerts (readings stopped arriving).
+        "silence_stage1": "📡 Sensor sin reportar",
+        "silence_stage2": "📡 Sensor en silencio",
+        "silence_reminder": "📡 Sensor sigue sin reportar",
+        "silence_recovered": "🟢 Sensor reportando de nuevo",
     }
     return mapping.get(level, "🔔 Alerta de glucosa")
