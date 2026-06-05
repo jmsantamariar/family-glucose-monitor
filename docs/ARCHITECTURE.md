@@ -56,9 +56,10 @@ Servidor FastAPI del panel de control. Responsabilidades:
 - Gestionar autenticación por cookie de sesión (middleware HTTP)
 - Mantener una caché en memoria de las últimas lecturas por paciente, recargada desde `readings_cache.json` cuando cambia el mtime del archivo
 - En modo `full`, `main.py` llama a `update_readings_cache()` después de cada ciclo para forzar recarga incluso en escrituras del mismo segundo
-- Persistir cada lectura en `reading_history.db` (best-effort) al actualizar el caché
+- Persistir cada lectura en `reading_history.db` (best-effort, vía `src/reading_history.py`) al actualizar el caché, alimentando sparklines, análisis histórico y export
 - Exponer endpoints protegidos: `/api/patients`, `/api/patients/{id}`, `/api/health`, `/api/alerts`
 - **Historial y métricas:** `/api/patients/{id}/history?hours=N` (1–8760 h, con downsampling automático), `/api/patients/{id}/history/export?format={csv|json}&days=N` (streaming CSV o JSON envelope), `/api/patients/{id}/metrics?days=N` (TIR/GMI/CV/MAGE via `src/analytics/glycemic_metrics.py`)
+- Servir los recursos de internacionalización (`/i18n/{filename}`, español/inglés) sin autenticación
 - Gestionar el flujo de configuración inicial (`/setup`) y login (`/login`)
 - Protección CSRF: patrón double-submit cookie (`csrf_token` + `X-CSRF-Token`) en todos los POST autenticados
 - Se inicia automáticamente con `monitoring.mode: dashboard` o `full`
@@ -112,6 +113,7 @@ Modelos ORM que reflejan los esquemas físicos de SQLite:
 - `SessionToken` — sesiones del dashboard (`sessions.db`)
 - `LoginAttempt` — log de intentos fallidos de login (`sessions.db`)
 - `AlertHistory` — historial de alertas enviadas (`alert_history.db`)
+- `ReadingHistory` — histórico de lecturas de glucosa (`reading_history.db`)
 
 DDL (creación de tablas e índices) se sigue ejecutando vía SQL raw con guardas `IF NOT EXISTS` para no alterar bases de datos existentes.
 
@@ -219,7 +221,10 @@ Variable de entorno  >  config.yaml  >  valor por defecto / error
 | Variable | Descripción | Por defecto |
 |----------|-------------|-------------|
 | `APP_ENV` | Entorno (`production`, `development`, `dev`, `local`, `test`) | `production` |
-| `ALERT_HISTORY_DB` | Ruta a la base de datos SQLite de historial | `<project_root>/alert_history.db` |
+| `ALERT_HISTORY_DB` | Ruta a la base de datos SQLite de historial de alertas | `<project_root>/alert_history.db` |
+| `READING_HISTORY_DB` | Ruta a la base de datos SQLite de histórico de lecturas | `<project_root>/reading_history.db` |
+| `READINGS_CACHE_FILE` | Ruta del caché de lecturas compartido | `<project_root>/readings_cache.json` |
+| `STATE_FILE` | Ruta del estado de alertas por paciente | `<project_root>/state.json` |
 | `CORS_ALLOWED_ORIGINS` | Orígenes CORS permitidos para la API externa (separados por coma) | `""` (sin CORS por defecto) |
 | `ALLOW_INSECURE_LOCAL_API` | `1` para deshabilitar auth en la API externa (dev only) | No definido |
 | `AUTH_DISABLED` | `1` para deshabilitar auth del dashboard (tests only, requiere `APP_ENV` de dev) | No definido |
@@ -243,11 +248,12 @@ Consulta `.env.example` para la lista completa y ejemplos de generación.
 
 ## Bases de datos SQLite
 
-El sistema usa tres bases de datos SQLite independientes:
+El sistema usa cuatro bases de datos SQLite independientes:
 
 | Archivo | Módulo propietario | Contenido |
 |---------|--------------------|-----------|
-| `alert_history.db` | `src/alert_history.py` | Historial de alertas enviadas (tabla `alerts`) |
+| `alert_history.db` | `src/alert_history.py` | Historial de alertas enviadas (tabla `alerts`). Poda automática según `alert_history_max_days` (default 7) |
+| `reading_history.db` | `src/reading_history.py` | Histórico de lecturas de glucosa (tabla `readings`) para gráficas, métricas y export. Poda automática según `reading_history_max_days` (default 90, máx. 365) |
 | `sessions.db` | `src/auth.py` | Sesiones de dashboard (tabla `sessions`) y log de intentos de login fallidos (tabla `login_attempts`) |
 | `push_subscriptions.db` | `src/push_subscriptions.py` | Suscripciones de navegadores para Web Push (tabla `push_subscriptions`) |
 | `reading_history.db` | `src/reading_history.py` | Historial continuo de lecturas de glucosa por paciente (tabla `readings`); usado por los endpoints `/history`, `/history/export` y `/metrics` |

@@ -6,8 +6,9 @@ placeholder data.
 
 The table is kept in a dedicated ``reading_history.db`` file (separate from
 ``alert_history.db``) to avoid polluting the alert log with routine readings.
-Clean-up trims history older than ``max_days`` days (default 3) to avoid
-unbounded disk growth.
+Clean-up trims history older than ``max_days`` days to avoid unbounded disk
+growth; ``run_once`` invokes it on every monitoring cycle with the
+``reading_history_max_days`` config value (default 90, max 365).
 
 Public API
 ----------
@@ -255,7 +256,7 @@ def iter_readings(
         return
 
 
-def cleanup_old_readings(db_path: str, max_days: int = 3) -> int:
+def cleanup_old_readings(db_path: str, max_days: int = 90) -> int:
     """Delete readings older than *max_days* days.
 
     Returns the number of rows deleted.

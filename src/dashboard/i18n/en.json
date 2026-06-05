@@ -121,5 +121,14 @@
   "history_analysis.metrics_empty": "Not enough readings yet for this range.",
   "history_analysis.download_csv": "Download CSV",
   "history_analysis.download_json": "Download JSON",
-  "history_analysis.download_more_aria": "More download formats"
+  "history_analysis.download_more_aria": "More download formats",
+  "config.note.test_prefix": "The test uses the values ",
+  "config.note.test_emphasis": "currently typed",
+  "config.note.test_suffix": " in the form, even if they have not been saved yet.",
+  "setup.step1.dashboard_hint_prefix": "Also choose a password ",
+  "setup.step1.dashboard_hint_emphasis": "for the dashboard",
+  "setup.step1.dashboard_hint_middle": ". It can differ from your LibreLinkUp password and will be stored hashed (PBKDF2) in ",
+  "setup.step1.dashboard_hint_suffix": ".",
+  "setup.step3.hint_prefix": "Choose how you want to receive glucose alerts. You can skip this step and configure it later by editing ",
+  "setup.step3.hint_suffix": "."
 }

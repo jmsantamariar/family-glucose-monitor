@@ -283,4 +283,16 @@ def validate_config(config: Any) -> list[str]:
                 f"alert_history_max_days must be > 0, got {alert_history_max_days}"
             )
 
+    # --- reading_history_max_days (optional) ---
+    reading_history_max_days = config.get("reading_history_max_days")
+    if reading_history_max_days is not None:
+        if not isinstance(reading_history_max_days, int):
+            errors.append(
+                f"reading_history_max_days must be an integer, got {type(reading_history_max_days).__name__}"
+            )
+        elif not 1 <= reading_history_max_days <= 365:
+            errors.append(
+                f"reading_history_max_days must be between 1 and 365, got {reading_history_max_days}"
+            )
+
     return errors
