@@ -31,6 +31,15 @@ alerts:
       falling: "📉 {patient_name}: glucosa en {value} mg/dL {trend} — bajando, posible hipo"
       rising_fast: "🔺 {patient_name}: glucosa en {value} mg/dL {trend} — SUBIENDO RÁPIDO"
       rising: "📈 {patient_name}: glucosa en {value} mg/dL {trend} — subiendo, posible hiper"
+  # Sensor-silence alerts: warn when a patient's readings STOP arriving
+  # (phone away from sensor, sensor expired/failed). Check notice at 60 min,
+  # question at 3h, reminder every 24h while silent, recovery notice when
+  # readings resume. Snooze per patient from the dashboard. Enabled by default.
+  silence:
+    enabled: true
+    check_after_minutes: 60
+    ask_after_minutes: 180
+    remind_every_hours: 24
 
 outputs:
   - type: telegram

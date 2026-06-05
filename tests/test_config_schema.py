@@ -655,3 +655,36 @@ def test_reading_history_max_days_non_int_rejected():
     cfg["reading_history_max_days"] = "90"
     errors = validate_config(cfg)
     assert any("reading_history_max_days" in e for e in errors)
+
+
+# -- alerts.silence --
+
+def test_silence_section_valid():
+    cfg = _valid_config()
+    cfg["alerts"]["silence"] = {
+        "enabled": True, "check_after_minutes": 60,
+        "ask_after_minutes": 180, "remind_every_hours": 24,
+        "messages": {"stage1": "hola {patient_name}"},
+    }
+    assert validate_config(cfg) == []
+
+
+def test_silence_ask_must_exceed_check():
+    cfg = _valid_config()
+    cfg["alerts"]["silence"] = {"check_after_minutes": 180, "ask_after_minutes": 60}
+    errors = validate_config(cfg)
+    assert any("ask_after_minutes" in e for e in errors)
+
+
+def test_silence_negative_rejected():
+    cfg = _valid_config()
+    cfg["alerts"]["silence"] = {"check_after_minutes": -5}
+    errors = validate_config(cfg)
+    assert any("check_after_minutes" in e for e in errors)
+
+
+def test_silence_enabled_non_bool_rejected():
+    cfg = _valid_config()
+    cfg["alerts"]["silence"] = {"enabled": "yes"}
+    errors = validate_config(cfg)
+    assert any("silence.enabled" in e for e in errors)
