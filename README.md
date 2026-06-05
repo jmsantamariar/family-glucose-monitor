@@ -21,6 +21,7 @@ Para **familias** donde uno o varios miembros usan un sensor FreeStyle Libre y t
 - 🌍 Soporte de 12 regiones de LibreLinkUp con auto-redirect
 - ⚠️ Alertas configurables por umbral bajo/alto con cooldown anti-spam
 - 📈 Alertas por tendencia (subiendo rápido, bajando rápido, etc.)
+- 📡 **Alertas de sensor en silencio** — escalada cuando dejan de llegar lecturas (revisión a los 60 min → pregunta a las 3 h → recordatorio cada 24 h → aviso de recuperación), con snooze por paciente desde el dashboard (24 h / 7 días / hasta nuevo sensor)
 - 💬 Salidas: **Telegram**, **Webhook** (Pushover-compatible), **WhatsApp Cloud API**
 - 🔔 Notificaciones push en el navegador (Web Push / VAPID) — suscripción desde el dashboard
 - 📱 **PWA instalable en Android** (y escritorio) — icono en pantalla de inicio, modo standalone, soporte offline
@@ -691,6 +692,8 @@ Requieren sesión autenticada (cookie `session_token`):
 | `GET` | `/api/patients/{id}/history` | Serie temporal de lecturas (con downsampling server-side) |
 | `GET` | `/api/patients/{id}/history/export` | Export CSV/JSON del histórico (streaming) |
 | `GET` | `/api/patients/{id}/metrics` | Métricas glucémicas del período (TIR, GMI, CV, MAGE…) |
+| `POST` | `/api/patients/{id}/silence/mute` | Silenciar alertas de sensor en silencio (`{"duration": "24h"\|"7d"\|"recovery"}`) |
+| `POST` | `/api/patients/{id}/silence/unmute` | Reactivar alertas de sensor en silencio |
 | `GET` | `/i18n/{filename}` | Recursos de internacionalización (sin auth) |
 
 ### Ejecutar el Dashboard

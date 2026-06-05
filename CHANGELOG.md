@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Alertas de sensor en silencio** — Cuando las lecturas de un paciente dejan de llegar (teléfono lejos del sensor, sensor expirado o fallado), el monitor ya no lo ignora: aviso de revisión a los 60 min, pregunta a las 3 h ("¿el sensor terminó su vida útil o se alejó del celular?"), recordatorio cada 24 h mientras siga mudo, y aviso de recuperación al volver las lecturas. Configurable bajo `alerts.silence` (umbrales, mensajes, on/off). Las alertas se registran en el historial con nivel `silence_*`.
+  - **Snooze por paciente desde el dashboard** — botón 🔕 con selector (24 h / 7 días / hasta nuevo sensor). El mute "hasta nuevo sensor" se limpia solo cuando el sensor de reemplazo empieza a reportar. Endpoints `POST /api/patients/{id}/silence/mute` y `/unmute` (sesión + CSRF).
+  - **Badge en el dashboard** — las tarjetas muestran "📡 sin datos hace Xh" en ámbar (vista moderna y vista senior); `/api/patients` expone el objeto `silence` por paciente, calculado por request para no congelarse justo durante un silencio.
 - **Historial continuo de lecturas de glucosa** — `src/reading_history.py` persiste todas las lecturas en `reading_history.db` (SQLite). Ruta configurable con `reading_history_db` en `config.yaml`.
 - **Endpoint `GET /api/patients/{id}/history?hours=N`** — devuelve lecturas del período indicado (1–8760 h ≈ 1 año). Aplica downsampling automático para rangos > 24 h (cubos de 15 min / 30 min / 1 h) para mantener la respuesta manejable.
 - **Endpoint `GET /api/patients/{id}/history/export?format={csv|json}&days=N`** — exporta el historial completo a resolución nativa como archivo descargable. CSV con BOM (compatible Excel); JSON con envelope de metadatos. Ventana máxima: 365 días.
