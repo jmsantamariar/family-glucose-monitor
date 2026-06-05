@@ -859,9 +859,10 @@ def setup_status():
 
 _TELEGRAM_API_URL = "https://api.telegram.org"
 
-# Telegram bot tokens are "<bot_id>:<35+ char secret>". Validating the shape
-# before interpolating the token into the API URL prevents path traversal /
-# request smuggling through crafted "tokens" containing '/', '..' or '@'.
+# Telegram bot tokens are "<bot_id>:<secret>" (secrets are ~35 chars today;
+# we accept 30+ for headroom). Validating the shape before interpolating the
+# token into the API URL prevents path traversal / request smuggling through
+# crafted "tokens" containing '/', '..' or '@'.
 _BOT_TOKEN_RE = re.compile(r"^\d+:[A-Za-z0-9_-]{30,}$")
 
 
