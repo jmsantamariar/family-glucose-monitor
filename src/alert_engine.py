@@ -199,10 +199,15 @@ DEFAULT_SILENCE_MESSAGES = {
 
 
 def get_silence_config(config: dict | None) -> dict:
-    """Return the alerts.silence section merged over defaults."""
+    """Return the alerts.silence section merged over defaults.
+
+    ``None`` values are ignored so an explicit YAML ``null`` cannot override
+    a default and break the threshold comparisons downstream.
+    """
     merged = dict(DEFAULT_SILENCE_CONFIG)
     if config:
-        merged.update(config.get("alerts", {}).get("silence", {}) or {})
+        section = config.get("alerts", {}).get("silence", {}) or {}
+        merged.update({k: v for k, v in section.items() if v is not None})
     return merged
 
 
