@@ -570,6 +570,49 @@
       white-space: nowrap;
     }
 
+    /* ── Sensor silence (no readings arriving) ─────────────────── */
+    .silence-badge {
+      display: inline-block;
+      padding: .22rem .6rem;
+      border-radius: 999px;
+      font-size: .72rem;
+      font-weight: 700;
+      white-space: nowrap;
+      color: var(--yellow-fg, #92600a);
+      background: color-mix(in oklab, var(--status-warn, #d97706) 14%, transparent);
+      border: 1px solid color-mix(in oklab, var(--status-warn, #d97706) 32%, transparent);
+    }
+    .silence-badge.muted { opacity: .65; }
+    .silence-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: .5rem;
+      margin-top: .65rem;
+      padding: .55rem .7rem;
+      border-radius: .55rem;
+      background: color-mix(in oklab, var(--status-warn, #d97706) 8%, transparent);
+      border: 1px dashed color-mix(in oklab, var(--status-warn, #d97706) 30%, transparent);
+      font-size: .8rem;
+    }
+    .silence-controls-label { font-weight: 600; }
+    .silence-btn {
+      padding: .3rem .65rem;
+      border-radius: .5rem;
+      border: 1px solid var(--border, #d4c9bc);
+      background: var(--surface, #fff);
+      color: inherit;
+      font: inherit;
+      font-size: .76rem;
+      cursor: pointer;
+    }
+    .silence-btn:hover:not(:disabled) {
+      border-color: color-mix(in oklab, var(--status-warn, #d97706) 50%, var(--border, #d4c9bc));
+    }
+    .silence-btn:disabled { opacity: .5; cursor: wait; }
+    .silence-muted-note { font-weight: 600; opacity: .85; }
+    .senior-meta-value.silenced { color: var(--yellow-fg, #92600a); font-weight: 700; }
+
     /* ── Patient name ──────────────────────────────────────────── */
     .patient-name {
       font-weight: 600;
@@ -2318,7 +2361,9 @@
           arrow: arrowEl ? arrowEl.textContent.trim() : '',
           level: levelEl ? levelEl.textContent.trim() : '',
           trendAlert: trendAlertEl ? trendAlertEl.textContent.trim() : '',
-          time: timeEl ? timeEl.textContent.trim() : ''
+          time: timeEl ? timeEl.textContent.trim() : '',
+          silence: row.dataset.silence || null,
+          silenceHuman: row.dataset.silenceHuman || ''
         });
       });
 
@@ -2373,7 +2418,9 @@
           +     '</div>'
           +     '<div class="senior-meta-item">'
           +       '<span class="senior-meta-label">Última lectura</span>'
-          +       '<span class="senior-meta-value">' + escapeHtml(p.time || '—') + '</span>'
+          +       (p.silence
+                    ? '<span class="senior-meta-value silenced">📡 ' + escapeHtml(p.silenceHuman || p.time || '—') + (p.silence === 'muted' ? ' 🔕' : '') + '</span>'
+                    : '<span class="senior-meta-value">' + escapeHtml(p.time || '—') + '</span>')
           +     '</div>'
           +   '</div>'
           + '</article>';
@@ -2480,6 +2527,7 @@
     if (level === 'low')  return i18n.t('alert_level.low');
     if (level === 'high') return i18n.t('alert_level.high');
     if (level.startsWith('trend_')) return i18n.t('alert_level.trend');
+    if (level.startsWith('silence_')) return i18n.t('alert_level.silence');
     return level.toUpperCase();
   }
 
@@ -2487,6 +2535,35 @@
     if (level === 'low')  return 'alert-low';
     if (level === 'high') return 'alert-high';
     return 'alert-trend';
+  }
+
+  // ── Sensor silence helpers ─────────────────────────────────────────────────
+
+  function silenceInfo(p) {
+    var s = p.silence || {};
+    if (!s.enabled || s.minutes == null) return { active: false, muted: false, minutes: null, mutedUntil: null };
+    var muted = !!s.muted_until
+      && (s.muted_until === 'recovery' || new Date(s.muted_until) > new Date());
+    return {
+      active: s.minutes >= (s.check_after_minutes || 60),
+      muted: muted,
+      minutes: s.minutes,
+      mutedUntil: s.muted_until || null,
+    };
+  }
+
+  function silenceHuman(minutes) {
+    if (minutes < 120) return Math.floor(minutes) + ' min';
+    var h = Math.floor(minutes / 60);
+    if (h < 48) return h + 'h';
+    return Math.floor(h / 24) + ' ' + i18n.t('silence.days');
+  }
+
+  function silenceMutedLabel(mutedUntil) {
+    if (mutedUntil === 'recovery') return i18n.t('silence.muted_recovery');
+    var d = new Date(mutedUntil);
+    var txt = isNaN(d) ? mutedUntil : d.toLocaleString(undefined, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    return i18n.t('silence.muted_until', txt);
   }
 
   function trendArrowHtml(arrow, trendName) {
@@ -2881,15 +2958,19 @@ if (!isNaN(cg) && cg > 0) {
       const timeSince     = formatTimeSince(p.fetched_at || p.timestamp);
       const glucoseClass  = getGlucoseTrendClass(p.trend_alert);
       const pid           = escapeHtml(String(p.patient_id));
+      const sil           = silenceInfo(p);
+      const silHuman      = sil.active ? silenceHuman(sil.minutes) : '';
 
-      // Auto-expand for alert states; preserve manual expansion for normal rows
-      const isExpanded    = isAlertRowClass(rowClass) || manuallyExpanded.has(String(p.patient_id));
+      // Auto-expand for alert states or active silence; preserve manual expansion
+      const isExpanded    = isAlertRowClass(rowClass) || (sil.active && !sil.muted)
+                            || manuallyExpanded.has(String(p.patient_id));
 
       const glucoseStr    = String(glucose);
 
       return `
         <tr class="patient-row ${rowClass}${isExpanded ? ' expanded' : ''}"
-            data-patient-id="${pid}" tabindex="0" role="button" aria-expanded="${isExpanded}">
+            data-patient-id="${pid}" tabindex="0" role="button" aria-expanded="${isExpanded}"
+            ${sil.active ? `data-silence="${sil.muted ? 'muted' : 'active'}" data-silence-human="${escapeHtml(silHuman)}"` : ''}>
           <td class="patient-name">${name}</td>
           <td>
             <span class="glucose-display">
@@ -2900,7 +2981,9 @@ if (!isNaN(cg) && cg > 0) {
           <td>${arrowHtml}</td>
           <td><span class="level-badge">${escapeHtml(level)}</span></td>
           <td class="trend-alert-text col-trend-alert">${trendAlert}</td>
-          <td class="time-text">${escapeHtml(timeSince)}</td>
+          <td class="time-text">${sil.active
+            ? `<span class="silence-badge${sil.muted ? ' muted' : ''}">📡 ${escapeHtml(silHuman)}${sil.muted ? ' 🔕' : ''}</span>`
+            : escapeHtml(timeSince)}</td>
         </tr>
         <tr class="expanded-details-row${isExpanded ? ' visible' : ''}" data-patient-id="${pid}">
           <td colspan="6">
@@ -2929,6 +3012,16 @@ if (!isNaN(cg) && cg > 0) {
                   ? `<span aria-hidden="true">📊</span> <span>${i18n.t('card.trend_prefix')}${trendAlert}</span>`
                   : `<span aria-hidden="true">✅</span> <span>${i18n.t('card.stable_trend')}</span>`}
               </p>
+              ${sil.active ? `
+              <div class="silence-controls" data-patient-id="${pid}">
+                <span class="silence-controls-label">📡 ${i18n.t('silence.no_data_since', escapeHtml(silHuman))}</span>
+                ${sil.muted
+                  ? `<span class="silence-muted-note">${escapeHtml(silenceMutedLabel(sil.mutedUntil))}</span>
+                     <button type="button" class="silence-btn silence-unmute-btn" data-pid="${pid}">${i18n.t('silence.unmute')}</button>`
+                  : `<button type="button" class="silence-btn" data-pid="${pid}" data-duration="24h">🔕 ${i18n.t('silence.mute_24h')}</button>
+                     <button type="button" class="silence-btn" data-pid="${pid}" data-duration="7d">🔕 ${i18n.t('silence.mute_7d')}</button>
+                     <button type="button" class="silence-btn" data-pid="${pid}" data-duration="recovery">🔕 ${i18n.t('silence.mute_recovery')}</button>`}
+              </div>` : ''}
             </div>
           </td>
         </tr>`;
@@ -2939,6 +3032,31 @@ if (!isNaN(cg) && cg > 0) {
       row.addEventListener('click',   ()  => _toggleExpanded(row));
       row.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _toggleExpanded(row); }
+      });
+    });
+
+    // Silence mute/unmute buttons (caregiver snooze)
+    tbody.querySelectorAll('.silence-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const pid = btn.dataset.pid;
+        const isUnmute = btn.classList.contains('silence-unmute-btn');
+        const action = isUnmute ? 'unmute' : 'mute';
+        // Cookie read kept inline: getCsrfToken() lives in the push IIFE scope.
+        const csrf = (document.cookie.split('; ').find(r => r.startsWith('csrf_token=')) || '').split('=')[1] || '';
+        btn.disabled = true;
+        try {
+          const resp = await fetch(`/api/patients/${encodeURIComponent(pid)}/silence/${action}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+            body: isUnmute ? '{}' : JSON.stringify({ duration: btn.dataset.duration }),
+          });
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          await fetchPatients();   // re-render with the new mute state
+        } catch (err) {
+          console.error('silence ' + action + ' failed', err);
+          btn.disabled = false;
+        }
       });
     });
 

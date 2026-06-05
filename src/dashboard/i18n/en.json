@@ -130,5 +130,14 @@
   "setup.step1.dashboard_hint_middle": ". It can differ from your LibreLinkUp password and will be stored hashed (PBKDF2) in ",
   "setup.step1.dashboard_hint_suffix": ".",
   "setup.step3.hint_prefix": "Choose how you want to receive glucose alerts. You can skip this step and configure it later by editing ",
-  "setup.step3.hint_suffix": "."
+  "setup.step3.hint_suffix": ".",
+  "silence.days": "days",
+  "silence.no_data_since": "No data for {0}",
+  "silence.mute_24h": "Mute 24h",
+  "silence.mute_7d": "Mute 7 days",
+  "silence.mute_recovery": "Until new sensor",
+  "silence.muted_until": "🔕 Alerts muted until {0}",
+  "silence.muted_recovery": "🔕 Muted until the sensor returns",
+  "silence.unmute": "Re-enable alerts",
+  "alert_level.silence": "SENSOR"
 }

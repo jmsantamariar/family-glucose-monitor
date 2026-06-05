@@ -13,6 +13,15 @@
   // ── Embedded translation tables ──────────────────────────────────────────
   var TRANSLATIONS = {
     es: {
+      'alert_level.silence': 'SENSOR',
+      'silence.days': 'días',
+      'silence.mute_24h': 'Silenciar 24h',
+      'silence.mute_7d': 'Silenciar 7 días',
+      'silence.mute_recovery': 'Hasta nuevo sensor',
+      'silence.muted_recovery': '🔕 Silenciado hasta que vuelva el sensor',
+      'silence.muted_until': '🔕 Avisos silenciados hasta {0}',
+      'silence.no_data_since': 'Sin datos desde hace {0}',
+      'silence.unmute': 'Reactivar avisos',
       'config.note.test_emphasis': 'actualmente escritos',
       'config.note.test_prefix': 'La prueba usa los valores ',
       'config.note.test_suffix': ' en el formulario, incluso si aún no se han guardado.',
@@ -314,6 +323,15 @@
       'help.docs_link': 'Documentación',
     },
     en: {
+      'alert_level.silence': 'SENSOR',
+      'silence.days': 'days',
+      'silence.mute_24h': 'Mute 24h',
+      'silence.mute_7d': 'Mute 7 days',
+      'silence.mute_recovery': 'Until new sensor',
+      'silence.muted_recovery': '🔕 Muted until the sensor returns',
+      'silence.muted_until': '🔕 Alerts muted until {0}',
+      'silence.no_data_since': 'No data for {0}',
+      'silence.unmute': 'Re-enable alerts',
       'config.note.test_emphasis': 'currently typed',
       'config.note.test_prefix': 'The test uses the values ',
       'config.note.test_suffix': ' in the form, even if they have not been saved yet.',
