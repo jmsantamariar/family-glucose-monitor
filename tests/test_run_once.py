@@ -86,8 +86,13 @@ def test_no_readings_returns_early():
 # ---------------------------------------------------------------------------
 
 def test_stale_reading_is_skipped():
-    """A stale reading does not trigger an alert or state change."""
-    reading = _stale_reading(glucose=50)  # low but stale
+    """A stale reading below the silence threshold triggers nothing.
+
+    30 min: stale (> max_reading_age_minutes=15) but below the silence
+    check threshold (60 min), so neither a glucose alert nor a silence
+    alert fires.
+    """
+    reading = _fresh_reading(glucose=50, age_seconds=1800)  # low but stale
 
     mock_output = _MockOutput(success=True)
 
@@ -109,8 +114,9 @@ def test_stale_reading_is_skipped():
 
 
 def test_stale_reading_does_not_clear_existing_state():
-    """A stale reading for a patient in alert state does not clear that state."""
-    reading = _stale_reading(glucose=50, patient_id="p1")
+    """A stale reading (below silence threshold) for a patient in alert state
+    does not clear that state."""
+    reading = _fresh_reading(glucose=50, patient_id="p1", age_seconds=1800)
     existing_state = {
         "p1": {
             "last_alert_time": datetime.now(timezone.utc).isoformat(),
@@ -604,3 +610,147 @@ def test_trend_only_alert_passes_effective_level_to_outputs():
 
     mock_output.send_alert.assert_called_once()
     assert mock_output.send_alert.call_args[0][2] == "trend_falling_fast"
+
+
+# ---------------------------------------------------------------------------
+# Sensor-silence alerts (escalation + recovery + mute)
+# ---------------------------------------------------------------------------
+
+def _silence_patches(mock_output, state=None):
+    """Common patch set for silence tests."""
+    return (
+        patch("src.main.init_db"),
+        patch("src.main.load_state", return_value=state if state is not None else {}),
+        patch("src.main.save_state"),
+        patch("src.main.read_all_patients"),
+        patch("src.main._save_readings_cache"),
+        patch("src.main.log_alert"),
+        patch("src.main.cleanup_old_alerts"),
+        patch("src.main.cleanup_old_readings"),
+        patch("src.main.build_outputs", return_value=[mock_output]),
+    )
+
+
+def test_silence_stage1_at_90_minutes():
+    """90 min of silence fires the stage1 check notice."""
+    reading = _fresh_reading(glucose=120, patient_id="p1", age_seconds=90 * 60)
+    mock_output = _MockOutput(success=True)
+
+    with (
+        patch("src.main.init_db"),
+        patch("src.main.load_state", return_value={}),
+        patch("src.main.save_state") as mock_save,
+        patch("src.main.read_all_patients", return_value=[reading]),
+        patch("src.main._save_readings_cache"),
+        patch("src.main.log_alert") as mock_log,
+        patch("src.main.cleanup_old_alerts"),
+        patch("src.main.cleanup_old_readings"),
+        patch("src.main.build_outputs", return_value=[mock_output]),
+    ):
+        run_once(_config())
+
+    mock_output.send_alert.assert_called_once()
+    assert mock_output.send_alert.call_args[0][2] == "silence_stage1"
+    assert "revisa que el teléfono" in mock_output.send_alert.call_args[0][0]
+    mock_log.assert_called_once()
+    saved = mock_save.call_args[0][1]
+    assert saved["p1"]["silence"]["stage"] == "stage1"
+
+
+def test_silence_stage2_directly_after_26_hours():
+    """First evaluation after 26h jumps straight to stage2 with approved wording."""
+    reading = _fresh_reading(glucose=120, patient_id="p1", age_seconds=26 * 3600)
+    mock_output = _MockOutput(success=True)
+
+    with (
+        patch("src.main.init_db"),
+        patch("src.main.load_state", return_value={}),
+        patch("src.main.save_state") as mock_save,
+        patch("src.main.read_all_patients", return_value=[reading]),
+        patch("src.main._save_readings_cache"),
+        patch("src.main.log_alert"),
+        patch("src.main.cleanup_old_alerts"),
+        patch("src.main.cleanup_old_readings"),
+        patch("src.main.build_outputs", return_value=[mock_output]),
+    ):
+        run_once(_config())
+
+    assert mock_output.send_alert.call_args[0][2] == "silence_stage2"
+    assert "el sensor terminó su vida útil" in mock_output.send_alert.call_args[0][0]
+    assert mock_save.call_args[0][1]["p1"]["silence"]["stage"] == "stage2"
+
+
+def test_silence_muted_suppresses_alert():
+    """A future muted_until suppresses silence alerts entirely."""
+    from datetime import datetime as _dt
+    reading = _fresh_reading(glucose=120, patient_id="p1", age_seconds=26 * 3600)
+    future = (_dt.now(timezone.utc) + timedelta(days=1)).isoformat()
+    state = {"p1": {"silence": {"stage": "stage2", "muted_until": future,
+                                "last_alert_time": (_dt.now(timezone.utc) - timedelta(days=2)).isoformat()}}}
+    mock_output = _MockOutput(success=True)
+
+    with (
+        patch("src.main.init_db"),
+        patch("src.main.load_state", return_value=copy.deepcopy(state)),
+        patch("src.main.save_state") as mock_save,
+        patch("src.main.read_all_patients", return_value=[reading]),
+        patch("src.main._save_readings_cache"),
+        patch("src.main.log_alert"),
+        patch("src.main.cleanup_old_alerts"),
+        patch("src.main.cleanup_old_readings"),
+        patch("src.main.build_outputs", return_value=[mock_output]),
+    ):
+        run_once(_config())
+
+    mock_output.send_alert.assert_not_called()
+    mock_save.assert_not_called()
+
+
+def test_silence_recovery_notifies_and_clears():
+    """Fresh reading after alerted silence: recovery notice + silence cleared."""
+    reading = _fresh_reading(glucose=120, patient_id="p1")  # fresh, normal
+    state = {"p1": {"silence": {"stage": "stage2", "muted_until": "recovery",
+                                "last_alert_time": datetime.now(timezone.utc).isoformat()}}}
+    mock_output = _MockOutput(success=True)
+
+    with (
+        patch("src.main.init_db"),
+        patch("src.main.load_state", return_value=copy.deepcopy(state)),
+        patch("src.main.save_state") as mock_save,
+        patch("src.main.read_all_patients", return_value=[reading]),
+        patch("src.main._save_readings_cache"),
+        patch("src.main.log_alert"),
+        patch("src.main.cleanup_old_alerts"),
+        patch("src.main.cleanup_old_readings"),
+        patch("src.main.build_outputs", return_value=[mock_output]),
+    ):
+        run_once(_config())
+
+    mock_output.send_alert.assert_called_once()
+    assert mock_output.send_alert.call_args[0][2] == "silence_recovered"
+    assert "reportando de nuevo" in mock_output.send_alert.call_args[0][0]
+    saved = mock_save.call_args[0][1]
+    assert "silence" not in saved.get("p1", {})  # cleared (or whole patient gone)
+
+
+def test_silence_mute_only_cleared_without_notification():
+    """Proactive mute (no stage) + fresh reading: clear silently, no message."""
+    reading = _fresh_reading(glucose=120, patient_id="p1")
+    state = {"p1": {"silence": {"muted_until": "recovery"}}}
+    mock_output = _MockOutput(success=True)
+
+    with (
+        patch("src.main.init_db"),
+        patch("src.main.load_state", return_value=copy.deepcopy(state)),
+        patch("src.main.save_state") as mock_save,
+        patch("src.main.read_all_patients", return_value=[reading]),
+        patch("src.main._save_readings_cache"),
+        patch("src.main.log_alert"),
+        patch("src.main.cleanup_old_alerts"),
+        patch("src.main.cleanup_old_readings"),
+        patch("src.main.build_outputs", return_value=[mock_output]),
+    ):
+        run_once(_config())
+
+    mock_output.send_alert.assert_not_called()
+    mock_save.assert_called_once()  # state cleaned
