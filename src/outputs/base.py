@@ -22,7 +22,11 @@ class Notifier(Protocol):
 
         :param message: Human-readable alert text.
         :param glucose_value: Current glucose value in mg/dL.
-        :param level: Alert level (``"low"``, ``"high"``, or ``"normal"``).
+        :param level: Effective alert level: ``"low"``, ``"high"``,
+            ``"normal"``, or a trend-only level of the form
+            ``"trend_<trend>"`` (e.g. ``"trend_falling_fast"``) when glucose
+            is in range but moving fast.  Outputs that branch on this value
+            must fall back to a generic rendering for unknown levels.
         :returns: ``True`` if at least one channel delivered successfully.
         """
         ...
@@ -38,5 +42,10 @@ class BaseOutput(ABC):
 
     @abstractmethod
     def send_alert(self, message: str, glucose_value: int, level: str) -> bool:
-        """Send alert. Returns True if successful."""
+        """Send alert. Returns True if successful.
+
+        ``level`` follows the :class:`Notifier` contract: ``"low"``,
+        ``"high"``, ``"normal"`` or ``"trend_<trend>"`` — implementations
+        branching on it must handle unknown values with a safe fallback.
+        """
         ...
