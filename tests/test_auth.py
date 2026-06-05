@@ -36,6 +36,23 @@ def _isolated_session_manager(tmp_path, monkeypatch):
     yield sm
 
 
+@pytest.fixture
+def isolated_config(tmp_path):
+    """Redirect every config.yaml lookup to ``tmp_path``.
+
+    ``src.api.PROJECT_ROOT`` (where /api/setup writes config.yaml),
+    ``src.auth._CONFIG_PATH`` (is_configured / verify_credentials) and
+    ``src.setup_status.PROJECT_ROOT`` (is_setup_complete) all resolve against
+    the repo root at import time.  Without patching the three of them, a real
+    config.yaml present in the developer's working copy leaks into the tests
+    and /api/setup answers 403 "already configured".
+    """
+    with patch("src.api.PROJECT_ROOT", tmp_path), patch(
+        "src.auth._CONFIG_PATH", tmp_path / "config.yaml"
+    ), patch("src.setup_status.PROJECT_ROOT", tmp_path):
+        yield tmp_path
+
+
 # ── SessionManager ────────────────────────────────────────────────────────────
 
 
@@ -195,7 +212,7 @@ class TestVerifyCredentials:
 
 class TestSetupStatus:
     @pytest.fixture
-    def client(self):
+    def client(self, isolated_config):
         return TestClient(app)
 
     def test_returns_false_when_not_configured(self, client, tmp_path):
@@ -326,11 +343,9 @@ class TestLogoutEndpoint:
 
 class TestSetupEndpoint:
     @pytest.fixture
-    def client(self, tmp_path):
+    def client(self, isolated_config):
         session_manager.clear_all()
-        # Patch PROJECT_ROOT inside api.py so config.yaml goes to tmp_path
-        with patch("src.api.PROJECT_ROOT", tmp_path):
-            yield TestClient(app)
+        yield TestClient(app)
         session_manager.clear_all()
 
     def _minimal_payload(self):
@@ -514,8 +529,11 @@ class TestSetupEndpoint:
 class TestTelegramFetchChatId:
     """Tests for the Telegram chat-ID discovery endpoint used by the setup wizard."""
 
+    # Well-formed (but fake) bot token: "<digits>:<30+ chars>".
+    _DUMMY_TOKEN = "123456:TEST-DummyTokenForUnitTests_0000000"
+
     @pytest.fixture
-    def client(self):
+    def client(self, isolated_config):
         yield TestClient(app)
 
     def _make_updates(self, *chats):
@@ -557,6 +575,7 @@ class TestTelegramFetchChatId:
         assert resp.status_code == 400
 
     def test_invalid_token_returns_422(self, client):
+        """A well-formed token that Telegram rejects (401) returns 422."""
         from unittest.mock import MagicMock, patch
 
         mock_resp = MagicMock()
@@ -565,10 +584,40 @@ class TestTelegramFetchChatId:
         with patch("src.api._requests.get", return_value=mock_resp):
             resp = client.post(
                 "/api/setup/telegram/fetch-chat-id",
-                json={"bot_token": "bad_token"},
+                json={"bot_token": self._DUMMY_TOKEN},
             )
         assert resp.status_code == 422
         assert "inválido" in resp.json()["detail"].lower()
+
+    @pytest.mark.parametrize(
+        "bad_token",
+        [
+            "bad_token",                      # no <id>:<secret> shape
+            "123456:short",                   # secret too short
+            "123456:abc/../def_0123456789012345678",  # path traversal chars
+            "123456:abc@evil_01234567890123456789012",  # authority injection
+        ],
+    )
+    def test_malformed_token_rejected_before_network(self, client, bad_token):
+        """Malformed tokens are rejected by shape validation without any HTTP call."""
+        from unittest.mock import MagicMock, patch
+
+        with patch("src.api._requests.get") as mock_get:
+            resp = client.post(
+                "/api/setup/telegram/fetch-chat-id",
+                json={"bot_token": bad_token},
+            )
+        assert resp.status_code == 422
+        mock_get.assert_not_called()
+
+    def test_requires_session_when_already_configured(self, client, isolated_config):
+        """Once config.yaml exists, the endpoint demands an authenticated session."""
+        (isolated_config / "config.yaml").write_text("librelinkup:\n  email: a@b.com\n")
+        resp = client.post(
+            "/api/setup/telegram/fetch-chat-id",
+            json={"bot_token": self._DUMMY_TOKEN},
+        )
+        assert resp.status_code == 403
 
     def test_telegram_api_error_returns_502(self, client):
         from unittest.mock import MagicMock, patch
@@ -579,7 +628,7 @@ class TestTelegramFetchChatId:
         with patch("src.api._requests.get", return_value=mock_resp):
             resp = client.post(
                 "/api/setup/telegram/fetch-chat-id",
-                json={"bot_token": "tok"},
+                json={"bot_token": self._DUMMY_TOKEN},
             )
         assert resp.status_code == 502
 
@@ -593,7 +642,7 @@ class TestTelegramFetchChatId:
         ):
             resp = client.post(
                 "/api/setup/telegram/fetch-chat-id",
-                json={"bot_token": "tok"},
+                json={"bot_token": self._DUMMY_TOKEN},
             )
         assert resp.status_code == 502
 
@@ -606,7 +655,7 @@ class TestTelegramFetchChatId:
         with patch("src.api._requests.get", return_value=mock_resp):
             resp = client.post(
                 "/api/setup/telegram/fetch-chat-id",
-                json={"bot_token": "tok"},
+                json={"bot_token": self._DUMMY_TOKEN},
             )
         assert resp.status_code == 200
         assert resp.json()["chats"] == []
@@ -620,7 +669,7 @@ class TestTelegramFetchChatId:
         with patch("src.api._requests.get", return_value=mock_resp):
             resp = client.post(
                 "/api/setup/telegram/fetch-chat-id",
-                json={"bot_token": "tok"},
+                json={"bot_token": self._DUMMY_TOKEN},
             )
         assert resp.status_code == 200
         chats = resp.json()["chats"]
@@ -667,7 +716,7 @@ class TestTelegramFetchChatId:
         with patch("src.api._requests.get", return_value=mock_resp):
             resp = client.post(
                 "/api/setup/telegram/fetch-chat-id",
-                json={"bot_token": "tok"},
+                json={"bot_token": self._DUMMY_TOKEN},
             )
         assert resp.status_code == 200
         chats = resp.json()["chats"]
@@ -698,7 +747,7 @@ class TestTelegramFetchChatId:
         with patch("src.api._requests.get", return_value=mock_resp):
             resp = client.post(
                 "/api/setup/telegram/fetch-chat-id",
-                json={"bot_token": "tok"},
+                json={"bot_token": self._DUMMY_TOKEN},
             )
         assert resp.status_code == 200
         chats = resp.json()["chats"]
@@ -714,7 +763,7 @@ class TestAuthMiddleware:
     """Tests for the auth middleware (requires auth to be enabled)."""
 
     @pytest.fixture
-    def auth_client(self, monkeypatch):
+    def auth_client(self, monkeypatch, isolated_config):
         """TestClient with auth enforcement enabled (no AUTH_DISABLED env var)."""
         monkeypatch.delenv("AUTH_DISABLED", raising=False)
         import src.api as _api_module
@@ -972,9 +1021,8 @@ class TestSetupSecurity:
 
 class TestPasswordLengthValidation:
     @pytest.fixture
-    def client(self, tmp_path):
-        with patch("src.api.PROJECT_ROOT", tmp_path):
-            yield TestClient(app)
+    def client(self, isolated_config):
+        yield TestClient(app)
 
     def _payload_with_password(self, pwd: str):
         return {
@@ -1013,9 +1061,8 @@ class TestPasswordLengthValidation:
 
 class TestRegionSelector:
     @pytest.fixture
-    def client(self, tmp_path):
-        with patch("src.api.PROJECT_ROOT", tmp_path):
-            yield TestClient(app)
+    def client(self, isolated_config):
+        yield TestClient(app)
 
     def _payload_with_region(self, region: str):
         return {
@@ -1082,7 +1129,7 @@ class TestCSRFProtection:
     """
 
     @pytest.fixture
-    def csrf_client(self, monkeypatch):
+    def csrf_client(self, monkeypatch, isolated_config):
         """TestClient with auth AND CSRF enforcement enabled."""
         import src.api as _api_module
         monkeypatch.setattr(_api_module, "_ALLOW_AUTH_DISABLED", False)
@@ -1150,10 +1197,9 @@ class TestSetupOutputValidation:
     """Verify that missing required fields for each output type are rejected."""
 
     @pytest.fixture
-    def client(self, tmp_path):
+    def client(self, isolated_config):
         session_manager.clear_all()
-        with patch("src.api.PROJECT_ROOT", tmp_path):
-            yield TestClient(app)
+        yield TestClient(app)
         session_manager.clear_all()
 
     def _base(self):
@@ -1195,10 +1241,9 @@ class TestSetupConfigValidation:
     """Verify that the config is validated via schema before being written."""
 
     @pytest.fixture
-    def client(self, tmp_path):
+    def client(self, isolated_config):
         session_manager.clear_all()
-        with patch("src.api.PROJECT_ROOT", tmp_path):
-            yield TestClient(app)
+        yield TestClient(app)
         session_manager.clear_all()
 
     def test_valid_config_is_persisted(self, client, tmp_path):

@@ -626,3 +626,32 @@ def test_whatsapp_enabled_all_fields_present(monkeypatch):
         }
     ]
     assert validate_config(cfg) == []
+
+
+# -- reading_history_max_days --
+
+def test_reading_history_max_days_valid():
+    cfg = _valid_config()
+    cfg["reading_history_max_days"] = 90
+    assert validate_config(cfg) == []
+
+
+def test_reading_history_max_days_above_365_rejected():
+    cfg = _valid_config()
+    cfg["reading_history_max_days"] = 400
+    errors = validate_config(cfg)
+    assert any("reading_history_max_days" in e for e in errors)
+
+
+def test_reading_history_max_days_zero_rejected():
+    cfg = _valid_config()
+    cfg["reading_history_max_days"] = 0
+    errors = validate_config(cfg)
+    assert any("reading_history_max_days" in e for e in errors)
+
+
+def test_reading_history_max_days_non_int_rejected():
+    cfg = _valid_config()
+    cfg["reading_history_max_days"] = "90"
+    errors = validate_config(cfg)
+    assert any("reading_history_max_days" in e for e in errors)

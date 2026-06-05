@@ -7,6 +7,9 @@
 | `FGM_MASTER_KEY` | Clave maestra Fernet para descifrar credenciales en `config.yaml` (64 hex chars = 32 bytes). **Obligatoria en producción.** | Sin definir (usa `.secret_key` local) |
 | `API_KEY` | Clave Bearer para proteger la API externa (`api_server.py`). **Obligatoria en producción.** Sin esta clave y sin `ALLOW_INSECURE_LOCAL_API=1`, todas las peticiones son rechazadas con 401. | Sin definir (todas las peticiones → 401) |
 | `ALERT_HISTORY_DB` | Ruta al archivo SQLite de historial de alertas. | `<project_root>/alert_history.db` |
+| `READING_HISTORY_DB` | Ruta al archivo SQLite de histórico de lecturas de glucosa. | `<project_root>/reading_history.db` |
+| `READINGS_CACHE_FILE` | Ruta del caché de lecturas compartido entre monitor, dashboard y API externa. | `<project_root>/readings_cache.json` |
+| `STATE_FILE` | Ruta del archivo de estado de alertas por paciente. | `<project_root>/state.json` |
 | `CORS_ALLOWED_ORIGINS` | Lista de orígenes CORS separados por comas permitidos en la API externa. | `""` (ninguno) |
 | `AUTH_DISABLED` | `1` para deshabilitar autenticación del dashboard. **Solo funciona si `APP_ENV` es `dev`, `development`, `local` o `test`. Ignorado en producción.** | No aplica en producción |
 | `ALLOW_INSECURE_LOCAL_API` | `1` para deshabilitar auth de la API externa. **Solo para desarrollo local. Nunca en producción.** | No definido |
@@ -71,13 +74,14 @@ echo "API_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> .e
 chmod 600 .env
 
 # Crea los archivos de estado antes del primer arranque:
-touch state.json alert_history.db sessions.db readings_cache.json push_subscriptions.db
+touch state.json alert_history.db reading_history.db sessions.db readings_cache.json push_subscriptions.db
 
 docker build -t family-glucose-monitor .
 docker run --rm --env-file .env \
   -v $(pwd)/config.yaml:/app/config.yaml:ro \
   -v $(pwd)/state.json:/app/state.json \
   -v $(pwd)/alert_history.db:/app/alert_history.db \
+  -v $(pwd)/reading_history.db:/app/reading_history.db \
   -v $(pwd)/sessions.db:/app/sessions.db \
   -v $(pwd)/readings_cache.json:/app/readings_cache.json \
   -v $(pwd)/push_subscriptions.db:/app/push_subscriptions.db \
@@ -85,7 +89,7 @@ docker run --rm --env-file .env \
   family-glucose-monitor
 ```
 
-> **Archivos de estado:** Los archivos `state.json`, `alert_history.db`, `sessions.db` y `readings_cache.json` sí deben existir en el host **antes** del primer arranque. Si no existen y se montan con bind mounts de Docker, Docker puede crear un directorio vacío en su lugar y la aplicación falla. Usa `touch` para crearlos vacíos.
+> **Archivos de estado:** Los archivos `state.json`, `alert_history.db`, `reading_history.db`, `sessions.db` y `readings_cache.json` sí deben existir en el host **antes** del primer arranque. Si no existen y se montan con bind mounts de Docker, Docker puede crear un directorio vacío en su lugar y la aplicación falla. Usa `touch` para crearlos vacíos.
 >
 > **Web Push (opcional):** `push_subscriptions.db` se recomienda si quieres persistir las suscripciones de Web Push entre reinicios. Si el archivo no existe o no se monta correctamente, el canal Web Push puede quedar deshabilitado o perder persistencia, pero esto no debería impedir el arranque general de la aplicación.
 
@@ -97,7 +101,7 @@ Crea el directorio de datos y los archivos vacíos antes del primer arranque:
 
 ```bash
 mkdir -p data
-touch data/state.json data/alert_history.db data/sessions.db data/readings_cache.json data/push_subscriptions.db
+touch data/state.json data/alert_history.db data/reading_history.db data/sessions.db data/readings_cache.json data/push_subscriptions.db
 ```
 
 Genera las claves UNA VEZ y guárdalas en `.env`:
@@ -121,6 +125,7 @@ services:
       - ./config.yaml:/app/config.yaml:ro
       - ./data/state.json:/app/state.json
       - ./data/alert_history.db:/app/alert_history.db
+      - ./data/reading_history.db:/app/reading_history.db
       - ./data/sessions.db:/app/sessions.db
       - ./data/readings_cache.json:/app/readings_cache.json
       - ./data/push_subscriptions.db:/app/push_subscriptions.db
@@ -197,9 +202,20 @@ server {
         proxy_pass http://localhost:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 ```
+
+> **⚠️ Importante detrás de un reverse proxy:** el limitador de intentos de login del dashboard usa la IP del cliente. Detrás de un proxy, todas las peticiones llegan con la IP del proxy, lo que anula el límite por atacante (y permite que un atacante bloquee a todos los usuarios a la vez). Arranca Uvicorn con soporte de cabeceras de proxy para que la IP real se propague:
+>
+> ```bash
+> uvicorn src.api:app --host 127.0.0.1 --port 8080 \
+>   --proxy-headers --forwarded-allow-ips=127.0.0.1
+> ```
+>
+> Ajusta `--forwarded-allow-ips` a la IP real de tu proxy. Sin esto, el rate limiting de login pierde efectividad detrás del proxy.
 
 ---
 
@@ -211,7 +227,8 @@ server {
 - [ ] Hacer copia de seguridad de `FGM_MASTER_KEY` (o del archivo `.secret_key` si se usa en local). Sin ella los valores cifrados en `config.yaml` son irrecuperables.
 - [ ] Asegurarse de que `AUTH_DISABLED` **no** esté definido en producción (es ignorado automáticamente si `APP_ENV=production`, pero no definirlo es más seguro).
 - [ ] Asegurarse de que `ALLOW_INSECURE_LOCAL_API` **no** esté definido en producción.
-- [ ] Montar `alert_history.db`, `sessions.db`, `state.json`, `readings_cache.json` y `push_subscriptions.db` como volúmenes persistentes en Docker.
+- [ ] Montar `alert_history.db`, `reading_history.db`, `sessions.db`, `state.json`, `readings_cache.json` y `push_subscriptions.db` como volúmenes persistentes en Docker.
+- [ ] Si hay reverse proxy delante, arrancar Uvicorn con `--proxy-headers --forwarded-allow-ips=<ip-del-proxy>` para que el rate limiting de login vea la IP real del cliente.
 - [ ] Ejecutar las migraciones de base de datos hasta `head` antes del primer arranque (o tras actualizaciones con cambios de schema en `alert_history.db`), usando el método soportado por el proyecto (por ejemplo, `poetry run alembic upgrade head` en un entorno con dependencias de desarrollo, o el job/imagen específica de migraciones definida en la infraestructura).
 - [ ] Configurar un reverse proxy con HTTPS (Caddy, nginx, Traefik) delante del dashboard y la API.
 - [ ] (Opcional) Generar un par de claves VAPID fijo e inyectar `VAPID_PRIVATE_KEY` como variable de entorno o Docker secret para que las suscripciones push persistan entre reinicios del contenedor.

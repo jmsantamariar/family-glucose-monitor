@@ -14,8 +14,9 @@ import os
 from pathlib import Path
 
 from src.alert_history import init_db, validate_schema
-from src.paths import get_cache_path, get_db_path, get_state_path
+from src.paths import get_cache_path, get_db_path, get_reading_history_db_path, get_state_path
 import src.push_subscriptions as _push_subs
+import src.reading_history as _reading_history
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,8 @@ def bootstrap_storage(config: dict) -> None:
       :class:`BootstrapError` if required columns are missing.
     * Create an empty ``state.json`` (``{}``) if it does not yet exist.
     * Create an empty ``readings_cache.json`` if it does not yet exist.
+    * Initialise ``reading_history.db`` and ``push_subscriptions.db``
+      (idempotent, non-fatal on failure).
 
     Parameters
     ----------
@@ -98,6 +101,16 @@ def bootstrap_storage(config: dict) -> None:
         except OSError as exc:
             # Non-fatal: the daemon will write it on the first polling cycle.
             logger.warning("Could not pre-create readings cache at %s: %s", cache_path, exc)
+
+    # --- Initialise reading_history.db (idempotent) ---
+    rh_path = get_reading_history_db_path(config)
+    try:
+        Path(rh_path).parent.mkdir(parents=True, exist_ok=True)
+        _reading_history.init_db(rh_path)
+    except Exception as exc:
+        # Non-fatal: sparklines/history charts will be empty if the DB is
+        # unavailable, but monitoring and alerting continue to work.
+        logger.warning("Could not initialise reading_history.db at %s: %s", rh_path, exc)
 
     # --- Initialise push_subscriptions.db (idempotent) ---
     push_db_path = str(Path(db_path).parent / "push_subscriptions.db")

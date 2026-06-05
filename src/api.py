@@ -52,7 +52,7 @@ from src.connection_tester import test_librelinkup as _test_librelinkup
 from src.connection_tester import test_telegram as _test_telegram
 from src.crypto import decrypt_value, encrypt_value, is_encrypted
 from src.outputs.webpush import WebPushOutput, get_vapid_public_key
-from src.paths import get_cache_path, get_reading_history_db_path
+from src.paths import get_cache_path, get_db_path, get_reading_history_db_path
 import src.push_subscriptions as _push_subs
 from src import reading_history as _reading_history
 from src.setup_status import is_setup_complete
@@ -248,6 +248,10 @@ _AUTH_EXEMPT_PATHS = {
     "/api/setup",
     "/api/login",
     "/api/setup/status",
+    # Used by the setup wizard *before* any session exists; the endpoint
+    # itself enforces session + CSRF once the system is configured (same
+    # dual-mode gating as /api/setup).
+    "/api/setup/telegram/fetch-chat-id",
     "/api/logout",
     "/login",
     "/setup",
@@ -656,9 +660,9 @@ def get_alert_history(patient_id: Optional[str] = None, hours: int = Query(defau
     Optionally filter by *patient_id*.  Returns an empty list when there are no
     alerts or the database does not exist yet.
     """
-    db_path = _config.get("alert_history_db", "alert_history.db")
-    if not os.path.isabs(db_path):
-        db_path = str(PROJECT_ROOT / db_path)
+    # Resolve through src.paths so the ALERT_HISTORY_DB env override is
+    # honoured, matching where run_once() actually writes the alerts.
+    db_path = get_db_path(_config)
     alerts = get_alerts(db_path, patient_id=patient_id, hours=hours)
     return alerts
 
@@ -855,6 +859,12 @@ def setup_status():
 
 _TELEGRAM_API_URL = "https://api.telegram.org"
 
+# Telegram bot tokens are "<bot_id>:<secret>" (secrets are ~35 chars today;
+# we accept 30+ for headroom). Validating the shape before interpolating the
+# token into the API URL prevents path traversal / request smuggling through
+# crafted "tokens" containing '/', '..' or '@'.
+_BOT_TOKEN_RE = re.compile(r"^\d+:[A-Za-z0-9_-]{30,}$")
+
 
 @app.post("/api/setup/telegram/fetch-chat-id", response_class=JSONResponse)
 async def api_telegram_fetch_chat_id(request: Request):
@@ -868,6 +878,17 @@ async def api_telegram_fetch_chat_id(request: Request):
     The user must have sent at least one message to the bot before calling
     this endpoint so that Telegram has a pending update to return.
     """
+    # Block use as an open Telegram proxy once the system is configured:
+    # require an authenticated session + CSRF, same gating as /api/setup.
+    if is_configured():
+        token = request.cookies.get("session_token")
+        if not session_manager.is_valid(token):
+            raise HTTPException(
+                status_code=403,
+                detail="Ya configurado. Inicia sesión para reconfigurar.",
+            )
+        _validate_csrf(request)
+
     try:
         data = await request.json()
     except Exception:
@@ -876,6 +897,11 @@ async def api_telegram_fetch_chat_id(request: Request):
     bot_token = str(data.get("bot_token", "")).strip()
     if not bot_token:
         raise HTTPException(status_code=422, detail="bot_token es requerido")
+    if not _BOT_TOKEN_RE.match(bot_token):
+        raise HTTPException(
+            status_code=422,
+            detail="Token inválido. Verifica el token del bot.",
+        )
 
     url = f"{_TELEGRAM_API_URL}/bot{bot_token}/getUpdates"
     try:
