@@ -130,5 +130,14 @@
   "setup.step1.dashboard_hint_middle": ". Puede ser diferente a tu contraseña de LibreLinkUp y se almacenará derivada con hash (PBKDF2) en ",
   "setup.step1.dashboard_hint_suffix": ".",
   "setup.step3.hint_prefix": "Elige cómo quieres recibir alertas de glucosa. Puedes omitir este paso y configurarlo más tarde editando ",
-  "setup.step3.hint_suffix": "."
+  "setup.step3.hint_suffix": ".",
+  "silence.days": "días",
+  "silence.no_data_since": "Sin datos desde hace {0}",
+  "silence.mute_24h": "Silenciar 24h",
+  "silence.mute_7d": "Silenciar 7 días",
+  "silence.mute_recovery": "Hasta nuevo sensor",
+  "silence.muted_until": "🔕 Avisos silenciados hasta {0}",
+  "silence.muted_recovery": "🔕 Silenciado hasta que vuelva el sensor",
+  "silence.unmute": "Reactivar avisos",
+  "alert_level.silence": "SENSOR"
 }
