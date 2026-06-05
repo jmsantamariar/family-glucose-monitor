@@ -32,7 +32,7 @@ import stat
 import threading
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -52,7 +52,8 @@ from src.connection_tester import test_librelinkup as _test_librelinkup
 from src.connection_tester import test_telegram as _test_telegram
 from src.crypto import decrypt_value, encrypt_value, is_encrypted
 from src.outputs.webpush import WebPushOutput, get_vapid_public_key
-from src.paths import get_cache_path, get_db_path, get_reading_history_db_path
+from src.paths import get_cache_path, get_db_path, get_reading_history_db_path, get_state_path
+from src.state import load_state, save_state
 import src.push_subscriptions as _push_subs
 from src import reading_history as _reading_history
 from src.setup_status import is_setup_complete
@@ -411,12 +412,49 @@ def _get_color(level: str, trend_alert: str) -> str:
         return "yellow"
     return "green"
 
+def _attach_silence(patients: list) -> None:
+    """Attach per-request sensor-silence info to patient payloads.
+
+    Computed at request time — NOT at cache-reload time — because during an
+    actual silence the cache file stops changing, so anything computed on
+    reload would freeze at the exact moment it matters most.
+    """
+    sil_cfg = alert_engine.get_silence_config(_config)
+    try:
+        state = load_state(get_state_path(_config))
+    except Exception:
+        state = {}
+    now = datetime.now(timezone.utc)
+    for r in patients:
+        minutes = None
+        ts_raw = r.get("timestamp")
+        if ts_raw:
+            try:
+                ts = datetime.fromisoformat(str(ts_raw))
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                minutes = int(alert_engine.silence_minutes(ts, now=now))
+            except (ValueError, TypeError):
+                minutes = None
+        patient_state = state.get(r.get("patient_id", ""), {}) or {}
+        sil_state = patient_state.get("silence", {}) or {}
+        r["silence"] = {
+            "enabled": bool(sil_cfg.get("enabled", True)),
+            "minutes": minutes,
+            "stage": sil_state.get("stage"),
+            "muted_until": sil_state.get("muted_until"),
+            "check_after_minutes": sil_cfg["check_after_minutes"],
+            "ask_after_minutes": sil_cfg["ask_after_minutes"],
+        }
+
+
 @app.get("/api/patients", response_class=JSONResponse)
 def get_patients():
     """Return all patients with their latest readings."""
     _load_and_enrich_cache()
     with _cache_lock:
         patients = list(_readings_cache.values())
+    _attach_silence(patients)
     return {"patients": patients, "count": len(patients)}
 
 @app.get("/api/patients/{patient_id}", response_class=JSONResponse)
@@ -427,7 +465,76 @@ def get_patient(patient_id: str):
         reading = _readings_cache.get(patient_id)
     if not reading:
         raise HTTPException(status_code=404, detail="Patient not found")
+    _attach_silence([reading])
     return reading
+
+
+# ── Sensor-silence mute (caregiver snooze) ───────────────────────────────────
+
+_MUTE_DURATIONS = {"24h": timedelta(hours=24), "7d": timedelta(days=7)}
+
+
+@app.post("/api/patients/{patient_id}/silence/mute", response_class=JSONResponse)
+async def api_silence_mute(patient_id: str, request: Request):
+    """Mute sensor-silence alerts for *patient_id*.
+
+    Body: ``{"duration": "24h" | "7d" | "recovery"}``. ``"recovery"`` mutes
+    until readings resume (the monitor clears it automatically on the first
+    fresh reading — e.g. when a replacement sensor starts up).
+    """
+    _validate_csrf(request)
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON inválido")
+    duration = str(data.get("duration", "")).strip()
+    if duration == "recovery":
+        muted_until = "recovery"
+    elif duration in _MUTE_DURATIONS:
+        muted_until = (datetime.now(timezone.utc) + _MUTE_DURATIONS[duration]).isoformat()
+    else:
+        raise HTTPException(
+            status_code=422, detail="duration debe ser '24h', '7d' o 'recovery'"
+        )
+
+    _load_and_enrich_cache()
+    with _cache_lock:
+        known = patient_id in _readings_cache
+    if not known:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    state_path = get_state_path(_config)
+    state = load_state(state_path)
+    patient_state = dict(state.get(patient_id, {}))
+    silence = dict(patient_state.get("silence", {}))
+    silence["muted_until"] = muted_until
+    patient_state["silence"] = silence
+    state[patient_id] = patient_state
+    save_state(state_path, state)
+    logger.info("Silence alerts muted for %s until %s", patient_id, muted_until)
+    return {"success": True, "patient_id": patient_id, "muted_until": muted_until}
+
+
+@app.post("/api/patients/{patient_id}/silence/unmute", response_class=JSONResponse)
+async def api_silence_unmute(patient_id: str, request: Request):
+    """Remove an active sensor-silence mute for *patient_id*."""
+    _validate_csrf(request)
+    state_path = get_state_path(_config)
+    state = load_state(state_path)
+    patient_state = dict(state.get(patient_id, {}))
+    silence = dict(patient_state.get("silence", {}))
+    silence.pop("muted_until", None)
+    if silence:
+        patient_state["silence"] = silence
+    else:
+        patient_state.pop("silence", None)
+    if patient_state:
+        state[patient_id] = patient_state
+    else:
+        state.pop(patient_id, None)
+    save_state(state_path, state)
+    logger.info("Silence alerts unmuted for %s", patient_id)
+    return {"success": True, "patient_id": patient_id, "muted_until": None}
 
 
 @app.get("/api/patients/{patient_id}/history", response_class=JSONResponse)
