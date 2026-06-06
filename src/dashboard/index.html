@@ -3701,15 +3701,29 @@ if (!isNaN(cg) && cg > 0) {
   }
 
   function _renderChart(canvas, readings) {
-    // Dispose previous chart for this canvas if any
     const pid = canvas.dataset.patientId;
-    if (_haCharts[pid]) {
-      try { _haCharts[pid].destroy(); } catch (e) {}
-      delete _haCharts[pid];
+    const existing = _haCharts[pid];
+    if (!readings || readings.length === 0) {
+      if (existing) {
+        try { existing.destroy(); } catch (e) {}
+        delete _haCharts[pid];
+      }
+      return;
     }
-    if (!readings || readings.length === 0) return;
     const labels = readings.map(r => formatShortTime(r.timestamp));
     const values = readings.map(r => r.glucose_value);
+    // Same canvas → update the live chart in place. Destroying and
+    // recreating on every poll made the whole card flash blank.
+    if (existing && existing.canvas === canvas) {
+      existing.data.labels = labels;
+      existing.data.datasets[0].data = values;
+      existing.update('none');
+      return;
+    }
+    if (existing) {
+      try { existing.destroy(); } catch (e) {}
+      delete _haCharts[pid];
+    }
     _haCharts[pid] = new Chart(canvas.getContext('2d'), {
       type: 'line',
       data: {
@@ -3818,7 +3832,19 @@ if (!isNaN(cg) && cg > 0) {
     }
     section.style.display = '';
     _setRangeBtnActive();
-    // Rebuild grid (cheap — at most a handful of patients)
+    // If the patient set is unchanged, refresh the existing cards in place.
+    // Rebuilding the grid on every poll cycle (fetchPatients, every 30s)
+    // blanked the section for the duration of the history/metrics fetches.
+    const existingCards = Array.from(grid.children);
+    const samePatients = existingCards.length === patients.length &&
+      patients.every((p, i) => existingCards[i].dataset.patientId === String(p.patient_id));
+    if (samePatients) {
+      patients.forEach((p, i) => renderHistoryAnalysisForPatient(existingCards[i], p));
+      return;
+    }
+    // Patient set changed (or first render) — rebuild grid from scratch.
+    Object.values(_haCharts).forEach(c => { try { c.destroy(); } catch (e) {} });
+    Object.keys(_haCharts).forEach(k => delete _haCharts[k]);
     grid.innerHTML = '';
     patients.forEach(p => {
       // Build the card with createElement + textContent/setAttribute rather
