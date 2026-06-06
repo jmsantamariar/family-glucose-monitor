@@ -261,6 +261,11 @@ class TestBindAddressWarning:
         records = self._start_and_capture("0.0.0.0")
         assert any("0.0.0.0" in r.getMessage() for r in records)
 
+    @pytest.mark.parametrize("host", ["::", "[::]"])
+    def test_warns_on_ipv6_all_interfaces_bind(self, host):
+        records = self._start_and_capture(host)
+        assert any("ALL network interfaces" in r.getMessage() for r in records)
+
     def test_no_warning_on_loopback_bind(self):
         records = self._start_and_capture("127.0.0.1")
-        assert not [r for r in records if "0.0.0.0" in r.getMessage()]
+        assert not [r for r in records if "ALL network interfaces" in r.getMessage()]
