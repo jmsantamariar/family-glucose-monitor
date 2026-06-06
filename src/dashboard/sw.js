@@ -15,10 +15,15 @@
 // v3: history-ui (range selector + metrics card + download) merged with
 // senior/modern mode (CSS + bootstrap script + toggle). Both branches
 // bumped to v2 independently; v3 invalidates either stale cache on deploy.
-const CACHE_NAME = "fgm-shell-v3";
+// v4: Chart.js vendored locally — pre-cache it (and i18n.js) and serve
+// same-origin static assets stale-while-revalidate so charts work offline.
+const CACHE_NAME = "fgm-shell-v4";
 
 /** Pages that form the app shell and should work offline. */
-const APP_SHELL = ["/", "/login", "/setup"];
+const APP_SHELL = ["/", "/login", "/setup", "/vendor/chart.umd.min.js", "/i18n/i18n.js"];
+
+/** Same-origin static asset prefixes served cache-first with background refresh. */
+const STATIC_PREFIXES = ["/vendor/", "/i18n/", "/icons/"];
 
 // ── Install: pre-cache the app shell ────────────────────────────────────────
 self.addEventListener("install", (event) => {
@@ -48,14 +53,38 @@ self.addEventListener("activate", (event) => {
 
 // ── Fetch: network-first, fall back to cache ─────────────────────────────────
 self.addEventListener("fetch", (event) => {
-  // Only intercept same-origin GET requests for navigations (HTML pages).
-  // API calls and external resources (Chart.js CDN) are always fetched live.
+  // Intercept same-origin GET requests for navigations (HTML pages) and
+  // static assets. API calls and external resources (fonts CDN) are always
+  // fetched live.
   const { request } = event;
   if (request.method !== "GET") return;
 
   const url = new URL(request.url);
   const isSameOrigin = url.origin === self.location.origin;
   const isNavigation = request.mode === "navigate";
+
+  // Static assets (vendored Chart.js, i18n, icons): cache-first with a
+  // background refresh, so charts keep working offline.
+  if (isSameOrigin && STATIC_PREFIXES.some((p) => url.pathname.startsWith(p))) {
+    event.respondWith(
+      caches.open(CACHE_NAME).then(async (cache) => {
+        const cached = await cache.match(request);
+        const refresh = fetch(request)
+          .then((response) => {
+            if (response.ok) cache.put(request, response.clone());
+            return response;
+          })
+          .catch(() => {
+            // Network down and nothing cached: a real (failed) Response is
+            // better than resolving to undefined, which breaks the fetch.
+            if (cached) return cached;
+            return Response.error();
+          });
+        return cached || refresh;
+      })
+    );
+    return;
+  }
 
   if (!isSameOrigin || !isNavigation) return;
 

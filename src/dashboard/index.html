@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Monitor de Glucosa Familiar</title>
+  <!-- Without an explicit icon the browser requests /favicon.ico → 404 noise. -->
+  <link rel="icon" href="/icons/icon-192.svg" type="image/svg+xml" />
   <!-- Mode + theme bootstrap: applies senior/modern AND light/dark from
        localStorage BEFORE first render to avoid FOUC. Storage keys:
        fgm-mode (senior|modern) and fgm-theme (light|dark) — same keys used by
@@ -90,7 +92,11 @@
       };
     }
   </script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <!-- Chart.js vendored locally (was cdn.jsdelivr.net): without it the charts
+       are dead offline, contradicting the PWA-offline claim. Google Fonts and
+       DSEG7 stay on CDN on purpose — they degrade to system fonts without
+       breaking anything. -->
+  <script src="/vendor/chart.umd.min.js"></script>
   <!-- chartjs-plugin-annotation v3.0.1 (inlined for offline use) -->
   <script>
 /*!
@@ -252,48 +258,14 @@
       --status-err:  #f5a080;
     }
 
-    /* ── Modo SENIOR (elder-friendly) ───────────────────────────
-       Activado vía <html data-mode="senior">. Sobrescribe el modo
-       modern (light/dark auto) con paleta high-contrast clara,
-       tipografía 45% más grande, sin animaciones, bordes 2px,
-       targets táctiles 56px. NO respeta prefers-color-scheme:
-       senior siempre es light por accesibilidad.
-       Mockup origen: docs/images/dual-v2.html
-       ──────────────────────────────────────────────────────── */
-    :root[data-mode="senior"] {
-      --bg:        #f7f3ec;
-      --surface:   #ffffff;
-      --text:      #111111;
-      --subtext:   #4a4036;
-      --border:    #2a2620;
-      --header-bg: #1a4d2e;
-      --header-fg: #ffffff;
-
-      --green-bg:  #e8f5ec;
-      --green-fg:  #1f7a3a;
-      --yellow-bg: #fdf3d4;
-      --yellow-fg: #8a6212;
-      --red-bg:    #fde4e4;
-      --red-fg:    #a01818;
-
-      --status-ok:   #1f7a3a;
-      --status-warn: #8a6212;
-      --status-err:  #a01818;
-
-      --blue-bg:   #dbeaf6;
-      --blue-fg:   #1e5b8c;
-      --orange-bg: #fce7d5;
-      --orange-fg: #7b341e;
-
-      --radius: 6px;
-      --shadow: 0 2px 8px rgba(0,0,0,.18);
-
-      --font-scale: 1.45;
-      --touch-min: 56px;
-      --border-w: 2px;
-      --transition-fast: 0s;
-      --transition-base: 0s;
-    }
+    /* Legacy elder-mode mockup block removed (docs/images/dual-v2.html).
+       It re-declared :root[data-mode="senior"] after the theme-aware
+       blocks above: the palette never applied (the [data-theme] blocks
+       win on specificity) but its --touch-min:56px, --radius:6px and
+       --shadow DID override the intended senior values (64px / 22px),
+       and it was a latent full-palette trap if data-theme were ever
+       unset. The blocks at the top of this section are the canonical
+       senior tokens. */
 
     /* Senior mode: kill all CSS animations for a11y. Honours the "sin
        animaciones" promise in the comment above — transitions are
@@ -1230,6 +1202,14 @@
       position: relative;
       height: 140px;
       width: 100%;
+    }
+    .ha-chart-empty {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--subtext);
+      font-size: .85rem;
     }
     .ha-metrics-card {
       background: var(--surface);
@@ -2168,6 +2148,17 @@
      UI Mode + Theme + Senior mirror + Tweaks
      (No tocamos JS existente — todo vive aquí.)
      ════════════════════════════════════════════════════════════ */
+
+  // Single shared HTML-escaping helper (DOM-based). Defined before the
+  // senior-mirror IIFE so both it and the later dashboard scripts use the
+  // same implementation — there used to be a second, regex-based copy
+  // scoped inside the IIFE.
+  function escapeHtml(text) {
+    const d = document.createElement('div');
+    d.appendChild(document.createTextNode(String(text)));
+    return d.innerHTML;
+  }
+
   (function () {
     // Unified storage keys — same ones used by the head bootstrap and by
     // applyMode() further down. Previously the redesign used app-* keys
@@ -2427,9 +2418,7 @@
       }).join('');
     }
 
-    function escapeHtml(s) { return String(s).replace(/[&<>"']/g, function (c) {
-      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
-    }); }
+    // escapeHtml is the shared top-level helper defined above this IIFE.
     function escapeAttr(s) { return escapeHtml(s); }
 
     // Observe the patients-body for changes — re-render senior whenever modern table updates
@@ -2613,12 +2602,6 @@
       'rising':       i18n.t('trend_alert.rising'),
     };
     return labels[trendAlert] || trendAlert;
-  }
-
-  function escapeHtml(text) {
-    const d = document.createElement('div');
-    d.appendChild(document.createTextNode(String(text)));
-    return d.innerHTML;
   }
 
   // ── Alerts data store (for mini-charts and strip) ────────────────
@@ -3701,15 +3684,42 @@ if (!isNaN(cg) && cg > 0) {
   }
 
   function _renderChart(canvas, readings) {
-    // Dispose previous chart for this canvas if any
     const pid = canvas.dataset.patientId;
-    if (_haCharts[pid]) {
-      try { _haCharts[pid].destroy(); } catch (e) {}
-      delete _haCharts[pid];
+    const existing = _haCharts[pid];
+    const wrap = canvas.parentElement;
+    let emptyEl = wrap ? wrap.querySelector('.ha-chart-empty') : null;
+    if (!readings || readings.length === 0) {
+      if (existing) {
+        try { existing.destroy(); } catch (e) {}
+        delete _haCharts[pid];
+      }
+      // Show an explicit empty state instead of a blank container.
+      canvas.style.display = 'none';
+      if (wrap && !emptyEl) {
+        emptyEl = document.createElement('div');
+        emptyEl.className = 'ha-chart-empty';
+        emptyEl.dataset.i18n = 'history_analysis.chart_empty';
+        wrap.appendChild(emptyEl);
+      }
+      if (emptyEl) emptyEl.textContent = i18n.t('history_analysis.chart_empty');
+      return;
     }
-    if (!readings || readings.length === 0) return;
+    if (emptyEl) emptyEl.remove();
+    canvas.style.display = '';
     const labels = readings.map(r => formatShortTime(r.timestamp));
     const values = readings.map(r => r.glucose_value);
+    // Same canvas → update the live chart in place. Destroying and
+    // recreating on every poll made the whole card flash blank.
+    if (existing && existing.canvas === canvas) {
+      existing.data.labels = labels;
+      existing.data.datasets[0].data = values;
+      existing.update('none');
+      return;
+    }
+    if (existing) {
+      try { existing.destroy(); } catch (e) {}
+      delete _haCharts[pid];
+    }
     _haCharts[pid] = new Chart(canvas.getContext('2d'), {
       type: 'line',
       data: {
@@ -3818,7 +3828,19 @@ if (!isNaN(cg) && cg > 0) {
     }
     section.style.display = '';
     _setRangeBtnActive();
-    // Rebuild grid (cheap — at most a handful of patients)
+    // If the patient set is unchanged, refresh the existing cards in place.
+    // Rebuilding the grid on every poll cycle (fetchPatients, every 30s)
+    // blanked the section for the duration of the history/metrics fetches.
+    const existingCards = Array.from(grid.children);
+    const samePatients = existingCards.length === patients.length &&
+      patients.every((p, i) => existingCards[i].dataset.patientId === String(p.patient_id));
+    if (samePatients) {
+      patients.forEach((p, i) => renderHistoryAnalysisForPatient(existingCards[i], p));
+      return;
+    }
+    // Patient set changed (or first render) — rebuild grid from scratch.
+    Object.values(_haCharts).forEach(c => { try { c.destroy(); } catch (e) {} });
+    Object.keys(_haCharts).forEach(k => delete _haCharts[k]);
     grid.innerHTML = '';
     patients.forEach(p => {
       // Build the card with createElement + textContent/setAttribute rather
