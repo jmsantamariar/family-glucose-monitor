@@ -195,6 +195,8 @@
       'senior.label.trend': 'Tendencia',
       'senior.label.level': 'Nivel',
       'senior.label.last_reading': 'Última lectura',
+      'senior.hero.last_reading': 'Última lectura',
+      'senior.hero.monitored': 'personas monitoreadas',
       // ── Setup wizard ─────────────────────────────────────────────────────
       'setup.page_title': 'Configuración inicial — Monitor de Glucosa Familiar',
       'setup.nav_aria_label': 'Pasos de configuración',
@@ -534,6 +536,8 @@
       'senior.label.trend': 'Trend',
       'senior.label.level': 'Level',
       'senior.label.last_reading': 'Last reading',
+      'senior.hero.last_reading': 'Last reading',
+      'senior.hero.monitored': 'people monitored',
       // ── Setup wizard ─────────────────────────────────────────────────────
       'setup.page_title': 'Initial setup — Family Glucose Monitor',
       'setup.nav_aria_label': 'Setup steps',
