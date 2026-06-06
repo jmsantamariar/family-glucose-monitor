@@ -119,6 +119,55 @@ class TestPushSubscribeEndpoint:
         resp = client.post("/api/push/subscribe", json=self._VALID_PAYLOAD)
         assert resp.status_code == 500
 
+    def _payload_with_endpoint(self, endpoint):
+        return {**self._VALID_PAYLOAD, "endpoint": endpoint}
+
+    def test_http_endpoint_returns_422(self, client):
+        resp = client.post(
+            "/api/push/subscribe",
+            json=self._payload_with_endpoint("http://fcm.googleapis.com/fcm/send/abc"),
+        )
+        assert resp.status_code == 422
+
+    def test_unknown_host_returns_422(self, client):
+        resp = client.post(
+            "/api/push/subscribe",
+            json=self._payload_with_endpoint("https://attacker.example.com/push"),
+        )
+        assert resp.status_code == 422
+
+    def test_host_suffix_spoof_returns_422(self, client):
+        """A host merely *containing* an allowed name must be rejected."""
+        resp = client.post(
+            "/api/push/subscribe",
+            json=self._payload_with_endpoint("https://fcm.googleapis.com.evil.example/send/abc"),
+        )
+        assert resp.status_code == 422
+
+    def test_malformed_url_returns_422(self, client):
+        resp = client.post(
+            "/api/push/subscribe",
+            json=self._payload_with_endpoint("not a url"),
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.parametrize(
+        "endpoint",
+        [
+            "https://fcm.googleapis.com/fcm/send/abc",
+            "https://updates.push.services.mozilla.com/wpush/v2/abc",
+            "https://web.push.apple.com/QAbc",
+            "https://es1.notify.windows.com/w/?token=abc",
+            "https://webpush.push.apple.com/QAbc",
+        ],
+    )
+    def test_known_push_services_return_200(self, client, endpoint):
+        resp = client.post(
+            "/api/push/subscribe",
+            json=self._payload_with_endpoint(endpoint),
+        )
+        assert resp.status_code == 200
+
 
 # ── POST /api/push/unsubscribe ───────────────────────────────────────────────
 
