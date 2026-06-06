@@ -69,6 +69,11 @@ _cache_lock = threading.Lock()
 _config: dict = {}
 _last_mtime: float = 0.0
 
+# Sensor timestamp of the last reading persisted to reading_history, per
+# patient — used to skip re-logging stale (unchanged) readings each poll.
+# In-memory on purpose: worst case after a restart is one duplicate row.
+_last_logged_source_ts: dict = {}
+
 # External polling state — governed by main.py in 'full' mode.
 # Use a dedicated lock to avoid coupling with _cache_lock.
 _external_polling: bool = False
@@ -391,6 +396,10 @@ def _load_and_enrich_cache() -> None:
     logger.debug("Loaded %d readings from cache file", len(new_cache))
 
     # Persist readings to history DB for sparkline time-series (best-effort).
+    # Deduplicated by the sensor's own timestamp: when a patient's reading is
+    # stale (sensor silent, phone away), every poll cycle re-delivers the same
+    # reading — logging it each time produced fake flat segments in the charts
+    # and inflated n_readings/TIR/CV in the history metrics.
     if new_cache:
         try:
             rh_path = get_reading_history_db_path(_config)
@@ -399,8 +408,14 @@ def _load_and_enrich_cache() -> None:
                 pid = r.get("patient_id", "")
                 pname = r.get("patient_name", pid)
                 gval = r.get("glucose_value") or r.get("value", 0)
-                if pid and gval:
-                    _reading_history.log_reading(rh_path, pid, pname, int(gval))
+                if not pid or not gval:
+                    continue
+                source_ts = str(r.get("timestamp") or "")
+                if source_ts and _last_logged_source_ts.get(pid) == source_ts:
+                    continue  # same sensor reading as the last one we logged
+                _reading_history.log_reading(rh_path, pid, pname, int(gval))
+                if source_ts:
+                    _last_logged_source_ts[pid] = source_ts
         except Exception as exc:
             logger.warning("Failed to persist readings to history DB: %s", exc)
 
