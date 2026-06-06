@@ -23,6 +23,7 @@ Call :func:`init_db` once at startup with the database file path, then use
 import logging
 import time
 from typing import Optional
+from urllib.parse import urlparse
 
 from src.db import connect_db
 
@@ -30,6 +31,31 @@ logger = logging.getLogger(__name__)
 
 # Module-level path; set by init_db.
 _db_path: Optional[str] = None
+
+# Hosts of the browser push services we deliver to. A subscription endpoint
+# outside this list is either malformed or an attempt to point the server's
+# outgoing webpush POSTs at an arbitrary host (low-impact SSRF).
+ALLOWED_PUSH_HOSTS = (
+    "fcm.googleapis.com",
+    "updates.push.services.mozilla.com",
+    "web.push.apple.com",
+)
+ALLOWED_PUSH_HOST_SUFFIXES = (
+    ".notify.windows.com",
+    ".push.apple.com",
+)
+
+
+def is_allowed_push_endpoint(url: str) -> bool:
+    """Return True if *url* is an https endpoint of a known push service."""
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme != "https" or not parsed.hostname:
+        return False
+    host = parsed.hostname.lower()
+    return host in ALLOWED_PUSH_HOSTS or host.endswith(ALLOWED_PUSH_HOST_SUFFIXES)
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS push_subscriptions (
