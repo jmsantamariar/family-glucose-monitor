@@ -851,9 +851,10 @@ _MIME_TYPES: dict[str, str] = {
 # Paths are pre-computed at module load time so no user-provided value ever
 # participates in path construction — the user input is only used as a dict key.
 _ALLOWED_I18N_FILES: dict[str, tuple[Path, str]] = {
+    # i18n.js embeds both locale dictionaries and is the single source of
+    # truth — the old es.json/en.json mirrors drifted out of sync (141 vs
+    # ~330 keys) and were never loaded at runtime.
     "i18n.js": (_DASHBOARD_DIR / "i18n" / "i18n.js", "application/javascript"),
-    "es.json":  (_DASHBOARD_DIR / "i18n" / "es.json",  "application/json"),
-    "en.json":  (_DASHBOARD_DIR / "i18n" / "en.json",  "application/json"),
 }
 
 # Exact allowlist of vendored third-party assets served via /vendor/{filename}.
