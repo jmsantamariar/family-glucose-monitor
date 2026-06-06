@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Monitor de Glucosa Familiar</title>
+  <!-- Without an explicit icon the browser requests /favicon.ico → 404 noise. -->
+  <link rel="icon" href="/icons/icon-192.svg" type="image/svg+xml" />
   <!-- Mode + theme bootstrap: applies senior/modern AND light/dark from
        localStorage BEFORE first render to avoid FOUC. Storage keys:
        fgm-mode (senior|modern) and fgm-theme (light|dark) — same keys used by
@@ -90,7 +92,11 @@
       };
     }
   </script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <!-- Chart.js vendored locally (was cdn.jsdelivr.net): without it the charts
+       are dead offline, contradicting the PWA-offline claim. Google Fonts and
+       DSEG7 stay on CDN on purpose — they degrade to system fonts without
+       breaking anything. -->
+  <script src="/vendor/chart.umd.min.js"></script>
   <!-- chartjs-plugin-annotation v3.0.1 (inlined for offline use) -->
   <script>
 /*!

@@ -486,6 +486,29 @@ class TestPWAIcons:
         assert resp.status_code in (400, 404)
 
 
+class TestVendorAssets:
+    def test_chartjs_returns_200(self, client):
+        resp = client.get("/vendor/chart.umd.min.js")
+        assert resp.status_code == 200
+        assert "javascript" in resp.headers["content-type"]
+
+    def test_unknown_vendor_file_returns_404(self, client):
+        resp = client.get("/vendor/evil.js")
+        assert resp.status_code == 404
+
+    def test_vendor_is_auth_exempt_prefix(self):
+        import src.api as api_module
+
+        assert "/vendor/" in api_module._AUTH_EXEMPT_PREFIXES
+
+    def test_index_references_local_chartjs_not_cdn(self):
+        from src.api import _DASHBOARD_DIR
+
+        html = (_DASHBOARD_DIR / "index.html").read_text(encoding="utf-8")
+        assert '/vendor/chart.umd.min.js' in html
+        assert "cdn.jsdelivr.net/npm/chart.js" not in html
+
+
 class TestPWAHtmlTags:
     """Verify that the HTML pages include PWA meta tags."""
 
