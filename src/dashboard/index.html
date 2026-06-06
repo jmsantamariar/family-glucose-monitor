@@ -2142,6 +2142,17 @@
      UI Mode + Theme + Senior mirror + Tweaks
      (No tocamos JS existente — todo vive aquí.)
      ════════════════════════════════════════════════════════════ */
+
+  // Single shared HTML-escaping helper (DOM-based). Defined before the
+  // senior-mirror IIFE so both it and the later dashboard scripts use the
+  // same implementation — there used to be a second, regex-based copy
+  // scoped inside the IIFE.
+  function escapeHtml(text) {
+    const d = document.createElement('div');
+    d.appendChild(document.createTextNode(String(text)));
+    return d.innerHTML;
+  }
+
   (function () {
     // Unified storage keys — same ones used by the head bootstrap and by
     // applyMode() further down. Previously the redesign used app-* keys
@@ -2401,9 +2412,7 @@
       }).join('');
     }
 
-    function escapeHtml(s) { return String(s).replace(/[&<>"']/g, function (c) {
-      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
-    }); }
+    // escapeHtml is the shared top-level helper defined above this IIFE.
     function escapeAttr(s) { return escapeHtml(s); }
 
     // Observe the patients-body for changes — re-render senior whenever modern table updates
@@ -2587,12 +2596,6 @@
       'rising':       i18n.t('trend_alert.rising'),
     };
     return labels[trendAlert] || trendAlert;
-  }
-
-  function escapeHtml(text) {
-    const d = document.createElement('div');
-    d.appendChild(document.createTextNode(String(text)));
-    return d.innerHTML;
   }
 
   // ── Alerts data store (for mini-charts and strip) ────────────────
