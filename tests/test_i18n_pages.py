@@ -19,6 +19,25 @@ def client():
     return TestClient(app)
 
 
+def _i18n_locale_keys(locale):
+    """Return the set of keys defined for *locale* inside i18n.js.
+
+    i18n.js is the single source of truth for translations (the old
+    es.json/en.json mirrors were removed). The TRANSLATIONS literal holds
+    the ``es`` dict first and the ``en`` dict second; split on the ``en:``
+    boundary to scope the key regex per locale.
+    """
+    from pathlib import Path
+
+    js = (
+        Path(__file__).parent.parent / "src" / "dashboard" / "i18n" / "i18n.js"
+    ).read_text(encoding="utf-8")
+    parts = re.split(r"\n\s*en:\s*\{", js, maxsplit=1)
+    assert len(parts) == 2, "could not locate the en: dict inside i18n.js"
+    part = parts[0] if locale == "es" else parts[1]
+    return set(re.findall(r"'([A-Za-z0-9_.]+)'\s*:", part))
+
+
 # ── Language selector presence ────────────────────────────────────────────────
 
 class TestLangSelectorPresence:
@@ -397,37 +416,25 @@ class TestHistoryAnalysisUI:
         resp = client.get("/")
         assert "renderHistoryAnalysis(data.patients)" in resp.text
 
-    # i18n keys present in both locales
+    # i18n keys present in both locales (i18n.js is the single source of truth)
 
-    def test_history_analysis_keys_in_es_json(self, client):
-        resp = client.get("/i18n/es.json")
-        for key in (
-            "history_analysis.title",
-            "history_analysis.range_3h", "history_analysis.range_24h",
-            "history_analysis.range_14d", "history_analysis.range_90d",
-            "history_analysis.metric.tir", "history_analysis.metric.gmi",
-            "history_analysis.metric.cv", "history_analysis.metric.n",
-            "history_analysis.partial_badge",
-            "history_analysis.show_detail", "history_analysis.hide_detail",
-            "history_analysis.metrics_empty",
-            "history_analysis.download_csv", "history_analysis.download_json",
-        ):
-            assert key in resp.text, f"missing es key {key!r}"
+    _HISTORY_ANALYSIS_KEYS = (
+        "history_analysis.title",
+        "history_analysis.range_3h", "history_analysis.range_24h",
+        "history_analysis.range_14d", "history_analysis.range_90d",
+        "history_analysis.metric.tir", "history_analysis.metric.gmi",
+        "history_analysis.metric.cv", "history_analysis.metric.n",
+        "history_analysis.partial_badge",
+        "history_analysis.show_detail", "history_analysis.hide_detail",
+        "history_analysis.metrics_empty", "history_analysis.chart_empty",
+        "history_analysis.download_csv", "history_analysis.download_json",
+    )
 
-    def test_history_analysis_keys_in_en_json(self, client):
-        resp = client.get("/i18n/en.json")
-        for key in (
-            "history_analysis.title",
-            "history_analysis.range_3h", "history_analysis.range_24h",
-            "history_analysis.range_14d", "history_analysis.range_90d",
-            "history_analysis.metric.tir", "history_analysis.metric.gmi",
-            "history_analysis.metric.cv", "history_analysis.metric.n",
-            "history_analysis.partial_badge",
-            "history_analysis.show_detail", "history_analysis.hide_detail",
-            "history_analysis.metrics_empty",
-            "history_analysis.download_csv", "history_analysis.download_json",
-        ):
-            assert key in resp.text, f"missing en key {key!r}"
+    @pytest.mark.parametrize("locale", ["es", "en"])
+    def test_history_analysis_keys_in_locale(self, locale):
+        keys = _i18n_locale_keys(locale)
+        missing = [k for k in self._HISTORY_ANALYSIS_KEYS if k not in keys]
+        assert not missing, f"missing {locale} keys: {missing}"
 
 
 # ── Senior mode toggle (elder-friendly accessibility) ────────────────────────
@@ -505,34 +512,33 @@ class TestSeniorModeToggle:
 
     # i18n keys for toggle present in both locales
 
-    def test_mode_toggle_keys_in_es_json(self, client):
-        resp = client.get("/i18n/es.json")
-        assert resp.status_code == 200
-        assert "header.mode_toggle_btn" in resp.text
-        assert "header.mode_toggle_to_senior" in resp.text
-        assert "header.mode_toggle_to_modern" in resp.text
-        assert "header.mode_toggle_aria_label" in resp.text
-
-    def test_mode_toggle_keys_in_en_json(self, client):
-        resp = client.get("/i18n/en.json")
-        assert resp.status_code == 200
-        assert "header.mode_toggle_btn" in resp.text
-        assert "header.mode_toggle_to_senior" in resp.text
-        assert "header.mode_toggle_to_modern" in resp.text
-        assert "header.mode_toggle_aria_label" in resp.text
+    @pytest.mark.parametrize("locale", ["es", "en"])
+    def test_mode_toggle_keys_in_locale(self, locale):
+        keys = _i18n_locale_keys(locale)
+        for key in (
+            "header.mode_toggle_btn",
+            "header.mode_toggle_to_senior",
+            "header.mode_toggle_to_modern",
+            "header.mode_toggle_aria_label",
+        ):
+            assert key in keys, f"missing {locale} key {key!r}"
 
     def test_mode_toggle_keys_in_runtime_i18n_js(self, client):
-        """The runtime translator embeds its own dictionary in i18n.js.
-        Tests against es.json/en.json (above) give false security if these
-        keys are missing here — applyTranslations() would render the raw
-        key string as visible text. Covers Copilot review feedback from
-        the elder-mode PR."""
+        """The served i18n.js must carry the toggle keys — a missing key
+        makes applyTranslations() render the raw key string as visible
+        text. Covers Copilot review feedback from the elder-mode PR."""
         resp = client.get("/i18n/i18n.js")
         assert resp.status_code == 200
         assert "header.mode_toggle_btn" in resp.text
         assert "header.mode_toggle_to_senior" in resp.text
         assert "header.mode_toggle_to_modern" in resp.text
         assert "header.mode_toggle_aria_label" in resp.text
+
+    @pytest.mark.parametrize("filename", ["es.json", "en.json"])
+    def test_removed_json_locales_are_not_served(self, client, filename):
+        """The JSON locale mirrors were removed; the route must 404 them."""
+        resp = client.get(f"/i18n/{filename}")
+        assert resp.status_code == 404
 
     # Heuristic default uses both prefers-reduced-motion and prefers-color-scheme
 
@@ -585,3 +591,31 @@ class TestI18nKeysExist:
         defined = self._i18n_js_keys()
         missing = sorted(referenced - defined)
         assert not missing, f"{page} references undefined i18n keys: {missing}"
+
+    def test_senior_keys_exist_in_both_locales(self):
+        """The senior mirror builds its UI via i18n.t('senior.*') — a key
+        missing from either locale renders the raw key (or falls back to
+        Spanish in EN). Enforce es↔en parity for the whole senior.* set."""
+        es = {k for k in _i18n_locale_keys("es") if k.startswith("senior.")}
+        en = {k for k in _i18n_locale_keys("en") if k.startswith("senior.")}
+        assert es, "no senior.* keys found in es locale"
+        assert es == en, (
+            f"senior.* parity broken — only in es: {sorted(es - en)}; "
+            f"only in en: {sorted(en - es)}"
+        )
+
+    def test_senior_keys_referenced_in_index_exist(self):
+        """Literal i18n.t('senior.…') calls in index.html must resolve."""
+        from pathlib import Path
+
+        html = (
+            Path(__file__).parent.parent / "src" / "dashboard" / "index.html"
+        ).read_text(encoding="utf-8")
+        referenced = set(
+            re.findall(r"i18n\.t\('(senior\.[A-Za-z0-9_.]+)'", html)
+            + re.findall(r'i18n\.t\("(senior\.[A-Za-z0-9_.]+)"', html)
+        )
+        assert referenced, "expected literal senior.* i18n.t() calls in index.html"
+        for locale in ("es", "en"):
+            missing = sorted(referenced - _i18n_locale_keys(locale))
+            assert not missing, f"{locale} missing senior keys: {missing}"
