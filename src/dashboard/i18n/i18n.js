@@ -5,7 +5,10 @@
  * - Exposes window.i18n = { t, setLocale, getLocale, applyTranslations }.
  * - Dispatches "fgm:localechange" on window when the locale is switched.
  * No external dependencies.  Both locales are embedded to avoid async loading.
- * The canonical source files are src/dashboard/i18n/es.json and en.json.
+ * THIS FILE IS THE SINGLE SOURCE OF TRUTH for translations. The old
+ * es.json/en.json mirrors were never loaded at runtime and drifted out of
+ * sync, so they were removed — add new keys HERE, in BOTH locale dicts
+ * (tests/test_i18n_pages.py enforces parity for UI-critical keys).
  * ──────────────────────────────────────────────────────────────────────────── */
 (function () {
   'use strict';
