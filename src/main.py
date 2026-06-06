@@ -281,6 +281,12 @@ def _start_dashboard(config: dict) -> None:
     dash_cfg = config.get("dashboard", {})
     host = dash_cfg.get("host", "0.0.0.0")
     port = int(dash_cfg.get("port", 8080))
+    if host == "0.0.0.0":
+        logger.warning(
+            "Dashboard binding to 0.0.0.0 — reachable on ALL network interfaces. "
+            "Make sure a firewall, Tailscale, or reverse proxy restricts access, "
+            "or set dashboard.host to 127.0.0.1 in config.yaml."
+        )
     logger.info("Starting dashboard on http://%s:%d", host, port)
     uvicorn.run("src.api:app", host=host, port=port, log_level="info")
 
