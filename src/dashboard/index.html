@@ -1231,6 +1231,14 @@
       height: 140px;
       width: 100%;
     }
+    .ha-chart-empty {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--subtext);
+      font-size: .85rem;
+    }
     .ha-metrics-card {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -3703,13 +3711,26 @@ if (!isNaN(cg) && cg > 0) {
   function _renderChart(canvas, readings) {
     const pid = canvas.dataset.patientId;
     const existing = _haCharts[pid];
+    const wrap = canvas.parentElement;
+    let emptyEl = wrap ? wrap.querySelector('.ha-chart-empty') : null;
     if (!readings || readings.length === 0) {
       if (existing) {
         try { existing.destroy(); } catch (e) {}
         delete _haCharts[pid];
       }
+      // Show an explicit empty state instead of a blank container.
+      canvas.style.display = 'none';
+      if (wrap && !emptyEl) {
+        emptyEl = document.createElement('div');
+        emptyEl.className = 'ha-chart-empty';
+        emptyEl.dataset.i18n = 'history_analysis.chart_empty';
+        wrap.appendChild(emptyEl);
+      }
+      if (emptyEl) emptyEl.textContent = i18n.t('history_analysis.chart_empty');
       return;
     }
+    if (emptyEl) emptyEl.remove();
+    canvas.style.display = '';
     const labels = readings.map(r => formatShortTime(r.timestamp));
     const values = readings.map(r => r.glucose_value);
     // Same canvas → update the live chart in place. Destroying and
