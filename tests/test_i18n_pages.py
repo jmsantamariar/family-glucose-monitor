@@ -32,8 +32,9 @@ def _i18n_locale_keys(locale):
     js = (
         Path(__file__).parent.parent / "src" / "dashboard" / "i18n" / "i18n.js"
     ).read_text(encoding="utf-8")
-    es_part, en_part = js.split("\n    en: {", 1)
-    part = es_part if locale == "es" else en_part
+    parts = re.split(r"\n\s*en:\s*\{", js, maxsplit=1)
+    assert len(parts) == 2, "could not locate the en: dict inside i18n.js"
+    part = parts[0] if locale == "es" else parts[1]
     return set(re.findall(r"'([A-Za-z0-9_.]+)'\s*:", part))
 
 
@@ -610,7 +611,10 @@ class TestI18nKeysExist:
         html = (
             Path(__file__).parent.parent / "src" / "dashboard" / "index.html"
         ).read_text(encoding="utf-8")
-        referenced = set(re.findall(r"i18n\.t\('(senior\.[A-Za-z0-9_.]+)'", html))
+        referenced = set(
+            re.findall(r"i18n\.t\('(senior\.[A-Za-z0-9_.]+)'", html)
+            + re.findall(r'i18n\.t\("(senior\.[A-Za-z0-9_.]+)"', html)
+        )
         assert referenced, "expected literal senior.* i18n.t() calls in index.html"
         for locale in ("es", "en"):
             missing = sorted(referenced - _i18n_locale_keys(locale))
