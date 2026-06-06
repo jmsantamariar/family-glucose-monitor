@@ -74,7 +74,12 @@ self.addEventListener("fetch", (event) => {
             if (response.ok) cache.put(request, response.clone());
             return response;
           })
-          .catch(() => cached);
+          .catch(() => {
+            // Network down and nothing cached: a real (failed) Response is
+            // better than resolving to undefined, which breaks the fetch.
+            if (cached) return cached;
+            return Response.error();
+          });
         return cached || refresh;
       })
     );

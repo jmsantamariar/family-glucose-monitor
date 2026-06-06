@@ -23,7 +23,8 @@ def cache_env(tmp_path, monkeypatch):
     monkeypatch.setattr(api_module, "_config", config)
     monkeypatch.setattr(api_module, "_last_mtime", 0.0)
     monkeypatch.setattr(api_module, "_last_logged_source_ts", {})
-    api_module._readings_cache.clear()
+    with api_module._cache_lock:
+        api_module._readings_cache.clear()
 
     log_reading = MagicMock()
     monkeypatch.setattr(

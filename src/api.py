@@ -72,7 +72,10 @@ _last_mtime: float = 0.0
 # Sensor timestamp of the last reading persisted to reading_history, per
 # patient — used to skip re-logging stale (unchanged) readings each poll.
 # In-memory on purpose: worst case after a restart is one duplicate row.
+# Guarded by its own lock so concurrent cache reloads can't both pass the
+# dedupe check and double-log the same reading.
 _last_logged_source_ts: dict = {}
+_last_logged_source_ts_lock = threading.Lock()
 
 # External polling state — governed by main.py in 'full' mode.
 # Use a dedicated lock to avoid coupling with _cache_lock.
@@ -412,11 +415,12 @@ def _load_and_enrich_cache() -> None:
                 if not pid or not gval:
                     continue
                 source_ts = str(r.get("timestamp") or "")
-                if source_ts and _last_logged_source_ts.get(pid) == source_ts:
-                    continue  # same sensor reading as the last one we logged
-                _reading_history.log_reading(rh_path, pid, pname, int(gval))
-                if source_ts:
-                    _last_logged_source_ts[pid] = source_ts
+                with _last_logged_source_ts_lock:
+                    if source_ts and _last_logged_source_ts.get(pid) == source_ts:
+                        continue  # same sensor reading as the last one we logged
+                    _reading_history.log_reading(rh_path, pid, pname, int(gval))
+                    if source_ts:
+                        _last_logged_source_ts[pid] = source_ts
         except Exception as exc:
             logger.warning("Failed to persist readings to history DB: %s", exc)
 
