@@ -1951,11 +1951,11 @@
       <div class="senior-hero-meta">
         <div class="senior-hero-meta-item">
           <span class="ico" aria-hidden="true">🕒</span>
-          <span>Última lectura&nbsp;<span class="val" id="senior-last-update">—</span></span>
+          <span><span data-i18n="senior.hero.last_reading">Última lectura</span>&nbsp;<span class="val" id="senior-last-update">—</span></span>
         </div>
         <div class="senior-hero-meta-item">
           <span class="ico" aria-hidden="true">👥</span>
-          <span><span class="val" id="senior-patient-count">—</span>&nbsp;personas monitoreadas</span>
+          <span><span class="val" id="senior-patient-count">—</span>&nbsp;<span data-i18n="senior.hero.monitored">personas monitoreadas</span></span>
         </div>
       </div>
     </div>
@@ -2246,24 +2246,28 @@
     setTweaksOpen(false);
 
     // ── Senior view mirror via MutationObserver ───────────────
-    var EYEBROW_TEXTS = {
-      normal:   'Todo en orden',
-      warning:  'Atención',
-      critical: 'Alerta',
-      low:      'Glucosa baja'
-    };
-    // Patient names are escaped at call-time to prevent DOM XSS via innerHTML
-    // (escapeHtml is defined later in this script; HEADLINES values are
-    // functions, so the reference resolves when HEADLINES[worst](...) is
-    // invoked, not at define-time).
-    var HEADLINES = {
-      normal:   function (names)  { return names.length === 1
-                  ? '<strong>' + escapeHtml(names[0]) + '</strong> está bien.'
-                  : 'Toda la familia está <strong>en rango</strong>.'; },
-      warning:  function (names)  { return '<strong>' + names.map(escapeHtml).join(', ') + '</strong> necesita atención.'; },
-      critical: function (names)  { return '<strong>' + names.map(escapeHtml).join(', ') + '</strong> requiere ayuda ahora.'; },
-      low:      function (names)  { return 'Glucosa baja en <strong>' + names.map(escapeHtml).join(', ') + '</strong>.'; }
-    };
+    // All user-facing strings resolve through i18n.t() at render time so the
+    // senior view retranslates on locale change (it used to be hardcoded
+    // Spanish, leaving a mixed-language page in EN).
+    function eyebrowText(state) {
+      var key = 'senior.eyebrow.' + state;
+      var txt = i18n.t(key);
+      return txt === key ? i18n.t('senior.eyebrow.fallback') : txt;
+    }
+    // Patient names are escaped at call-time to prevent DOM XSS via innerHTML;
+    // the i18n templates contain only our own <strong> markup and a {0} slot
+    // that receives the pre-escaped name list.
+    function headlineHtml(state, names) {
+      var strongNames = '<strong>' + names.map(escapeHtml).join(', ') + '</strong>';
+      if (state === 'normal') {
+        return names.length === 1
+          ? i18n.t('senior.headline.normal_single', strongNames)
+          : i18n.t('senior.headline.normal_all');
+      }
+      var key = 'senior.headline.' + state;
+      var txt = i18n.t(key, strongNames);
+      return txt === key ? i18n.t('senior.headline.normal_all') : txt;
+    }
 
     function classifyState(rowClassList) {
       // Priority: danger > danger-low > warning > trending-up > trending-down > normal
@@ -2276,12 +2280,9 @@
     }
     function stateRank(s) { return ({critical:4, low:3, warning:2, normal:1})[s] || 0; }
     function stateLabel(s) {
-      return ({
-        critical: 'ALERTA ALTA',
-        low:      'BAJA',
-        warning:  'ATENCIÓN',
-        normal:   'NORMAL'
-      })[s] || s.toUpperCase();
+      var key = 'senior.state.' + s;
+      var txt = i18n.t(key);
+      return txt === key ? s.toUpperCase() : txt;
     }
 
     function initials(name) {
@@ -2294,18 +2295,17 @@
     }
 
     function trendVerbal(arrowText, trendAlertText) {
-      // arrowText is something like "↑" or "→"; map to verbal
-      if (!arrowText && !trendAlertText) return { arrow: '→', label: 'Estable' };
+      // arrowText is something like "↑" or "→"; map to a verbal i18n key
+      if (!arrowText && !trendAlertText) return { arrow: '→', label: i18n.t('senior.trend.stable') };
       var t = (arrowText || '').trim();
-      var verbal = 'Estable';
-      if (/↑↑|⇈|⤊/.test(t)) verbal = 'Subiendo rápido';
-      else if (/↑/.test(t))  verbal = 'Subiendo';
-      else if (/↗/.test(t))  verbal = 'Subiendo lento';
-      else if (/↓↓|⇊/.test(t)) verbal = 'Bajando rápido';
-      else if (/↓/.test(t))  verbal = 'Bajando';
-      else if (/↘/.test(t))  verbal = 'Bajando lento';
-      else if (/→|↔/.test(t)) verbal = 'Estable';
-      return { arrow: t || '→', label: verbal };
+      var key = 'senior.trend.stable';
+      if (/↑↑|⇈|⤊/.test(t)) key = 'senior.trend.rising_fast';
+      else if (/↑/.test(t))  key = 'senior.trend.rising';
+      else if (/↗/.test(t))  key = 'senior.trend.rising_slow';
+      else if (/↓↓|⇊/.test(t)) key = 'senior.trend.falling_fast';
+      else if (/↓/.test(t))  key = 'senior.trend.falling';
+      else if (/↘/.test(t))  key = 'senior.trend.falling_slow';
+      return { arrow: t || '→', label: i18n.t(key) };
     }
 
     function mirrorToSenior() {
@@ -2326,10 +2326,10 @@
         grid.innerHTML = ''
           + '<div class="senior-empty">'
           + '<span class="ico" aria-hidden="true">📭</span>'
-          + '<p>Aún no hay lecturas. Esperando datos del medidor…</p>'
+          + '<p>' + escapeHtml(i18n.t('senior.empty.no_readings')) + '</p>'
           + '</div>';
-        headline.innerHTML = 'Esperando lecturas del medidor…';
-        eyebrow.textContent = 'Sin datos';
+        headline.innerHTML = escapeHtml(i18n.t('senior.empty.waiting'));
+        eyebrow.textContent = i18n.t('senior.empty.no_data');
         hero.setAttribute('data-state', 'normal');
         if (patientCount) patientCount.textContent = '0';
         return;
@@ -2363,11 +2363,11 @@
         return stateRank(p.state) > stateRank(acc) ? p.state : acc;
       }, 'normal');
       hero.setAttribute('data-state', worst === 'normal' ? 'normal' : (worst === 'low' || worst === 'warning' ? 'warning' : 'critical'));
-      eyebrow.textContent = EYEBROW_TEXTS[worst] || 'Estado de la familia';
+      eyebrow.textContent = eyebrowText(worst);
       var affectedNames = patients.filter(function (p) { return p.state === worst; }).map(function (p) { return p.name; });
       var allNames = patients.map(function (p) { return p.name; });
       var subject = worst === 'normal' ? allNames : affectedNames;
-      headline.innerHTML = (HEADLINES[worst] || HEADLINES.normal)(subject);
+      headline.innerHTML = headlineHtml(worst, subject);
       if (patientCount) patientCount.textContent = String(patients.length);
 
       // Last update = most recent time across patients
@@ -2400,15 +2400,15 @@
           +   '</div>'
           +   '<div class="senior-trend">'
           +     '<span class="senior-trend-arrow" aria-hidden="true">' + escapeHtml(t.arrow) + '</span>'
-          +     '<div class="senior-trend-text"><span class="label">Tendencia</span>' + escapeHtml(t.label) + '</div>'
+          +     '<div class="senior-trend-text"><span class="label">' + escapeHtml(i18n.t('senior.label.trend')) + '</span>' + escapeHtml(t.label) + '</div>'
           +   '</div>'
           +   '<div class="senior-patient-meta">'
           +     '<div class="senior-meta-item">'
-          +       '<span class="senior-meta-label">Nivel</span>'
+          +       '<span class="senior-meta-label">' + escapeHtml(i18n.t('senior.label.level')) + '</span>'
           +       '<span class="senior-meta-value">' + escapeHtml(p.level || '—') + '</span>'
           +     '</div>'
           +     '<div class="senior-meta-item">'
-          +       '<span class="senior-meta-label">Última lectura</span>'
+          +       '<span class="senior-meta-label">' + escapeHtml(i18n.t('senior.label.last_reading')) + '</span>'
           +       (p.silence
                     ? '<span class="senior-meta-value silenced">📡 ' + escapeHtml(p.silenceHuman || p.time || '—') + (p.silence === 'muted' ? ' 🔕' : '') + '</span>'
                     : '<span class="senior-meta-value">' + escapeHtml(p.time || '—') + '</span>')
@@ -2435,6 +2435,9 @@
         moLU.observe(lu, { childList: true, characterData: true, subtree: true });
       }
     }
+    // Retranslate the senior mirror immediately on locale change (don't rely
+    // on the table MutationObserver firing as a side effect of updateTable).
+    window.addEventListener('fgm:localechange', function () { mirrorToSenior(); });
     // Initial render attempt (data may already be present)
     mirrorToSenior();
   })();
