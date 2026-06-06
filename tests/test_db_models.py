@@ -2,7 +2,8 @@
 
 These tests verify that:
   - The ORM models can be imported and instantiated.
-  - Base.metadata creates the expected tables on a fresh in-memory SQLite DB.
+  - Base.metadata.create_all() creates the expected tables on a fresh
+    in-memory SQLite DB.
   - The model attributes map correctly to column names.
 
 The ORM is actively used by the application:
