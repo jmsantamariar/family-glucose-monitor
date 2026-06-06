@@ -224,6 +224,37 @@ class TestPushUnsubscribeEndpoint:
 
 
 # ---------------------------------------------------------------------------
+# send_alert — legacy/tampered endpoints outside the allowlist are never
+# POSTed to and get pruned (Copilot review on PR #97: the subscribe-time
+# allowlist alone does not cover rows persisted before the hardening).
+# ---------------------------------------------------------------------------
+
+class TestSendAlertEndpointFiltering:
+    _GOOD = "https://fcm.googleapis.com/fcm/send/good"
+    _BAD = "https://attacker.example.com/exfil"
+
+    def _output(self):
+        from src.outputs.webpush import WebPushOutput
+
+        return WebPushOutput(vapid_subject="mailto:test@example.com", icon_url="")
+
+    def test_disallowed_endpoint_is_not_posted_and_pruned(self):
+        push_subs_module.save_subscription(self._BAD, "p", "a")
+        push_subs_module.save_subscription(self._GOOD, "p", "a")
+        with (
+            patch("src.outputs.webpush.webpush") as mock_webpush,
+            patch("src.outputs.webpush._load_or_generate_vapid", return_value=("key", "pub")),
+        ):
+            self._output().send_alert("msg", 100, "low")
+        posted = [c.kwargs["subscription_info"]["endpoint"] for c in mock_webpush.call_args_list]
+        assert self._BAD not in posted
+        assert self._GOOD in posted
+        remaining = [s["endpoint"] for s in push_subs_module.get_all_subscriptions()]
+        assert self._BAD not in remaining
+        assert self._GOOD in remaining
+
+
+# ---------------------------------------------------------------------------
 # Notification titles for trend-only levels
 # ---------------------------------------------------------------------------
 

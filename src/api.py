@@ -36,7 +36,6 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal, Optional
-from urllib.parse import urlparse as _urlparse
 
 import requests as _requests
 import yaml
@@ -907,32 +906,6 @@ def push_vapid_public_key():
     return {"publicKey": key}
 
 
-# Hosts of the browser push services we deliver to. A subscription endpoint
-# outside this list is either malformed or an attempt to point the server's
-# outgoing webpush POSTs at an arbitrary host (low-impact SSRF).
-_ALLOWED_PUSH_HOSTS = (
-    "fcm.googleapis.com",
-    "updates.push.services.mozilla.com",
-    "web.push.apple.com",
-)
-_ALLOWED_PUSH_HOST_SUFFIXES = (
-    ".notify.windows.com",
-    ".push.apple.com",
-)
-
-
-def _is_allowed_push_endpoint(url: str) -> bool:
-    """Return True if *url* is an https endpoint of a known push service."""
-    try:
-        parsed = _urlparse(url)
-    except ValueError:
-        return False
-    if parsed.scheme != "https" or not parsed.hostname:
-        return False
-    host = parsed.hostname.lower()
-    return host in _ALLOWED_PUSH_HOSTS or host.endswith(_ALLOWED_PUSH_HOST_SUFFIXES)
-
-
 @app.post("/api/push/subscribe", response_class=JSONResponse)
 async def push_subscribe(request: Request):
     """Save a browser push subscription from an authenticated user.
@@ -964,7 +937,7 @@ async def push_subscribe(request: Request):
             detail="endpoint, keys.p256dh y keys.auth son obligatorios",
         )
 
-    if not _is_allowed_push_endpoint(endpoint):
+    if not _push_subs.is_allowed_push_endpoint(endpoint):
         raise HTTPException(
             status_code=422,
             detail="endpoint debe ser https de un servicio de push conocido",
