@@ -235,7 +235,7 @@ src/
     login.html           ← página de login
     setup.html           ← wizard de configuración inicial
     configuracion.html   ← pantalla de configuración (accesible desde el dashboard)
-    i18n/                ← internacionalización es/en (i18n.js + es.json/en.json canónicos)
+    i18n/                ← internacionalización es/en (i18n.js, fuente única de traducciones)
 tests/                   ← suite pytest completa (un test_*.py por módulo; ver directorio)
 docs/
   ARCHITECTURE.md        ← diseño del sistema
