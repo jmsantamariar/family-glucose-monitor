@@ -23,6 +23,7 @@ port (configurable), has no authentication, and reads data from the
 ``timestamp``).  Both modules now share ``readings_cache.json`` as the single
 source of truth.
 """
+import hmac
 import json
 import logging
 import os
@@ -168,7 +169,7 @@ def _validate_csrf(request: Request) -> None:
 
     cookie_token = request.cookies.get(_CSRF_COOKIE)
     header_token = request.headers.get(_CSRF_HEADER)
-    if not cookie_token or not header_token or cookie_token != header_token:
+    if not cookie_token or not header_token or not hmac.compare_digest(cookie_token, header_token):
         raise HTTPException(status_code=403, detail="CSRF validation failed.")
 
 
@@ -934,6 +935,12 @@ async def push_subscribe(request: Request):
         raise HTTPException(
             status_code=422,
             detail="endpoint, keys.p256dh y keys.auth son obligatorios",
+        )
+
+    if not _push_subs.is_allowed_push_endpoint(endpoint):
+        raise HTTPException(
+            status_code=422,
+            detail="endpoint debe ser https de un servicio de push conocido",
         )
 
     try:

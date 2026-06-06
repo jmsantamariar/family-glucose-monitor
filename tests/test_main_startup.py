@@ -209,3 +209,63 @@ class TestNormalModeStartup:
             main_mod.main()
 
         assert setup_mode_calls == [], "Normal startup must not enter setup mode"
+
+
+# ---------------------------------------------------------------------------
+# Dashboard bind-address warning
+# ---------------------------------------------------------------------------
+
+class TestBindAddressWarning:
+    """_start_dashboard warns when binding to all interfaces.
+
+    Uses a direct capture handler on the module's own logger
+    ("family-glucose-monitor") instead of caplog because Alembic's
+    ``fileConfig(disable_existing_loggers=True)`` (run by the migration
+    tests in the same session) disables that logger, which caplog does
+    not re-enable. Same pattern as TestAcquireLockFcntlWarning in
+    test_startup.py.
+    """
+
+    def _start_and_capture(self, host):
+        import logging
+
+        import src.main as main_mod
+
+        captured: list[logging.LogRecord] = []
+
+        class _Capture(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                captured.append(record)
+
+        handler = _Capture(level=logging.WARNING)
+        target_logger = main_mod.logger
+        old_level = target_logger.level
+        old_disabled = target_logger.disabled
+        target_logger.addHandler(handler)
+        target_logger.disabled = False
+        if old_level == 0 or old_level > logging.WARNING:
+            target_logger.setLevel(logging.WARNING)
+        try:
+            config = {"dashboard": {"host": host, "port": 8080}}
+            fake_uvicorn = MagicMock()
+            with patch.dict(sys.modules, {"uvicorn": fake_uvicorn}):
+                main_mod._start_dashboard(config)
+            fake_uvicorn.run.assert_called_once()
+        finally:
+            target_logger.removeHandler(handler)
+            target_logger.setLevel(old_level)
+            target_logger.disabled = old_disabled
+        return captured
+
+    def test_warns_on_all_interfaces_bind(self):
+        records = self._start_and_capture("0.0.0.0")
+        assert any("0.0.0.0" in r.getMessage() for r in records)
+
+    @pytest.mark.parametrize("host", ["::", "[::]"])
+    def test_warns_on_ipv6_all_interfaces_bind(self, host):
+        records = self._start_and_capture(host)
+        assert any("ALL network interfaces" in r.getMessage() for r in records)
+
+    def test_no_warning_on_loopback_bind(self):
+        records = self._start_and_capture("127.0.0.1")
+        assert not [r for r in records if "ALL network interfaces" in r.getMessage()]

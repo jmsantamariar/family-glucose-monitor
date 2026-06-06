@@ -150,6 +150,16 @@ class WebPushOutput(BaseOutput):
         stale_endpoints: list[str] = []
 
         for sub in subscriptions:
+            # Subscriptions persisted before endpoint validation existed (or a
+            # tampered DB) may contain non-push-service URLs — never POST to
+            # them, and prune them like expired subscriptions.
+            if not _subs.is_allowed_push_endpoint(sub["endpoint"]):
+                logger.warning(
+                    "Push subscription endpoint not in allowlist, scheduling removal: %s…",
+                    sub["endpoint"][:40],
+                )
+                stale_endpoints.append(sub["endpoint"])
+                continue
             sub_info = {
                 "endpoint": sub["endpoint"],
                 "keys": {"p256dh": sub["p256dh"], "auth": sub["auth"]},
