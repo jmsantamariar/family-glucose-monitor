@@ -166,12 +166,3 @@ def get_engine(db_url: str):
         connect_args["check_same_thread"] = False
         connect_args.setdefault("timeout", 10)
     return create_engine(db_url, connect_args=connect_args)
-
-
-def create_tables(engine) -> None:
-    """Create all ORM-mapped tables if they do not already exist.
-
-    This is **non-destructive**: existing tables and their data are never
-    altered or dropped.
-    """
-    Base.metadata.create_all(bind=engine, checkfirst=True)
