@@ -270,6 +270,7 @@ _AUTH_EXEMPT_PATHS = {
 _AUTH_EXEMPT_PREFIXES = (
     "/icons/",
     "/i18n/",
+    "/vendor/",
 )
 
 @app.middleware("http")
@@ -851,6 +852,15 @@ _ALLOWED_I18N_FILES: dict[str, tuple[Path, str]] = {
     "en.json":  (_DASHBOARD_DIR / "i18n" / "en.json",  "application/json"),
 }
 
+# Exact allowlist of vendored third-party assets served via /vendor/{filename}.
+# Same pre-computed-path pattern as _ALLOWED_I18N_FILES.
+_ALLOWED_VENDOR_FILES: dict[str, tuple[Path, str]] = {
+    "chart.umd.min.js": (
+        _DASHBOARD_DIR / "vendor" / "chart.umd.min.js",
+        "application/javascript",
+    ),
+}
+
 
 @app.get("/manifest.json")
 def pwa_manifest():
@@ -905,6 +915,22 @@ def i18n_asset(filename: str):
     if not path.is_file():
         raise HTTPException(status_code=404, detail=f"i18n file '{filename}' not found")
     return FileResponse(path, media_type=media_type)
+
+@app.get("/vendor/{filename}")
+def vendor_asset(filename: str):
+    """Serve vendored third-party assets (currently Chart.js).
+
+    Only files explicitly listed in ``_ALLOWED_VENDOR_FILES`` are served;
+    the user-provided ``filename`` is used only as a dict lookup key.
+    """
+    entry = _ALLOWED_VENDOR_FILES.get(filename)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"vendor file '{filename}' not found")
+    path, media_type = entry
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail=f"vendor file '{filename}' not found")
+    return FileResponse(path, media_type=media_type)
+
 
 @app.get("/api/push/vapid-public-key", response_class=JSONResponse)
 def push_vapid_public_key():
