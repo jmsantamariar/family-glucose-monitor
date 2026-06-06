@@ -2,7 +2,7 @@
 
 These tests verify that:
   - The ORM models can be imported and instantiated.
-  - create_tables() creates the expected tables on a fresh in-memory SQLite DB.
+  - Base.metadata creates the expected tables on a fresh in-memory SQLite DB.
   - The model attributes map correctly to column names.
 
 The ORM is actively used by the application:
@@ -10,15 +10,18 @@ The ORM is actively used by the application:
   - ``SessionToken`` is used by ``src/auth.SessionManager`` for session DML.
   - ``LoginAttempt`` is described in the model but accessed via ``text()``
     queries in ``src/auth.SessionManager`` (no physical PK in the table).
+
+Production schema management is done by Alembic migrations;
+``Base.metadata.create_all`` here only builds throwaway in-memory schemas.
 """
 import pytest
 from sqlalchemy import inspect, text
 
 from src.models.db_models import (
     AlertHistory,
+    Base,
     LoginAttempt,
     SessionToken,
-    create_tables,
     get_engine,
 )
 
@@ -27,38 +30,38 @@ from src.models.db_models import (
 def engine():
     """Return a fresh in-memory SQLite engine for each test."""
     eng = get_engine("sqlite:///:memory:")
-    create_tables(eng)
+    Base.metadata.create_all(bind=eng, checkfirst=True)
     return eng
 
 
 # ---------------------------------------------------------------------------
-# create_tables — schema smoke test
+# Base.metadata — schema smoke test
 # ---------------------------------------------------------------------------
 
-def test_create_tables_creates_sessions(engine):
+def test_metadata_creates_sessions(engine):
     inspector = inspect(engine)
     tables = inspector.get_table_names()
     assert "sessions" in tables
 
 
-def test_create_tables_creates_login_attempts(engine):
+def test_metadata_creates_login_attempts(engine):
     inspector = inspect(engine)
     tables = inspector.get_table_names()
     assert "login_attempts" in tables
 
 
-def test_create_tables_creates_alerts(engine):
+def test_metadata_creates_alerts(engine):
     inspector = inspect(engine)
     tables = inspector.get_table_names()
     assert "alerts" in tables
 
 
 # ---------------------------------------------------------------------------
-# create_tables — idempotent (calling twice must not raise)
+# Base.metadata.create_all — idempotent (calling twice must not raise)
 # ---------------------------------------------------------------------------
 
-def test_create_tables_is_idempotent(engine):
-    create_tables(engine)  # second call — must not raise
+def test_create_all_is_idempotent(engine):
+    Base.metadata.create_all(bind=engine, checkfirst=True)  # second call — must not raise
 
 
 # ---------------------------------------------------------------------------
