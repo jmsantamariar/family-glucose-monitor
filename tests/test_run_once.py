@@ -61,6 +61,17 @@ class _MockOutput:
         self.send_alert = MagicMock(return_value=self._success)
 
 
+@pytest.fixture(autouse=True)
+def reading_history_spy(monkeypatch):
+    """run_once now persists reading history on every cycle. Stub the writer so
+    unrelated tests neither touch a real DB nor carry dedup state between tests.
+    Tests that care about persistence request this fixture and assert on it."""
+    monkeypatch.setattr("src.main.init_reading_history_db", lambda *a, **k: None)
+    spy = MagicMock()
+    monkeypatch.setattr("src.main.log_reading_if_new", spy)
+    return spy
+
+
 # ---------------------------------------------------------------------------
 # No readings obtained
 # ---------------------------------------------------------------------------
@@ -539,6 +550,58 @@ def test_multiple_patients_processed_independently():
     saved_state = mock_save.call_args[0][1]
     assert "p2" in saved_state
     assert saved_state.get("p1", {}) == {} or "p1" not in saved_state
+
+
+# ---------------------------------------------------------------------------
+# Reading-history persistence (the poller is the single writer)
+# ---------------------------------------------------------------------------
+
+def test_run_once_persists_every_reading_to_history(reading_history_spy):
+    """Each reading is written to history with (path, pid, name, value, ts),
+    independent of the alert outcome."""
+    normal = _fresh_reading(glucose=120, patient_id="p1", patient_name="Alice")
+    low = _fresh_reading(glucose=55, patient_id="p2", patient_name="Bob")
+
+    mock_output = _MockOutput(success=True)
+
+    with (
+        patch("src.main.init_db"),
+        patch("src.main.load_state", return_value={}),
+        patch("src.main.save_state"),
+        patch("src.main.read_all_patients", return_value=[normal, low]),
+        patch("src.main._save_readings_cache"),
+        patch("src.main.log_alert"),
+        patch("src.main.cleanup_old_alerts"),
+        patch("src.main.cleanup_old_readings"),
+        patch("src.main.build_outputs", return_value=[mock_output]),
+    ):
+        run_once(_config())
+
+    assert reading_history_spy.call_count == 2
+    by_pid = {c.args[1]: c.args for c in reading_history_spy.call_args_list}
+    assert by_pid["p1"][2] == "Alice" and by_pid["p1"][3] == 120
+    assert by_pid["p2"][2] == "Bob" and by_pid["p2"][3] == 55
+
+
+def test_run_once_persists_even_stale_readings(reading_history_spy):
+    """A stale reading is not alertable but MUST still be recorded — history
+    capture is independent of staleness so no data is lost."""
+    stale = _fresh_reading(glucose=120, patient_id="p1", age_seconds=3600)
+
+    with (
+        patch("src.main.init_db"),
+        patch("src.main.load_state", return_value={}),
+        patch("src.main.save_state"),
+        patch("src.main.read_all_patients", return_value=[stale]),
+        patch("src.main._save_readings_cache"),
+        patch("src.main.log_alert"),
+        patch("src.main.cleanup_old_alerts"),
+        patch("src.main.cleanup_old_readings"),
+    ):
+        run_once(_config())
+
+    assert reading_history_spy.call_count == 1
+    assert reading_history_spy.call_args.args[1] == "p1"
 
 
 # ---------------------------------------------------------------------------

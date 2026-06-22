@@ -18,6 +18,7 @@ Public API
 * :func:`cleanup_old_readings` — delete readings beyond the retention window
 """
 import logging
+import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -86,6 +87,47 @@ def log_reading(
         )
         session.commit()
     logger.debug("Reading logged for patient %s: %d mg/dL", patient_id, glucose_value)
+
+
+# Per-patient sensor timestamp of the last reading we persisted, used by
+# ``log_reading_if_new`` to skip re-logging a frozen sensor's repeated value
+# every polling cycle (which would inflate the series with fake flat segments
+# and bias TIR/CV). State is in-memory: on process restart the dict is empty,
+# so the first reading per patient re-logs even if its sensor timestamp already
+# exists in the DB — at most one duplicate row per patient per restart. That is
+# harmless and, critically, never drops a reading.
+_last_logged_source_ts: dict[str, str] = {}
+_last_logged_lock = threading.Lock()
+
+
+def log_reading_if_new(
+    db_path: str,
+    patient_id: str,
+    patient_name: str,
+    glucose_value: int,
+    source_ts: str,
+) -> bool:
+    """Persist a reading only when its sensor timestamp is new for this patient.
+
+    *source_ts* is the sensor's own measurement timestamp (not our poll time).
+    When it matches the last value we logged for *patient_id*, the reading is a
+    duplicate of a still/frozen sensor and is skipped. Any new (or missing)
+    timestamp is logged — we prefer an occasional duplicate over losing data.
+
+    Returns ``True`` if a row was written, ``False`` if it was deduplicated.
+
+    This is the single writer of reading history: the polling daemon calls it
+    every cycle so the time-series is captured continuously, independent of
+    whether any dashboard client is connected.
+    """
+    source_ts = str(source_ts or "")
+    with _last_logged_lock:
+        if source_ts and _last_logged_source_ts.get(patient_id) == source_ts:
+            return False
+        log_reading(db_path, patient_id, patient_name, glucose_value)
+        if source_ts:
+            _last_logged_source_ts[patient_id] = source_ts
+        return True
 
 
 def get_readings(
