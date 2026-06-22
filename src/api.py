@@ -69,13 +69,10 @@ _cache_lock = threading.Lock()
 _config: dict = {}
 _last_mtime: float = 0.0
 
-# Sensor timestamp of the last reading persisted to reading_history, per
-# patient — used to skip re-logging stale (unchanged) readings each poll.
-# In-memory on purpose: worst case after a restart is one duplicate row.
-# Guarded by its own lock so concurrent cache reloads can't both pass the
-# dedupe check and double-log the same reading.
-_last_logged_source_ts: dict = {}
-_last_logged_source_ts_lock = threading.Lock()
+# Reading history is written exclusively by the polling daemon (src/main.py),
+# which runs every cycle whether or not a dashboard client is connected. The
+# dashboard is a read-only consumer of reading_history.db, so a single writer
+# owns the file (no cross-process SQLite write contention).
 
 # External polling state — governed by main.py in 'full' mode.
 # Use a dedicated lock to avoid coupling with _cache_lock.
@@ -399,30 +396,9 @@ def _load_and_enrich_cache() -> None:
             _last_mtime = mtime
     logger.debug("Loaded %d readings from cache file", len(new_cache))
 
-    # Persist readings to history DB for sparkline time-series (best-effort).
-    # Deduplicated by the sensor's own timestamp: when a patient's reading is
-    # stale (sensor silent, phone away), every poll cycle re-delivers the same
-    # reading — logging it each time produced fake flat segments in the charts
-    # and inflated n_readings/TIR/CV in the history metrics.
-    if new_cache:
-        try:
-            rh_path = get_reading_history_db_path(_config)
-            _reading_history.init_db(rh_path)
-            for r in new_cache.values():
-                pid = r.get("patient_id", "")
-                pname = r.get("patient_name", pid)
-                gval = r.get("glucose_value") or r.get("value", 0)
-                if not pid or not gval:
-                    continue
-                source_ts = str(r.get("timestamp") or "")
-                with _last_logged_source_ts_lock:
-                    if source_ts and _last_logged_source_ts.get(pid) == source_ts:
-                        continue  # same sensor reading as the last one we logged
-                    _reading_history.log_reading(rh_path, pid, pname, int(gval))
-                    if source_ts:
-                        _last_logged_source_ts[pid] = source_ts
-        except Exception as exc:
-            logger.warning("Failed to persist readings to history DB: %s", exc)
+    # NOTE: reading history is no longer persisted here. The polling daemon
+    # (src/main.py) is the single writer and logs on every cycle, so history is
+    # captured continuously rather than only while a dashboard client is open.
 
 
 def _get_color(level: str, trend_alert: str) -> str:

@@ -31,7 +31,11 @@ from src.outputs import build_outputs
 from src.outputs.base import Notifier
 from src.outputs.multi_notifier import MultiNotifier
 from src.paths import get_cache_path, get_db_path, get_reading_history_db_path, get_state_path
-from src.reading_history import cleanup_old_readings
+from src.reading_history import (
+    cleanup_old_readings,
+    init_db as init_reading_history_db,
+    log_reading_if_new,
+)
 from src.setup_status import check_setup
 from src.state import (
     clear_patient_state,
@@ -141,6 +145,9 @@ def run_once(
     db_path = get_db_path(config)
     init_db(db_path)
 
+    rh_path = get_reading_history_db_path(config)
+    init_reading_history_db(rh_path)
+
     state = load_state(state_path)
     readings = read_all_patients(config)
     if not readings:
@@ -165,6 +172,15 @@ def run_once(
         timestamp = reading["timestamp"]
         trend_arrow = reading["trend_arrow"]
         logger.info("  %s: %d mg/dL %s (%s)", patient_name, glucose_value, trend_arrow, timestamp)
+        # Persist every observed reading to the history time-series, deduplicated
+        # by the sensor's own timestamp. Done here — before the staleness/alert
+        # logic — so the record is captured on every cycle regardless of whether
+        # a dashboard client is connected, and regardless of whether the reading
+        # is fresh enough to alert on.
+        try:
+            log_reading_if_new(rh_path, patient_id, patient_name, glucose_value, timestamp)
+        except Exception as exc:  # never let history logging break the alert path
+            logger.warning("Failed to persist reading history for %s: %s", patient_name, exc)
         patient_state = get_patient_state(state, patient_id)
         if is_stale(timestamp, max_age):
             # Silence is an event, not an absence: escalate instead of
@@ -261,8 +277,8 @@ def run_once(
     max_days = config.get("alert_history_max_days", 7)
     cleanup_old_alerts(db_path, max_days)
 
-    # Prune the glucose reading history (written by the dashboard cache
-    # enrichment) so health data is not retained on disk indefinitely.
+    # Prune the glucose reading history (written above on every cycle) so
+    # health data is not retained on disk indefinitely.
     reading_max_days = config.get("reading_history_max_days", 90)
     cleanup_old_readings(get_reading_history_db_path(config), reading_max_days)
 

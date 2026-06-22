@@ -355,15 +355,14 @@ class TestLoadAndEnrichCache:
             )
 
 
-    def test_load_and_enrich_cache_persists_readings_to_history_db(
+    def test_load_and_enrich_cache_does_not_write_history(
         self, tmp_cache, tmp_path, monkeypatch
     ):
-        """Regression: _load_and_enrich_cache() must call log_reading() (singular)
-        for each patient so that /api/patients/{id}/history returns real data.
-
-        This guards against the bug where log_readings() (plural, non-existent)
-        was called instead, causing an empty reading history and
-        'Sin datos suficientes' in the dashboard sparklines.
+        """The dashboard is a read-only consumer of reading history. Persistence
+        belongs solely to the polling daemon (src/main.run_once), which writes
+        every cycle whether or not a client is connected. This guards against
+        re-coupling history capture to dashboard HTTP traffic — the bug that
+        silently starved the time-series when nobody had the dashboard open.
         """
         import src.reading_history as rh
 
@@ -376,12 +375,11 @@ class TestLoadAndEnrichCache:
         ])
         api_module._load_and_enrich_cache()
 
-        readings_p1 = rh.get_readings(str(db_file), "p1", hours=3)
-        readings_p2 = rh.get_readings(str(db_file), "p2", hours=3)
-        assert len(readings_p1) >= 1, "p1 readings must be persisted to history DB"
-        assert readings_p1[-1]["glucose_value"] == 120
-        assert len(readings_p2) >= 1, "p2 readings must be persisted to history DB"
-        assert readings_p2[-1]["glucose_value"] == 95
+        # Cache is loaded for serving...
+        assert "p1" in api_module._readings_cache
+        # ...but nothing was written to the history DB by the dashboard.
+        assert rh.get_readings(str(db_file), "p1", hours=3) == []
+        assert rh.get_readings(str(db_file), "p2", hours=3) == []
 
 
 # ── PWA auth-exempt ──────────────────────────────────────────────────────────
