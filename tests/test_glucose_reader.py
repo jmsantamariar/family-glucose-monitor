@@ -421,3 +421,89 @@ def test_build_client_unknown_region_falls_back_to_eu():
     mock_cls.assert_called_once()
     _, kwargs = mock_cls.call_args
     assert kwargs["api_url"] == APIUrl.EU
+
+
+# ---------------------------------------------------------------------------
+# Session reuse across cycles (2026-11-19: LibreLinkUp 'locked' on ~1 in 4 logins)
+# ---------------------------------------------------------------------------
+
+import src.glucose_reader as _gr
+
+
+@pytest.fixture(autouse=True)
+def _fresh_session():
+    """The cached session is module state: no test may see another test's client."""
+    _gr._reset_session()
+    yield
+    _gr._reset_session()
+
+
+def _ok_client(value=120):
+    c = MagicMock()
+    c.get_patients.return_value = [_make_patient()]
+    c.latest.return_value = _make_latest(value=value)
+    return c
+
+
+def test_second_cycle_reuses_session_without_login():
+    c = _ok_client()
+    with patch("src.glucose_reader.PyLibreLinkUp", return_value=c) as cls:
+        assert len(read_all_patients(_CONFIG)) == 1
+        assert len(read_all_patients(_CONFIG)) == 1
+        assert len(read_all_patients(_CONFIG)) == 1
+    assert cls.call_count == 1
+    assert c.authenticate.call_count == 1
+
+
+def test_session_expires_after_max_age():
+    c = _ok_client()
+    with patch("src.glucose_reader.PyLibreLinkUp", return_value=c), \
+         patch("src.glucose_reader.time.monotonic", side_effect=[0.0, 10.0, _gr.SESSION_MAX_AGE_S + 1]):
+        read_all_patients(_CONFIG)
+        read_all_patients(_CONFIG)
+        read_all_patients(_CONFIG)
+    assert c.authenticate.call_count == 2
+
+
+def test_reused_session_failure_falls_back_to_fresh_login_same_cycle():
+    viejo = _ok_client()
+    nuevo = _ok_client(value=99)
+    with patch("src.glucose_reader.PyLibreLinkUp", side_effect=[viejo, nuevo]), \
+         patch("src.glucose_reader.time.sleep"):
+        read_all_patients(_CONFIG)                       # login 1 -> viejo
+        viejo.get_patients.side_effect = Exception("401")
+        readings = read_all_patients(_CONFIG)            # reuse fails -> login 2 -> nuevo
+    assert [r["value"] for r in readings] == [99]
+    assert nuevo.authenticate.call_count == 1
+
+
+def test_reused_session_all_patient_reads_fail_falls_back():
+    viejo = _ok_client()
+    nuevo = _ok_client(value=101)
+    with patch("src.glucose_reader.PyLibreLinkUp", side_effect=[viejo, nuevo]), \
+         patch("src.glucose_reader.time.sleep"):
+        read_all_patients(_CONFIG)
+        viejo.latest.side_effect = Exception("401")
+        readings = read_all_patients(_CONFIG)
+    assert [r["value"] for r in readings] == [101]
+
+
+def test_failed_login_is_not_cached():
+    malo = MagicMock()
+    malo.authenticate.side_effect = Exception("locked")
+    bueno = _ok_client()
+    with patch("src.glucose_reader.PyLibreLinkUp", side_effect=[malo] * 1 + [bueno]), \
+         patch("src.glucose_reader._retry_with_backoff", side_effect=lambda f, *a, **k: f(*a)):
+        assert read_all_patients(_CONFIG) == []
+        assert len(read_all_patients(_CONFIG)) == 1
+
+
+def test_one_patient_failing_keeps_session():
+    c = MagicMock()
+    c.get_patients.return_value = [_make_patient(pid="p1"), _make_patient(first="Ana", pid="p2")]
+    c.latest.side_effect = [Exception("boom"), _make_latest(value=140)] * 2 + [_make_latest(), _make_latest()]
+    with patch("src.glucose_reader.PyLibreLinkUp", return_value=c) as cls, \
+         patch("src.glucose_reader.time.sleep"):
+        read_all_patients(_CONFIG)
+        read_all_patients(_CONFIG)
+    assert cls.call_count == 1

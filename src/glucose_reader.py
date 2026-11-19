@@ -93,28 +93,89 @@ def _build_client(email: str, password: str, region: str) -> PyLibreLinkUp:
     return client
 
 
+# Session reuse (2026-11-19). The daemon used to log in again on EVERY cycle (288 logins/day). Since
+# 2026-11-12 LibreLinkUp rejects ~1 in 4 logins with {'code': 60, 'message': 'locked'} (pylibrelinkup
+# reports it as AuthenticationError), and ~28% of cycles returned no readings and fired no alerts.
+# Calls made with an already-issued token never failed in that period. So: keep the authenticated
+# client across cycles, refresh it after SESSION_MAX_AGE_S, and if a cycle fails while using a reused
+# session, drop it and log in again in the same cycle (= the old behaviour, never worse).
+SESSION_MAX_AGE_S = 6 * 3600
+
+_session: dict = {"client": None, "key": None, "since": 0.0}
+
+
+def _reset_session() -> None:
+    _session.update(client=None, key=None, since=0.0)
+
+
+def _get_client(email: str, password: str, region: str) -> tuple[PyLibreLinkUp, bool]:
+    """-> (client, fresh). Reuses the cached authenticated client while it is young enough and was
+    built for the same account and region; otherwise logs in."""
+    key = (email, hash(password), region)
+    now = time.monotonic()
+    if (_session["client"] is not None and _session["key"] == key
+            and now - _session["since"] < SESSION_MAX_AGE_S):
+        return _session["client"], False
+    _reset_session()
+    client = _build_client(email, password, region)
+    _session.update(client=client, key=key, since=now)
+    return client, True
+
+
 def read_all_patients(config: dict) -> list[dict]:
     try:
         email = os.environ.get("LIBRELINKUP_EMAIL") or config["librelinkup"]["email"]
         password = os.environ.get("LIBRELINKUP_PASSWORD") or decrypt_value(config["librelinkup"]["password"])
         region = config.get("librelinkup", {}).get("region", "EU")
-        retry_cfg = config.get("librelinkup", {}).get("retry", {})
-        patients_max_retries: int = retry_cfg.get("max_retries", 2)
-        patients_base_delay: float = retry_cfg.get("base_delay", 2.0)
-        patients_max_delay: float = retry_cfg.get("max_delay", 60.0)
-        client = _build_client(email, password, region)
+        client, fresh = _get_client(email, password, region)
+    except Exception as e:
+        _reset_session()
+        logger.error("Failed to read glucose data: %s: %s", type(e).__name__, e)
+        return []
+    logger.info("Authentication successful" if fresh else "Reusing LibreLinkUp session")
+    readings = _read_with_client(client, config)
+    if readings is None and not fresh:
+        # The reused session may have expired or been revoked: one fresh login, same cycle.
+        logger.warning("Reused LibreLinkUp session failed; logging in again")
+        _reset_session()
+        try:
+            client, _ = _get_client(email, password, region)
+        except Exception as e:
+            _reset_session()
+            logger.error("Failed to read glucose data: %s: %s", type(e).__name__, e)
+            return []
         logger.info("Authentication successful")
+        readings = _read_with_client(client, config)
+    if readings is None:
+        _reset_session()
+        return []
+    return readings
+
+
+def _read_with_client(client: PyLibreLinkUp, config: dict) -> list[dict] | None:
+    """-> readings, or None when the session looks unusable: get_patients failed, or it listed
+    patients and EVERY per-patient read raised."""
+    retry_cfg = config.get("librelinkup", {}).get("retry", {})
+    patients_max_retries: int = retry_cfg.get("max_retries", 2)
+    patients_base_delay: float = retry_cfg.get("base_delay", 2.0)
+    patients_max_delay: float = retry_cfg.get("max_delay", 60.0)
+    try:
         patients = _retry_with_backoff(
             client.get_patients,
             max_retries=patients_max_retries,
             base_delay=patients_base_delay,
             max_delay=patients_max_delay,
         )
+    except Exception as e:
+        logger.error("Failed to read glucose data: %s: %s", type(e).__name__, e)
+        return None
+    try:
         if not patients:
             logger.error("No patients found in LibreLinkUp account")
             return []
         logger.info("Found %d patient(s)", len(patients))
         readings = []
+        errors = 0
         for patient in patients:
             patient_name = f"{patient.first_name} {patient.last_name}"
             try:
@@ -142,10 +203,13 @@ def read_all_patients(config: dict) -> list[dict]:
                     "  %s: %d mg/dL %s", patient_name, int(latest.value), latest.trend.indicator
                 )
             except Exception as e:
+                errors += 1
                 logger.error(
                     "Failed to read data for %s: %s: %s", patient_name, type(e).__name__, e
                 )
+        if errors == len(patients):
+            return None
         return readings
     except Exception as e:
         logger.error("Failed to read glucose data: %s: %s", type(e).__name__, e)
-        return []
+        return None
